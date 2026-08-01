@@ -1,0 +1,21 @@
+{
+  "name": "@pinnables/mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "pinnables-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "inspect": "npx -y @modelcontextprotocol/inspector tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@pinnables/shared": "0.1.0",
+    "zod": "^3.24.1"
+  }
+}

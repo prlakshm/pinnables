@@ -1,0 +1,19 @@
+{
+  "name": "pinnables",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
+    "typecheck": "tsc --build --force"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
