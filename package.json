@@ -7,12 +7,17 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
+    "dev:extension": "npm run dev --workspace @pinnables/extension",
+    "dev:service": "npm run start --workspace @pinnables/service",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
-    "typecheck": "tsc --build --force"
+    "smoke": "tsx scripts/smoke.mts",
+    "trace-wordmark": "node scripts/trace-wordmark.mjs",
+    "typecheck": "npm run typecheck --workspace @pinnables/extension"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "potrace": "^2.1.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

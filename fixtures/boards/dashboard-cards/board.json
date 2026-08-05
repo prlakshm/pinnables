@@ -200,6 +200,52 @@
       "status": "todo",
       "createdAt": "2026-08-01T14:08:55.000Z",
       "updatedAt": "2026-08-01T14:08:55.000Z"
+    },
+    {
+      "id": "pin-06",
+      "schemaVersion": 1,
+      "boardId": "dashboard-cards",
+      "kind": "region",
+      "drawings": [
+        {
+          "id": "shape-1",
+          "kind": "ellipse",
+          "points": [
+            { "x": 0.18, "y": 0.22 },
+            { "x": 0.74, "y": 0.68 }
+          ],
+          "color": "#ED1C24"
+        },
+        {
+          "id": "shape-2",
+          "kind": "arrow",
+          "points": [
+            { "x": 0.82, "y": 0.14 },
+            { "x": 0.6, "y": 0.34 }
+          ],
+          "color": "#ED1C24"
+        }
+      ],
+      "order": 6,
+      "groupId": null,
+      "url": "http://localhost:5173/dashboard",
+      "route": "/dashboard",
+      "viewport": { "width": 1440, "height": 900 },
+      "screenshotPath": "pins/pin-06.png",
+      "thumbnailPath": "pins/pin-06.thumb.webp",
+      "selector": "",
+      "domPath": "",
+      "outerHtml": "",
+      "classList": [],
+      "elementText": "toolbar crowding",
+      "componentName": null,
+      "sourceFile": null,
+      "computedStyles": {},
+      "annotation": "Everything between the filter row and the first card is fighting for the same space. Give this whole band more room — I don't mind which element absorbs it.",
+      "captureState": "default",
+      "status": "todo",
+      "createdAt": "2026-08-01T14:15:20.000Z",
+      "updatedAt": "2026-08-01T14:15:20.000Z"
     }
   ],
   "relationships": [

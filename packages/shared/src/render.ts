@@ -1,6 +1,6 @@
 import type { Board, Pin } from "./schema.js";
 import { computeStyleDiff, formatStyles } from "./styles.js";
-import { resolveAsset } from "./storage.js";
+import { describeDrawings } from "./drawings.js";
 
 /**
  * The compact manifest — what `get_board` returns and what `brief.md`
@@ -28,7 +28,13 @@ export function renderBoardManifest(board: Board): string {
       `route \`${pin.route}\` · ${pin.viewport.width}×${pin.viewport.height}` +
         (pin.captureState && pin.captureState !== "default" ? ` · state: ${pin.captureState}` : ""),
     );
-    lines.push(pin.sourceFile ? `source \`${pin.sourceFile}\`` : "source unresolved");
+    if (pin.kind === "region") {
+      // A region pin has no element identity by construction — it marks an
+      // area, so the screenshot is the specification and the agent has to look.
+      lines.push(`region · ${describeDrawings(pin.drawings) || "no marks"} · see screenshot`);
+    } else {
+      lines.push(pin.sourceFile ? `source \`${pin.sourceFile}\`` : "source unresolved");
+    }
     lines.push(`> ${pin.annotation}`);
     lines.push("");
   }
@@ -94,7 +100,16 @@ export function renderRelationship(board: Board, relationshipId: string): string
  * Everything about one pin. Fetched on demand so the manifest stays small —
  * the agent asks for this only for pins it is actually about to edit.
  */
-export function renderPinContext(board: Board, pin: Pin): string {
+export function renderPinContext(
+  board: Board,
+  pin: Pin,
+  /**
+   * Absolute path to the pin's screenshot. Resolving it needs the filesystem,
+   * which the extension bundle can't import — so callers that have a disk pass
+   * it in and everyone else falls back to the stored relative path.
+   */
+  screenshotPath: string = pin.screenshotPath,
+): string {
   const lines: string[] = [];
 
   lines.push(`# ${pin.id} — ${describePin(pin)}`);
@@ -104,22 +119,35 @@ export function renderPinContext(board: Board, pin: Pin): string {
   lines.push(`route       ${pin.route}`);
   lines.push(`viewport    ${pin.viewport.width}×${pin.viewport.height}`);
   lines.push(`state       ${pin.captureState}`);
-  lines.push(`source      ${pin.sourceFile ?? "unresolved"}`);
-  lines.push(`component   ${pin.componentName ?? "unknown"}`);
-  lines.push(`selector    ${pin.selector}`);
-  lines.push(`dom path    ${pin.domPath}`);
-  lines.push(`screenshot  ${resolveAsset(board.id, pin.screenshotPath)}`);
-  lines.push("");
-  lines.push(`## Instruction`);
-  lines.push(pin.annotation);
-  lines.push("");
-  lines.push(`## Captured styles`);
-  lines.push(formatStyles(pin.computedStyles));
-  lines.push("");
-  lines.push(`## Markup`);
-  lines.push("```html");
-  lines.push(pin.outerHtml);
-  lines.push("```");
+  if (pin.kind === "region") {
+    lines.push(`marks       ${describeDrawings(pin.drawings) || "none"}`);
+    lines.push(`screenshot  ${screenshotPath}`);
+    lines.push("");
+    lines.push(`## Instruction`);
+    lines.push(pin.annotation);
+    lines.push("");
+    lines.push(
+      "This pin marks an *area*, not a component — it has no selector or source file. " +
+        "The annotated screenshot is the specification; open it to see what was circled.",
+    );
+  } else {
+    lines.push(`source      ${pin.sourceFile ?? "unresolved"}`);
+    lines.push(`component   ${pin.componentName ?? "unknown"}`);
+    lines.push(`selector    ${pin.selector}`);
+    lines.push(`dom path    ${pin.domPath}`);
+    lines.push(`screenshot  ${screenshotPath}`);
+    lines.push("");
+    lines.push(`## Instruction`);
+    lines.push(pin.annotation);
+    lines.push("");
+    lines.push(`## Captured styles`);
+    lines.push(formatStyles(pin.computedStyles));
+    lines.push("");
+    lines.push(`## Markup`);
+    lines.push("```html");
+    lines.push(pin.outerHtml);
+    lines.push("```");
+  }
 
   const related = board.relationships.filter(
     (r) => r.sourcePinId === pin.id || r.targetPinIds.includes(pin.id),
@@ -133,6 +161,7 @@ export function renderPinContext(board: Board, pin: Pin): string {
 }
 
 function describePin(pin: Pin): string {
+  if (pin.kind === "region") return pin.elementText.trim() || "marked region";
   const label = pin.componentName ?? pin.elementText.trim().slice(0, 40);
   return label || pin.selector;
 }

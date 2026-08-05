@@ -1,0 +1,694 @@
+/*
+ * One stylesheet for both surfaces. The side panel imports it directly; the
+ * page overlay injects the same text into its shadow root, so a component
+ * looks identical whether it is floating over someone's app or sitting in the
+ * panel. Everything is namespaced --pin-* so nothing collides with the host
+ * page even if the shadow boundary is ever removed.
+ */
+
+:where(.pin-root) {
+  --pin-paper: #f6f5f3;
+  --pin-surface: #ffffff;
+  --pin-line: #e4e2de;
+  --pin-line-strong: #c9c6c1;
+  --pin-ink: #292c33;
+  --pin-ink-muted: #6b6f78;
+  --pin-cobalt: #1e3fd8;
+  --pin-cobalt-hover: #1834b4;
+  --pin-sky: #9bd3f9;
+  --pin-sky-tint: #e4f1fd;
+  --pin-red: #ed1c24;
+  --pin-amber-tint: #fdf1dd;
+  --pin-amber-ink: #8a5a08;
+
+  --pin-radius-sm: 6px;
+  --pin-radius-md: 10px;
+  --pin-radius-lg: 14px;
+
+  --pin-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --pin-shadow-float: 0 1px 2px rgba(41, 44, 51, 0.08), 0 8px 24px rgba(41, 44, 51, 0.12);
+
+  font-family: var(--pin-font);
+  color: var(--pin-ink);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pin-root *,
+.pin-root *::before,
+.pin-root *::after {
+  box-sizing: border-box;
+}
+
+.pin-root button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pin-root input,
+.pin-root textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- primitives */
+
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid var(--pin-line);
+  background: var(--pin-surface);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.pin-btn:hover {
+  background: var(--pin-paper);
+  border-color: var(--pin-line-strong);
+}
+.pin-btn--primary {
+  background: var(--pin-cobalt);
+  border-color: var(--pin-cobalt);
+  color: #fff;
+}
+.pin-btn--primary:hover {
+  background: var(--pin-cobalt-hover);
+  border-color: var(--pin-cobalt-hover);
+}
+.pin-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.pin-btn--ghost:hover {
+  background: var(--pin-paper);
+  border-color: transparent;
+}
+.pin-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pin-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: var(--pin-ink-muted);
+  transition: background 120ms ease, color 120ms ease;
+}
+.pin-icon-btn:hover {
+  background: var(--pin-paper);
+  color: var(--pin-ink);
+}
+.pin-icon-btn[data-active="true"] {
+  background: var(--pin-sky-tint);
+  color: var(--pin-cobalt);
+}
+
+.pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--pin-line);
+  background: var(--pin-surface);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pin-ink-muted);
+  white-space: nowrap;
+}
+.pin-chip[data-on="true"] {
+  background: var(--pin-cobalt);
+  border-color: var(--pin-cobalt);
+  color: #fff;
+}
+.pin-chip--mono {
+  font-family: var(--pin-mono);
+  font-weight: 400;
+  font-size: 10px;
+}
+
+.pin-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pin-sky-tint);
+  color: var(--pin-cobalt);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pin-kbd {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+  border: 1px solid var(--pin-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.pin-field {
+  width: 100%;
+  border: 1px solid var(--pin-line);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-surface);
+  padding: 7px 9px;
+  font-size: 12px;
+  resize: none;
+  outline: none;
+}
+.pin-field:focus {
+  border-color: var(--pin-cobalt);
+  box-shadow: 0 0 0 3px var(--pin-sky-tint);
+}
+.pin-field::placeholder {
+  color: var(--pin-ink-muted);
+}
+
+.pin-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.pin-status[data-status="todo"] {
+  color: var(--pin-ink-muted);
+}
+.pin-status[data-status="done"] {
+  color: #0f6e56;
+}
+.pin-status[data-status="blocked"] {
+  color: var(--pin-amber-ink);
+}
+.pin-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------------ overlay */
+
+.pin-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+.pin-highlight {
+  position: fixed;
+  border: 2px solid var(--pin-cobalt);
+  border-radius: 3px;
+  background: rgba(30, 63, 216, 0.06);
+  pointer-events: none;
+  transition: all 60ms linear;
+}
+
+.pin-highlight__label {
+  position: absolute;
+  top: -22px;
+  left: -2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: var(--pin-cobalt);
+  color: #fff;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.pin-toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--pin-line);
+  background: var(--pin-surface);
+  box-shadow: var(--pin-shadow-float);
+  pointer-events: auto;
+}
+
+.pin-toolbar__grip {
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+  color: var(--pin-line-strong);
+  cursor: grab;
+}
+.pin-toolbar__grip:active {
+  cursor: grabbing;
+}
+
+.pin-toolbar__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--pin-line);
+  margin: 0 6px;
+  flex: 0 0 auto;
+}
+
+.pin-toolbar__board {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: var(--pin-radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pin-toolbar__board:hover {
+  background: var(--pin-paper);
+}
+
+/* ---------------------------------------------------------------- draw mode */
+
+/*
+ * The frozen frame covers the viewport exactly, so the page appears to stop.
+ * Everything drawn lands on this immutable image rather than on live DOM.
+ */
+.pin-draw {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.pin-draw__surface {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.pin-draw__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.pin-draw__ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pin-draw__bar {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--pin-line);
+  background: var(--pin-surface);
+  box-shadow: var(--pin-shadow-float);
+  max-width: calc(100vw - 32px);
+  flex-wrap: nowrap;
+}
+
+.pin-draw__swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(41, 44, 51, 0.12);
+}
+.pin-draw__swatch[data-active="true"] {
+  border-color: var(--pin-ink);
+}
+
+/* --------------------------------------------------------------- pin object */
+
+.pin-object {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: 340px;
+  pointer-events: auto;
+  cursor: grab;
+}
+.pin-object:active {
+  cursor: grabbing;
+}
+
+.pin-object__card {
+  border: 1.5px solid var(--pin-cobalt);
+  border-radius: var(--pin-radius-md);
+  background: var(--pin-surface);
+  box-shadow: var(--pin-shadow-float);
+  overflow: hidden;
+}
+
+.pin-object__shot {
+  display: block;
+  max-width: 336px;
+  max-height: 260px;
+  object-fit: contain;
+  background: var(--pin-paper);
+}
+
+.pin-object__marker {
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--pin-sky-tint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: -13px;
+  z-index: 1;
+  flex: 0 0 auto;
+}
+.pin-object__marker::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--pin-cobalt);
+}
+.pin-object__marker[data-pulse="true"] {
+  animation: pin-pulse 620ms ease-out 1;
+}
+
+@keyframes pin-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(30, 63, 216, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 18px rgba(30, 63, 216, 0);
+  }
+}
+
+.pin-object__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  background: var(--pin-sky-tint);
+  border-bottom: 1px solid rgba(30, 63, 216, 0.15);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-cobalt);
+}
+
+.pin-object__annotation {
+  margin-top: 8px;
+  border: 1px solid var(--pin-line);
+  border-radius: var(--pin-radius-md);
+  background: var(--pin-surface);
+  box-shadow: var(--pin-shadow-float);
+  padding: 8px 9px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 240px;
+}
+
+.pin-object__annotation-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--pin-ink);
+  white-space: pre-wrap;
+}
+
+/* -------------------------------------------------------------- side panel */
+
+.pin-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--pin-paper);
+}
+
+.pin-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pin-line);
+  background: var(--pin-surface);
+  flex: 0 0 auto;
+}
+
+.pin-panel__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 14px 0;
+  background: var(--pin-surface);
+  border-bottom: 1px solid var(--pin-line);
+  flex: 0 0 auto;
+}
+
+.pin-tab {
+  padding: 7px 11px;
+  border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pin-ink-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.pin-tab[data-active="true"] {
+  color: var(--pin-cobalt);
+  border-bottom-color: var(--pin-cobalt);
+}
+
+.pin-panel__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pin-panel__footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--pin-line);
+  background: var(--pin-surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pin-card {
+  border: 1px solid var(--pin-line);
+  border-radius: var(--pin-radius-md);
+  background: var(--pin-surface);
+  overflow: hidden;
+}
+.pin-card[data-selected="true"] {
+  border-color: var(--pin-cobalt);
+  box-shadow: 0 0 0 3px var(--pin-sky-tint);
+}
+
+.pin-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  width: 100%;
+  text-align: left;
+}
+.pin-row:hover {
+  background: var(--pin-paper);
+}
+.pin-row[data-done="true"] .pin-row__title {
+  text-decoration: line-through;
+  color: var(--pin-ink-muted);
+}
+
+.pin-row__thumb {
+  width: 54px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid var(--pin-line);
+  border-radius: 4px;
+  background: var(--pin-paper);
+  object-fit: cover;
+}
+
+.pin-row__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pin-row__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pin-row__title {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-row__route {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+  flex: 0 0 auto;
+}
+
+.pin-row__note {
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.pin-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.pin-expand {
+  border-top: 1px solid var(--pin-line);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  background: var(--pin-paper);
+}
+
+.pin-expand__shot {
+  width: 100%;
+  border: 1px solid var(--pin-line);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-surface);
+  display: block;
+}
+
+.pin-meta-grid {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 4px 8px;
+  font-size: 11px;
+}
+.pin-meta-grid dt {
+  color: var(--pin-ink-muted);
+}
+.pin-meta-grid dd {
+  margin: 0;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.pin-diff {
+  border: 1px solid var(--pin-cobalt);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-sky-tint);
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pin-diff__row {
+  display: grid;
+  grid-template-columns: 86px 1fr auto 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+}
+.pin-diff__from {
+  color: var(--pin-ink-muted);
+}
+.pin-diff__arrow {
+  color: var(--pin-cobalt);
+}
+
+.pin-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--pin-ink-muted);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.pin-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pin-ink-muted);
+  padding: 4px 2px 0;
+}
+
+.pin-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-amber-tint);
+  color: var(--pin-amber-ink);
+  font-size: 11px;
+  line-height: 1.5;
+}

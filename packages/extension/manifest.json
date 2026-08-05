@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Pinnables",
+  "version": "0.1.0",
+  "description": "Pin cross-page annotations for AI coding agents.",
+  "action": {
+    "default_title": "Toggle Pinnables capture mode"
+  },
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "permissions": ["storage", "unlimitedStorage", "sidePanel", "scripting", "activeTab", "tabs"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "commands": {
+    "toggle-capture": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Toggle capture mode"
+    }
+  }
+}
