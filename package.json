@@ -13,12 +13,15 @@
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
     "smoke": "tsx scripts/smoke.mts",
     "trace-wordmark": "node scripts/trace-wordmark.mjs",
-    "typecheck": "npm run typecheck --workspace @pinnables/extension"
+    "typecheck": "npm run typecheck --workspace @pinnables/extension",
+    "demo": "node scripts/serve-demo.mjs",
+    "make-icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "potrace": "^2.1.8",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "jimp": "^0.14.0"
   }
 }
