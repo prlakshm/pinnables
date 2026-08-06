@@ -45,7 +45,7 @@ export type SelectionHue = (typeof SELECTION_HUES)[number];
  * a second palette.
  */
 const HUES: Record<SelectionHue, string> = {
-  rose: "#e0719a",
+  rose: "#e0708c",
   plum: "#a865c0",
   fern: "#5aa876",
   apricot: "#eda265",
@@ -60,7 +60,7 @@ const HUES: Record<SelectionHue, string> = {
    * rotation: it reads quieter than the other five, and six simultaneous
    * selections are rare.
    */
-  stone: "#88807a",
+  stone: "#8a8079",
 };
 
 /** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */
