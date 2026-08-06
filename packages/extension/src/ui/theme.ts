@@ -45,7 +45,7 @@ export type SelectionHue = (typeof SELECTION_HUES)[number];
  * a second palette.
  */
 const HUES: Record<SelectionHue, string> = {
-  rose: "#e0708c",
+  rose: "#da6a93",
   plum: "#a865c0",
   fern: "#5aa876",
   apricot: "#eda265",
