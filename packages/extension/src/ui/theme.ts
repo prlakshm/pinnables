@@ -6,9 +6,8 @@
  * The first is that a single accent cannot work everywhere — a fixed blue looks
  * deliberate on a white dashboard and looks like a bug on a blue one. Cursor
  * solves this with a *set* of mutually distinguishable hues assigned per item
- * rather than one accent, and every hue is a pair: a saturated value for
- * strokes and a light tint of the same hue for fills. A rotating set never has
- * to match the page, it only has to be distinguishable from its siblings.
+ * rather than one accent. A rotating set never has to match the page; it only
+ * has to be distinguishable from its siblings, which is a far easier bar.
  *
  * The second is light versus dark. `prefers-color-scheme` is the wrong signal —
  * it reports the OS, not the page, and a dark-themed app on a light OS is
@@ -18,27 +17,37 @@
 
 export type Scheme = "light" | "dark";
 
-export const SELECTION_HUES = ["teal", "rose", "green", "indigo", "clay"] as const;
+export const SELECTION_HUES = [
+  "blue",
+  "purple",
+  "orange",
+  "pink",
+  "teal",
+  "red",
+  "green",
+  "olive",
+] as const;
 export type SelectionHue = (typeof SELECTION_HUES)[number];
 
-interface HuePair {
-  /** Saturated. Chosen to read on a light background. */
-  strong: string;
-  /** Light tint of the same hue. Chosen to read on a dark background. */
-  tint: string;
-}
-
 /**
- * Read out of cursor.com's own DOM — the CursorBench chart, which pairs a
- * saturated series colour with a light tint of the same hue. First-party
- * values, not estimated off a screenshot.
+ * Sampled pixel-by-pixel out of a Design Mode screenshot — see
+ * `scripts/sample-outline-colors.mjs`. These are the actual stroke values, not
+ * estimates: eight hues, each mid-lightness and moderately saturated.
+ *
+ * That pitch is the whole trick. Saturated enough to separate from each other
+ * and from the page, muted enough not to fight the product underneath, and
+ * mid-lightness so the same value works on a white app and a dark one without
+ * a second palette.
  */
-const HUES: Record<SelectionHue, HuePair> = {
-  teal: { strong: "#0e7490", tint: "#93c0cd" },
-  rose: { strong: "#9f1239", tint: "#d494a6" },
-  green: { strong: "#166534", tint: "#96baa4" },
-  indigo: { strong: "#4f46e5", tint: "#b0acf3" },
-  clay: { strong: "#c66a4a", tint: "#e5bcae" },
+const HUES: Record<SelectionHue, string> = {
+  blue: "#3996dd",
+  purple: "#9b59b6",
+  orange: "#f2994b",
+  pink: "#db4486",
+  teal: "#40ada6",
+  red: "#eb5758",
+  green: "#3aab5f",
+  olive: "#aaaf12",
 };
 
 /** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */
@@ -50,15 +59,11 @@ export const NEUTRALS = {
 export const BRAND_ACCENT = "#f44e00";
 
 /**
- * Three roles per hue, because one value cannot do all three jobs.
- *
- * `line` is the muted tint — Design Mode's outlines are the muted tier, not the
- * saturated one, and an outline is a large enough surface to stay legible soft.
- * `text` is saturated on light, because 12px chip text in the tint has nowhere
- * near enough contrast on white. `soft` is the tint at low alpha for fills.
- *
- * On dark the tint is already the light end of the pair, so it serves both line
- * and text; the saturated value would disappear into the background.
+ * One value per hue does stroke and text; only the fill alpha changes with the
+ * scheme. The sampled values sit at mid-lightness by design, so they hold
+ * contrast against white and near-black alike — a second dark palette would
+ * solve a problem these values already avoid. Dark carries a little more fill
+ * because a 10% wash disappears on a dark ground.
  */
 export interface HueTokens {
   line: string;
@@ -67,10 +72,12 @@ export interface HueTokens {
 }
 
 export function hueTokens(hue: SelectionHue, scheme: Scheme): HueTokens {
-  const { strong, tint } = HUES[hue];
-  return scheme === "dark"
-    ? { line: tint, text: tint, soft: withAlpha(tint, 0.16) }
-    : { line: tint, text: strong, soft: withAlpha(tint, 0.22) };
+  const value = HUES[hue];
+  return {
+    line: value,
+    text: value,
+    soft: withAlpha(value, scheme === "dark" ? 0.18 : 0.1),
+  };
 }
 
 function withAlpha(hex: string, alpha: number): string {

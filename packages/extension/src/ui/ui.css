@@ -4,15 +4,10 @@
  * identical whether it is floating over someone's app or sitting in the panel.
  * Everything is namespaced --pin-* so nothing collides with the host page.
  *
- * Palette follows shadcn/Vercel: a zinc neutral ramp, near-black primary, and
- * colour used only where it carries meaning. Two colours are reserved and never
- * decorative —
- *
- *   --pin-select  blue, and only ever "this element or pin is selected"
- *   --pin-red     the brand mark, and the connector dots that grow from it
- *
- * Everything else is neutral. That is what keeps the chrome quiet enough to sit
- * on top of someone else's product without competing with it.
+ * Neutrals are Cursor's, structure is shadcn/Vercel's, and every chromatic
+ * value is a per-pin hue sampled out of Design Mode. Chrome stays neutral so it
+ * can sit on top of a product it has never seen; colour appears only where it
+ * identifies something.
  */
 
 /*
@@ -40,15 +35,15 @@
    * it is transient — it exists for the half second before you click, never
    * alongside a second one, so it has nothing to be distinguishable from.
    */
-  --pin-select: #0e7490;
-  --pin-select-soft: rgba(14, 116, 144, 0.08);
-  --pin-select-ring: rgba(14, 116, 144, 0.2);
+  --pin-select: #3996dd;
+  --pin-select-soft: rgba(57, 150, 221, 0.1);
+  --pin-select-ring: rgba(57, 150, 221, 0.2);
 
   /* Set per pin from the hue set. Falls back so a stray element still renders.
      --pin-hue strokes, --pin-hue-text labels, --pin-hue-soft fills. */
-  --pin-hue: #93c0cd;
-  --pin-hue-text: #0e7490;
-  --pin-hue-soft: rgba(147, 192, 205, 0.22);
+  --pin-hue: #3996dd;
+  --pin-hue-text: #3996dd;
+  --pin-hue-soft: rgba(57, 150, 221, 0.1);
 
   --pin-red: #ed1c24;
   --pin-amber: #b45309;
@@ -93,9 +88,9 @@
   --pin-primary-hover: #e6e5df;
   --pin-on-primary: #26251e;
 
-  --pin-select: #93c0cd;
-  --pin-select-soft: rgba(147, 192, 205, 0.14);
-  --pin-select-ring: rgba(147, 192, 205, 0.28);
+  --pin-select: #3996dd;
+  --pin-select-soft: rgba(57, 150, 221, 0.18);
+  --pin-select-ring: rgba(57, 150, 221, 0.3);
 
   --pin-amber: #fbbf24;
   --pin-amber-soft: #292215;
@@ -286,13 +281,17 @@
   z-index: 2147483000;
 }
 
-/* Hover target while picking. A crisp 1px outline plus the faintest wash —
-   enough to read the bounds without obscuring what is inside them. */
+/*
+ * Hover target while picking. Measured off Design Mode: a 2px stroke drawn
+ * inside the bounds, a 10% wash, and square corners. The corners matter — a
+ * rounded outline implies it belongs to the element, whereas a square one reads
+ * as measurement laid over it.
+ */
 .pin-highlight {
   position: fixed;
-  outline: 1px solid var(--pin-select);
-  outline-offset: -1px;
-  border-radius: 2px;
+  outline: 2px solid var(--pin-select);
+  outline-offset: -2px;
+  border-radius: 0;
   background: var(--pin-select-soft);
   pointer-events: none;
   transition: all 60ms linear;
@@ -300,13 +299,12 @@
 
 .pin-highlight__label {
   position: absolute;
-  top: -21px;
-  left: -1px;
+  top: -19px;
+  left: -2px;
   display: inline-flex;
   align-items: center;
-  height: 19px;
-  padding: 0 6px;
-  border-radius: 4px;
+  height: 18px;
+  padding: 0 5px;
   background: var(--pin-select);
   color: #fff;
   font-family: var(--pin-mono);
