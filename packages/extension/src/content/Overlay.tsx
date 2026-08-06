@@ -4,7 +4,8 @@ import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from ".
 import { ExtensionReloadedError, send } from "../lib/messages";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
-import { PinObject, type AnchorEdge, type SelectionChip } from "./PinObject";
+import { PinObject, type AnchorEdge } from "./PinObject";
+import { Composer, type SelectionChip } from "./Composer";
 import { DrawLayer } from "./DrawLayer";
 import { detectScheme, hueForIndex, hueTokens, watchScheme, type Scheme } from "../ui/theme";
 
@@ -457,8 +458,9 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   // the colour never changes at the moment of the click.
   const nextHue = hueTokens(hueForIndex(ordered.length), scheme);
 
-  // The last pin selected renders the composer; the rest contribute a chip.
-  const primaryPinId = selected.length > 0 ? selected[selected.length - 1] : null;
+  // A lone selection docks its composer under the card. Two or more and it
+  // detaches — see the floating block below.
+  const primaryPinId = selected.length === 1 ? selected[0] : null;
   const chips: SelectionChip[] = selected
     .map((id) => pins.find((p) => p.id === id))
     .filter((p): p is Pin => p !== undefined)
@@ -487,6 +489,24 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       }
     }
   }
+
+  /**
+   * Where a floating composer sits: centred under the union of every selected
+   * card, clamped into the viewport. Following the group rather than any one
+   * card is the point — the prompt applies to all of them.
+   */
+  const groupBox = (() => {
+    if (selected.length < 2) return null;
+    const rects = selected.map((id) => cardRects[id]).filter(Boolean) as DOMRect[];
+    if (rects.length === 0) return null;
+    const left = Math.min(...rects.map((r) => r.left));
+    const right = Math.max(...rects.map((r) => r.right));
+    const bottom = Math.max(...rects.map((r) => r.bottom));
+    return {
+      x: Math.min(Math.max(12, (left + right) / 2 - 180), window.innerWidth - 372),
+      y: Math.min(bottom + 12, window.innerHeight - 120),
+    };
+  })();
 
   const draft =
     connecting && cardRects[connecting.fromPinId]
@@ -562,6 +582,18 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           onAnchorLeave={() => (hoverAnchor.current = null)}
         />
       ))}
+
+      {groupBox && (
+        <div className="pin-note pin-note--floating" style={{ left: groupBox.x, top: groupBox.y }}>
+          <Composer
+            chips={chips}
+            meta={`${chips.length} pins selected`}
+            onCommit={commitNote}
+            onRelate={relateSelected}
+            autoFocus
+          />
+        </div>
+      )}
 
       {/* Draw mode brings its own bar — two floating toolbars is one too many. */}
       {!drawing && (

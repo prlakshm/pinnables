@@ -18,20 +18,19 @@
 export type Scheme = "light" | "dark";
 
 /**
- * Order matters and is not alphabetical — this is the sequence Design Mode
- * hands them out in, traced frame by frame through a screen recording. The
- * ninth selection wraps back to blue.
+ * Five of Design Mode's eight, kept in its order — the sixth selection wraps
+ * back to blue.
+ *
+ * Three were dropped on measurement rather than taste. Teal sits 36° from green
+ * and 29° from blue, the tightest crowding on the wheel. Olive is 2.3:1 on
+ * white and reads muddy. Red is 28° from pink, and red is already spoken for by
+ * the brand mark, so losing it from the selection set is a gain: it keeps red
+ * meaning exactly one thing.
+ *
+ * What is left has a minimum separation of 42°, which is what makes five
+ * simultaneous selections tellable apart at a glance.
  */
-export const SELECTION_HUES = [
-  "blue",
-  "purple",
-  "green",
-  "orange",
-  "teal",
-  "pink",
-  "red",
-  "olive",
-] as const;
+export const SELECTION_HUES = ["blue", "purple", "green", "orange", "pink"] as const;
 export type SelectionHue = (typeof SELECTION_HUES)[number];
 
 /**
@@ -47,12 +46,9 @@ export type SelectionHue = (typeof SELECTION_HUES)[number];
 const HUES: Record<SelectionHue, string> = {
   blue: "#3996dd",
   purple: "#9b59b6",
+  green: "#3aab5f",
   orange: "#f2994b",
   pink: "#db4486",
-  teal: "#40ada6",
-  red: "#eb5758",
-  green: "#3aab5f",
-  olive: "#aaaf12",
 };
 
 /** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */

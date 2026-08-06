@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Board, Pin } from "@pinnables/shared";
-import { hasModifier, submitHintLabel } from "../lib/platform";
-import { ArrowUpRightIcon, CloseIcon, LinkIcon } from "../ui/icons";
+import { CloseIcon, LinkIcon } from "../ui/icons";
 import type { HueTokens } from "../ui/theme";
+import { Composer, type SelectionChip } from "./Composer";
 import type { FloatPosition } from "./Overlay";
+
+export type { SelectionChip };
 
 export type AnchorEdge = "left" | "right" | "top" | "bottom";
 export const ANCHOR_EDGES: AnchorEdge[] = ["left", "right", "top", "bottom"];
-
-/** One entry per selected pin, for the composer's chip row. */
-export interface SelectionChip {
-  id: string;
-  label: string;
-  hue: HueTokens;
-}
 
 interface PinObjectProps {
   pin: Pin;
@@ -21,7 +16,11 @@ interface PinObjectProps {
   position: FloatPosition;
   pulse: boolean;
   selected: boolean;
-  /** Only the primary pin renders the composer — one prompt, however many pins. */
+  /**
+   * True only for a lone selection. Two or more and the composer detaches to
+   * float beneath the group instead — docking it under one card of several
+   * implies that card is the subject, when the prompt applies to all of them.
+   */
   primary: boolean;
   chips: SelectionChip[];
   connecting: boolean;
@@ -64,23 +63,15 @@ export function PinObject({
   onAnchorLeave,
 }: PinObjectProps) {
   const [shot, setShot] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
   const [hovered, setHovered] = useState(false);
   const dragging = useRef<{ dx: number; dy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     void chrome.storage.local.get(`shot:${pin.id}`).then((bag) => {
       setShot((bag[`shot:${pin.id}`] as string | undefined) ?? null);
     });
   }, [pin.id]);
-
-  useEffect(() => {
-    if (primary) input.current?.focus();
-    else setDraft("");
-  }, [primary]);
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
@@ -105,18 +96,6 @@ export function PinObject({
     },
     [onMove],
   );
-
-  const commit = useCallback(async () => {
-    const next = draft.trim();
-    if (!next || saving) return;
-    setSaving(true);
-    try {
-      await onCommit(next);
-      setDraft("");
-    } finally {
-      setSaving(false);
-    }
-  }, [draft, saving, onCommit]);
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
@@ -197,65 +176,13 @@ export function PinObject({
             </div>
           )}
 
-          <div className="pin-note__body">
-            {/* A chip per selected pin, each in its own hue — the same trick
-                Cursor uses so a chip is traceable to its outline without
-                reading the label. */}
-            <div className="pin-note__chips">
-              {chips.map((chip) => (
-                <span
-                  key={chip.id}
-                  className="pin-note__chip"
-                  style={
-                    {
-                      "--pin-hue-text": chip.hue.text,
-                      "--pin-hue-soft": chip.hue.soft,
-                    } as React.CSSProperties
-                  }
-                >
-                  {chip.label}
-                </span>
-              ))}
-              <textarea
-                ref={input}
-                className="pin-note__input"
-                rows={1}
-                value={draft}
-                placeholder={multi ? `Describe the change for all ${chips.length}` : "Describe the change"}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && hasModifier(e.nativeEvent)) {
-                    e.preventDefault();
-                    void commit();
-                  }
-                }}
-              />
-            </div>
-
-            <div className="pin-note__foot">
-              <span className="pin-note__meta">
-                {multi ? `${chips.length} pins selected` : `${pin.route} · ${pin.viewport.width}`}
-              </span>
-              {/* Relating N pins in one gesture, rather than dragging N wires:
-                  the first selected becomes the reference, the rest the targets. */}
-              {multi && (
-                <button className="pin-btn" style={{ height: 26 }} onClick={onRelate}>
-                  <LinkIcon size={13} />
-                  Relate
-                </button>
-              )}
-              <span className="pin-kbd">{submitHintLabel}</span>
-              <button
-                className="pin-note__send"
-                onClick={() => void commit()}
-                disabled={!draft.trim() || saving}
-                title={`Save annotation · ${submitHintLabel}`}
-                aria-label="Save annotation"
-              >
-                <ArrowUpRightIcon size={14} />
-              </button>
-            </div>
-          </div>
+          <Composer
+            chips={chips}
+            meta={multi ? `${chips.length} pins selected` : `${pin.route} · ${pin.viewport.width}`}
+            onCommit={onCommit}
+            onRelate={onRelate}
+            autoFocus
+          />
 
           {targetCount > 0 && !multi && (
             <div className="pin-note__rel">

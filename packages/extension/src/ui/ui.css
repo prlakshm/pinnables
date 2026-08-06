@@ -567,6 +567,17 @@
 }
 .pin-note__saved:hover { background: var(--pin-subtle); }
 
+/* Detached: parked under a multi-selection rather than docked to a card. */
+.pin-note--floating {
+  position: absolute;
+  margin-top: 0;
+  width: 360px;
+  min-width: 0;
+  pointer-events: auto;
+  box-shadow: var(--pin-shadow-lg);
+  z-index: 4;
+}
+
 /* Collapsed state — the pin is not selected but has a note worth showing. */
 .pin-note--collapsed {
   min-width: 0;
