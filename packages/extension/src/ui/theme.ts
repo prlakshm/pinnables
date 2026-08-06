@@ -30,7 +30,7 @@ export type Scheme = "light" | "dark";
  * What is left has a minimum separation of 42°, which is what makes five
  * simultaneous selections tellable apart at a glance.
  */
-export const SELECTION_HUES = ["blue", "purple", "green", "orange", "pink"] as const;
+export const SELECTION_HUES = ["blue", "purple", "green", "orange", "pink", "slate"] as const;
 export type SelectionHue = (typeof SELECTION_HUES)[number];
 
 /**
@@ -49,6 +49,16 @@ const HUES: Record<SelectionHue, string> = {
   green: "#3aab5f",
   orange: "#f2994b",
   pink: "#db4486",
+  /*
+   * Sixth, and the only one that does not compete on hue. There is no opening
+   * left on the wheel wider than 42° except the one yellow would fill, and
+   * yellow cannot hold contrast on white without darkening into the olive we
+   * already dropped. Slate sidesteps the problem: it sits near blue in hue but
+   * at roughly a quarter the saturation, so it separates on chroma and cannot
+   * crowd anything added later. Last in the rotation because it reads quieter
+   * than the other five, and a sixth simultaneous selection is rare.
+   */
+  slate: "#64748b",
 };
 
 /** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */
