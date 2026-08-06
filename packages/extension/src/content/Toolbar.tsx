@@ -14,9 +14,9 @@ interface ToolbarProps {
 const POSITION_KEY = "toolbarPosition";
 
 /**
- * Bottom-centre by default, not top — app headers and top navigation are
- * high-value pin targets, and a toolbar parked on them is in the way of the
- * thing you came to annotate.
+ * Top-centre by default, and draggable from the grip. Pinning tends to start at
+ * the top of a page, and a bar below the fold is a bar you forget is armed —
+ * the tradeoff is that it can sit over a header, which is what dragging is for.
  */
 export function Toolbar({ mode, onMode, pinCount, onOpenBoard, onExit }: ToolbarProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -57,9 +57,7 @@ export function Toolbar({ mode, onMode, pinCount, onOpenBoard, onExit }: Toolbar
     });
   }, []);
 
-  const placement = position
-    ? { left: position.x, top: position.y, bottom: "auto", transform: "none" }
-    : undefined;
+  const placement = position ? { left: position.x, top: position.y, transform: "none" } : undefined;
 
   const tools: Array<{ id: ToolMode; label: string; icon: React.ReactNode }> = [
     { id: "browse", label: "Browse the page", icon: <CursorIcon /> },

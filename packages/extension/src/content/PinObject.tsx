@@ -2,17 +2,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Board, Pin } from "@pinnables/shared";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
-import { CloseIcon, LinkIcon } from "../ui/icons";
+import { ArrowUpRightIcon, CloseIcon, LinkIcon } from "../ui/icons";
 import type { FloatPosition } from "./Overlay";
+
+export type AnchorEdge = "left" | "right" | "top" | "bottom";
+export const ANCHOR_EDGES: AnchorEdge[] = ["left", "right", "top", "bottom"];
 
 interface PinObjectProps {
   pin: Pin;
   board: Board;
   position: FloatPosition;
   pulse: boolean;
+  selected: boolean;
+  connecting: boolean;
+  onSelect: () => void;
   onMove: (position: FloatPosition) => void;
   onDismiss: () => void;
   onChanged: () => void;
+  onAnchorDown: (pinId: string, edge: AnchorEdge, event: React.PointerEvent) => void;
+  onAnchorEnter: (pinId: string, edge: AnchorEdge) => void;
+  onAnchorLeave: () => void;
 }
 
 /**
@@ -28,15 +37,22 @@ export function PinObject({
   board,
   position,
   pulse,
+  selected,
+  connecting,
+  onSelect,
   onMove,
   onDismiss,
   onChanged,
+  onAnchorDown,
+  onAnchorEnter,
+  onAnchorLeave,
 }: PinObjectProps) {
   const [shot, setShot] = useState<string | null>(null);
-  const [draft, setDraft] = useState(pin.annotation);
-  const [editing, setEditing] = useState(pin.annotation === "");
+  const [draft, setDraft] = useState("");
+  const [hovered, setHovered] = useState(false);
   const dragging = useRef<{ dx: number; dy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     void chrome.storage.local.get(`shot:${pin.id}`).then((bag) => {
@@ -44,15 +60,24 @@ export function PinObject({
     });
   }, [pin.id]);
 
-  useEffect(() => setDraft(pin.annotation), [pin.annotation]);
+  // Selecting a pin should put the caret where you can type, not make you hunt
+  // for the field.
+  useEffect(() => {
+    if (selected) input.current?.focus();
+    else setDraft("");
+  }, [selected]);
 
-  const onPointerDown = useCallback((event: React.PointerEvent) => {
-    if ((event.target as Element).closest("[data-no-drag]")) return;
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragging.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-  }, []);
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent) => {
+      if ((event.target as Element).closest("[data-no-drag]")) return;
+      onSelect();
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      dragging.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+      (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    },
+    [onSelect],
+  );
 
   const onPointerMove = useCallback(
     (event: React.PointerEvent) => {
@@ -67,60 +92,94 @@ export function PinObject({
   );
 
   const commit = useCallback(async () => {
-    if (draft === pin.annotation) {
-      setEditing(false);
-      return;
-    }
-    await send("pin/update", { pinId: pin.id, patch: { annotation: draft } });
-    setEditing(false);
+    const next = draft.trim();
+    if (!next) return;
+    // Appends rather than replaces — a pin accumulates notes the way a comment
+    // thread does, instead of the last one silently winning.
+    const annotation = pin.annotation ? `${pin.annotation}\n${next}` : next;
+    await send("pin/update", { pinId: pin.id, patch: { annotation } });
+    setDraft("");
     onChanged();
   }, [draft, pin.annotation, pin.id, onChanged]);
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
+  const showAnchors = selected || hovered || connecting;
 
   return (
     <div
       ref={ref}
       className="pin-object"
+      data-selected={selected}
+      data-pin-id={pin.id}
       style={{ left: position.x, top: position.y }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={() => (dragging.current = null)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <span className="pin-object__marker" data-pulse={pulse} aria-hidden />
 
       <div className="pin-object__card">
-        <div className="pin-object__meta">
-          <span>{pin.route}</span>
-          <span style={{ opacity: 0.7 }}>{pin.viewport.width}</span>
-          <button
-            className="pin-icon-btn"
-            data-no-drag
-            style={{ width: 20, height: 20, marginLeft: "auto", color: "inherit" }}
-            onClick={onDismiss}
-            title="Hide from this page — the pin stays on the board"
-            aria-label="Hide pin from page"
-          >
-            <CloseIcon size={13} />
-          </button>
+        <div className="pin-object__inner">
+          <div className="pin-object__meta">
+            <span>{pin.route}</span>
+            <span style={{ opacity: 0.7 }}>{pin.viewport.width}</span>
+            <button
+              className="pin-icon-btn"
+              data-no-drag
+              style={{ width: 20, height: 20, marginLeft: "auto", color: "inherit" }}
+              onClick={onDismiss}
+              title="Hide from this page — the pin stays on the board"
+              aria-label="Hide pin from page"
+            >
+              <CloseIcon size={13} />
+            </button>
+          </div>
+          {shot ? (
+            <img className="pin-object__shot" src={shot} alt={pin.elementText || "Pinned element"} />
+          ) : (
+            <div className="pin-object__shot" style={{ width: 180, height: 90 }} />
+          )}
         </div>
-        {shot ? (
-          <img className="pin-object__shot" src={shot} alt={pin.elementText || "Pinned element"} />
-        ) : (
-          <div className="pin-object__shot" style={{ width: 180, height: 90 }} />
-        )}
+
+        {/* Edge midpoints. Drag one onto another pin's anchor to relate them. */}
+        {showAnchors &&
+          ANCHOR_EDGES.map((edge) => (
+            <span
+              key={edge}
+              className="pin-anchor"
+              data-edge={edge}
+              data-no-drag
+              title="Drag to another pin to connect them"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                onAnchorDown(pin.id, edge, event);
+              }}
+              onPointerEnter={() => onAnchorEnter(pin.id, edge)}
+              onPointerLeave={onAnchorLeave}
+            />
+          ))}
       </div>
 
-      <div className="pin-object__annotation" data-no-drag>
-        {editing ? (
-          <>
+      {/* Selected: the note panel is open. Unselected with a note: one clamped
+          line. Unselected without one: nothing, so the pin stays a picture. */}
+      {selected ? (
+        <div className="pin-note" data-no-drag>
+          {pin.annotation && (
+            <div className="pin-note__saved">
+              <span>{pin.annotation}</span>
+            </div>
+          )}
+
+          <div className="pin-note__composer">
             <textarea
-              className="pin-field"
-              autoFocus
-              rows={2}
+              ref={input}
+              className="pin-note__input"
+              rows={1}
               value={draft}
-              placeholder="Add an annotation…"
+              placeholder={pin.annotation ? "Add another note…" : "Add an annotation…"}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && hasModifier(e.nativeEvent)) {
@@ -128,37 +187,35 @@ export function PinObject({
                   void commit();
                 }
               }}
-              onBlur={() => void commit()}
             />
             <span className="pin-kbd">{submitHintLabel}</span>
-          </>
-        ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
             <button
-              className="pin-object__annotation-text"
-              style={{ textAlign: "left" }}
-              onClick={() => setEditing(true)}
-              title="Edit annotation"
+              className="pin-note__send"
+              onClick={() => void commit()}
+              disabled={!draft.trim()}
+              title={`Save annotation · ${submitHintLabel}`}
+              aria-label="Save annotation"
             >
-              {pin.annotation}
+              <ArrowUpRightIcon size={14} />
             </button>
-            {targetCount > 0 && (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  fontSize: 11,
-                  color: "var(--pin-cobalt)",
-                }}
-              >
-                <LinkIcon size={13} />
-                source for {targetCount} pin{targetCount === 1 ? "" : "s"}
-              </span>
-            )}
           </div>
-        )}
-      </div>
+
+          {targetCount > 0 && (
+            <div className="pin-note__rel">
+              <LinkIcon size={13} />
+              source for {targetCount} pin{targetCount === 1 ? "" : "s"}
+            </div>
+          )}
+        </div>
+      ) : (
+        pin.annotation && (
+          <div className="pin-note pin-note--collapsed" data-no-drag>
+            <button className="pin-note__saved" onClick={onSelect} title="Open annotation">
+              <span>{pin.annotation}</span>
+            </button>
+          </div>
+        )
+      )}
     </div>
   );
 }

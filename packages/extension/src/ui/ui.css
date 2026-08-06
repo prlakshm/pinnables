@@ -1,39 +1,58 @@
 /*
  * One stylesheet for both surfaces. The side panel imports it directly; the
- * page overlay injects the same text into its shadow root, so a component
- * looks identical whether it is floating over someone's app or sitting in the
- * panel. Everything is namespaced --pin-* so nothing collides with the host
- * page even if the shadow boundary is ever removed.
+ * page overlay injects the same text into its shadow root, so a component looks
+ * identical whether it is floating over someone's app or sitting in the panel.
+ * Everything is namespaced --pin-* so nothing collides with the host page.
+ *
+ * Palette follows shadcn/Vercel: a zinc neutral ramp, near-black primary, and
+ * colour used only where it carries meaning. Two colours are reserved and never
+ * decorative —
+ *
+ *   --pin-select  blue, and only ever "this element or pin is selected"
+ *   --pin-red     the brand mark, and the connector dots that grow from it
+ *
+ * Everything else is neutral. That is what keeps the chrome quiet enough to sit
+ * on top of someone else's product without competing with it.
  */
 
 :where(.pin-root) {
-  --pin-paper: #f6f5f3;
-  --pin-surface: #ffffff;
-  --pin-line: #e4e2de;
-  --pin-line-strong: #c9c6c1;
-  --pin-ink: #292c33;
-  --pin-ink-muted: #6b6f78;
-  --pin-cobalt: #1e3fd8;
-  --pin-cobalt-hover: #1834b4;
-  --pin-sky: #9bd3f9;
-  --pin-sky-tint: #e4f1fd;
+  --pin-bg: #ffffff;
+  --pin-subtle: #fafafa;
+  --pin-muted: #f4f4f5;
+  --pin-border: #e4e4e7;
+  --pin-border-strong: #d4d4d8;
+  --pin-fg-faint: #a1a1aa;
+  --pin-fg-muted: #71717a;
+  --pin-fg: #09090b;
+
+  --pin-primary: #18181b;
+  --pin-primary-hover: #27272a;
+  --pin-on-primary: #fafafa;
+
+  --pin-select: #2563eb;
+  --pin-select-soft: rgba(37, 99, 235, 0.07);
+  --pin-select-ring: rgba(37, 99, 235, 0.18);
+
   --pin-red: #ed1c24;
-  --pin-amber-tint: #fdf1dd;
-  --pin-amber-ink: #8a5a08;
+  --pin-amber: #b45309;
+  --pin-amber-soft: #fffbeb;
+  --pin-green: #15803d;
 
-  --pin-radius-sm: 6px;
-  --pin-radius-md: 10px;
-  --pin-radius-lg: 14px;
+  --pin-r-sm: 6px;
+  --pin-r: 8px;
+  --pin-r-lg: 12px;
 
-  --pin-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pin-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
-  --pin-shadow-float: 0 1px 2px rgba(41, 44, 51, 0.08), 0 8px 24px rgba(41, 44, 51, 0.12);
+  /* Tight and low — Vercel/shadcn elevation reads as a crisp edge, not a haze. */
+  --pin-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 12px rgba(9, 9, 11, 0.08);
+  --pin-shadow-lg: 0 1px 2px rgba(9, 9, 11, 0.08), 0 8px 28px rgba(9, 9, 11, 0.12);
 
   font-family: var(--pin-font);
-  color: var(--pin-ink);
+  color: var(--pin-fg);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -65,39 +84,37 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 30px;
+  height: 32px;
   padding: 0 12px;
-  border-radius: var(--pin-radius-sm);
-  border: 1px solid var(--pin-line);
-  background: var(--pin-surface);
-  font-size: 12px;
+  border-radius: var(--pin-r-sm);
+  border: 1px solid var(--pin-border);
+  background: var(--pin-bg);
+  font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
   transition: background 120ms ease, border-color 120ms ease;
 }
 .pin-btn:hover {
-  background: var(--pin-paper);
-  border-color: var(--pin-line-strong);
+  background: var(--pin-muted);
 }
 .pin-btn--primary {
-  background: var(--pin-cobalt);
-  border-color: var(--pin-cobalt);
-  color: #fff;
+  background: var(--pin-primary);
+  border-color: var(--pin-primary);
+  color: var(--pin-on-primary);
 }
 .pin-btn--primary:hover {
-  background: var(--pin-cobalt-hover);
-  border-color: var(--pin-cobalt-hover);
+  background: var(--pin-primary-hover);
+  border-color: var(--pin-primary-hover);
 }
 .pin-btn--ghost {
   border-color: transparent;
   background: transparent;
 }
 .pin-btn--ghost:hover {
-  background: var(--pin-paper);
-  border-color: transparent;
+  background: var(--pin-muted);
 }
 .pin-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: default;
 }
 
@@ -108,17 +125,19 @@
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border-radius: 999px;
-  color: var(--pin-ink-muted);
+  border-radius: var(--pin-r-sm);
+  color: var(--pin-fg-muted);
   transition: background 120ms ease, color 120ms ease;
 }
 .pin-icon-btn:hover {
-  background: var(--pin-paper);
-  color: var(--pin-ink);
+  background: var(--pin-muted);
+  color: var(--pin-fg);
 }
+/* Active tool: neutral fill, not a colour wash. shadcn signals state with
+   contrast rather than hue, which keeps the accent free to mean selection. */
 .pin-icon-btn[data-active="true"] {
-  background: var(--pin-sky-tint);
-  color: var(--pin-cobalt);
+  background: var(--pin-fg);
+  color: var(--pin-bg);
 }
 
 .pin-chip {
@@ -126,19 +145,19 @@
   align-items: center;
   gap: 4px;
   height: 22px;
-  padding: 0 9px;
-  border-radius: 999px;
-  border: 1px solid var(--pin-line);
-  background: var(--pin-surface);
+  padding: 0 8px;
+  border-radius: var(--pin-r-sm);
+  border: 1px solid var(--pin-border);
+  background: var(--pin-bg);
   font-size: 11px;
   font-weight: 500;
-  color: var(--pin-ink-muted);
+  color: var(--pin-fg-muted);
   white-space: nowrap;
 }
 .pin-chip[data-on="true"] {
-  background: var(--pin-cobalt);
-  border-color: var(--pin-cobalt);
-  color: #fff;
+  background: var(--pin-fg);
+  border-color: var(--pin-fg);
+  color: var(--pin-bg);
 }
 .pin-chip--mono {
   font-family: var(--pin-mono);
@@ -154,38 +173,41 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--pin-sky-tint);
-  color: var(--pin-cobalt);
+  background: var(--pin-muted);
+  color: var(--pin-fg-muted);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .pin-kbd {
   font-family: var(--pin-mono);
   font-size: 10px;
-  color: var(--pin-ink-muted);
-  border: 1px solid var(--pin-line);
+  line-height: 1;
+  color: var(--pin-fg-faint);
+  padding: 3px 5px;
   border-radius: 4px;
-  padding: 1px 5px;
+  background: var(--pin-muted);
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .pin-field {
   width: 100%;
-  border: 1px solid var(--pin-line);
-  border-radius: var(--pin-radius-sm);
-  background: var(--pin-surface);
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r-sm);
+  background: var(--pin-bg);
   padding: 7px 9px;
-  font-size: 12px;
+  font-size: 13px;
   resize: none;
   outline: none;
 }
 .pin-field:focus {
-  border-color: var(--pin-cobalt);
-  box-shadow: 0 0 0 3px var(--pin-sky-tint);
+  border-color: var(--pin-border-strong);
+  box-shadow: 0 0 0 3px var(--pin-muted);
 }
 .pin-field::placeholder {
-  color: var(--pin-ink-muted);
+  color: var(--pin-fg-faint);
 }
 
 .pin-status {
@@ -195,15 +217,9 @@
   font-size: 11px;
   font-weight: 500;
 }
-.pin-status[data-status="todo"] {
-  color: var(--pin-ink-muted);
-}
-.pin-status[data-status="done"] {
-  color: #0f6e56;
-}
-.pin-status[data-status="blocked"] {
-  color: var(--pin-amber-ink);
-}
+.pin-status[data-status="todo"] { color: var(--pin-fg-muted); }
+.pin-status[data-status="done"] { color: var(--pin-green); }
+.pin-status[data-status="blocked"] { color: var(--pin-amber); }
 .pin-status-dot {
   width: 6px;
   height: 6px;
@@ -221,64 +237,67 @@
   z-index: 2147483000;
 }
 
+/* Hover target while picking. A crisp 1px outline plus the faintest wash —
+   enough to read the bounds without obscuring what is inside them. */
 .pin-highlight {
   position: fixed;
-  border: 2px solid var(--pin-cobalt);
-  border-radius: 3px;
-  background: rgba(30, 63, 216, 0.06);
+  outline: 1px solid var(--pin-select);
+  outline-offset: -1px;
+  border-radius: 2px;
+  background: var(--pin-select-soft);
   pointer-events: none;
   transition: all 60ms linear;
 }
 
 .pin-highlight__label {
   position: absolute;
-  top: -22px;
-  left: -2px;
+  top: -21px;
+  left: -1px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 7px;
+  height: 19px;
+  padding: 0 6px;
   border-radius: 4px;
-  background: var(--pin-cobalt);
+  background: var(--pin-select);
   color: #fff;
   font-family: var(--pin-mono);
   font-size: 10px;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
+/* Top-centre. Pinning starts at the top of a page far more often than the
+   bottom, and a bar that sits under the fold is a bar you forget is on. */
 .pin-toolbar {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  top: 16px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--pin-line);
-  background: var(--pin-surface);
-  box-shadow: var(--pin-shadow-float);
+  gap: 2px;
+  padding: 5px 6px;
+  border-radius: var(--pin-r-lg);
+  border: 1px solid var(--pin-border);
+  background: var(--pin-bg);
+  box-shadow: var(--pin-shadow);
   pointer-events: auto;
 }
 
 .pin-toolbar__grip {
   display: flex;
   align-items: center;
-  padding-right: 4px;
-  color: var(--pin-line-strong);
+  padding: 0 4px;
+  color: var(--pin-border-strong);
   cursor: grab;
 }
-.pin-toolbar__grip:active {
-  cursor: grabbing;
-}
+.pin-toolbar__grip:active { cursor: grabbing; }
 
 .pin-toolbar__divider {
   width: 1px;
   height: 18px;
-  background: var(--pin-line);
-  margin: 0 6px;
+  background: var(--pin-border);
+  margin: 0 5px;
   flex: 0 0 auto;
 }
 
@@ -287,53 +306,272 @@
   align-items: center;
   gap: 7px;
   height: 30px;
-  padding: 0 6px;
-  border-radius: var(--pin-radius-sm);
+  padding: 0 9px;
+  border-radius: var(--pin-r-sm);
   font-size: 13px;
   font-weight: 500;
 }
-.pin-toolbar__board:hover {
-  background: var(--pin-paper);
-}
+.pin-toolbar__board:hover { background: var(--pin-muted); }
 
-/*
- * Shown when the extension was reloaded out from under this page. Sits where
- * the toolbar would, so the user's eye lands on the explanation in the place
- * the controls just disappeared from.
- */
 .pin-stale {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  top: 16px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px 10px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--pin-line);
-  background: var(--pin-surface);
-  box-shadow: var(--pin-shadow-float);
-  font-size: 12px;
-  color: var(--pin-ink);
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--pin-r-lg);
+  border: 1px solid var(--pin-border);
+  background: var(--pin-bg);
+  box-shadow: var(--pin-shadow);
+  font-size: 13px;
   pointer-events: auto;
   max-width: calc(100vw - 32px);
 }
-
 .pin-stale__dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
   background: var(--pin-red);
   flex: 0 0 auto;
 }
 
-/* ---------------------------------------------------------------- draw mode */
+/* --------------------------------------------------------------- connectors */
+
+/* Relationship lines: hairline, neutral, drawn under the pins. The only colour
+   is the red dot at each end — the same mark as the logo tittle, so a
+   connection reads as the product's own gesture. */
+.pin-wires {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.pin-wire {
+  fill: none;
+  stroke: var(--pin-fg);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+.pin-wire--draft {
+  stroke: var(--pin-red);
+  stroke-dasharray: 4 4;
+  opacity: 0.9;
+}
+.pin-wire-dot {
+  fill: var(--pin-red);
+}
+
+/* Edge anchors: appear on the four edge midpoints when a pin is hovered or
+   selected, and are the handle you drag to another pin's anchor. */
+.pin-anchor {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--pin-red);
+  border: 2px solid var(--pin-bg);
+  box-shadow: 0 0 0 1px rgba(9, 9, 11, 0.12);
+  pointer-events: auto;
+  cursor: crosshair;
+  transition: transform 100ms ease;
+  z-index: 2;
+}
+.pin-anchor:hover { transform: scale(1.35); }
+.pin-anchor[data-edge="left"] { left: -6px; top: 50%; margin-top: -5.5px; }
+.pin-anchor[data-edge="right"] { right: -6px; top: 50%; margin-top: -5.5px; }
+.pin-anchor[data-edge="top"] { top: -6px; left: 50%; margin-left: -5.5px; }
+.pin-anchor[data-edge="bottom"] { bottom: -6px; left: 50%; margin-left: -5.5px; }
+
+/* ---------------------------------------------------------------- pin object */
+
+.pin-object {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: 340px;
+  pointer-events: auto;
+  cursor: grab;
+}
+.pin-object:active { cursor: grabbing; }
+
+.pin-object__card {
+  position: relative;
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r);
+  background: var(--pin-bg);
+  box-shadow: var(--pin-shadow);
+  overflow: visible;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+/* Selected is the one place blue appears on a pin. */
+.pin-object[data-selected="true"] .pin-object__card {
+  border-color: var(--pin-select);
+  box-shadow: 0 0 0 3px var(--pin-select-ring), var(--pin-shadow);
+}
+
+.pin-object__inner {
+  border-radius: var(--pin-r);
+  overflow: hidden;
+}
+
+.pin-object__shot {
+  display: block;
+  max-width: 336px;
+  max-height: 260px;
+  object-fit: contain;
+  background: var(--pin-muted);
+}
+
+.pin-object__marker {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--pin-bg);
+  border: 1px solid var(--pin-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: -11px;
+  z-index: 3;
+  flex: 0 0 auto;
+  box-shadow: var(--pin-shadow);
+}
+.pin-object__marker::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--pin-red);
+}
+.pin-object__marker[data-pulse="true"] {
+  animation: pin-pulse 620ms ease-out 1;
+}
+
+@keyframes pin-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(237, 28, 36, 0.4); }
+  100% { box-shadow: 0 0 0 16px rgba(237, 28, 36, 0); }
+}
+
+.pin-object__meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px 6px 9px;
+  border-bottom: 1px solid var(--pin-border);
+  background: var(--pin-subtle);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-fg-muted);
+}
+
+/* --------------------------------------------------------- annotation panel */
 
 /*
- * The frozen frame covers the viewport exactly, so the page appears to stop.
- * Everything drawn lands on this immutable image rather than on live DOM.
+ * Opens whenever the pin is selected and closes when it is not — so the input
+ * is never hunting for a click, and an unselected pin stays a picture of the
+ * thing rather than a form. An existing note collapses to one clamped line so
+ * a board full of pins does not turn into a wall of text.
  */
+.pin-note {
+  margin-top: 8px;
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r);
+  background: var(--pin-bg);
+  box-shadow: var(--pin-shadow);
+  min-width: 260px;
+  overflow: hidden;
+}
+
+.pin-note__saved {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pin-border);
+  font-size: 12px;
+  color: var(--pin-fg);
+  text-align: left;
+  width: 100%;
+}
+.pin-note__saved span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pin-note__saved:hover { background: var(--pin-subtle); }
+
+/* Collapsed state — the pin is not selected but has a note worth showing. */
+.pin-note--collapsed {
+  min-width: 0;
+  max-width: 300px;
+}
+.pin-note--collapsed .pin-note__saved {
+  border-bottom: none;
+  padding: 7px 10px;
+  color: var(--pin-fg-muted);
+  font-size: 11px;
+}
+.pin-note--collapsed .pin-note__saved span { -webkit-line-clamp: 1; }
+
+/* The composer. Placeholder left, shortcut hint right, send on the end —
+   matching the reference exactly. */
+.pin-note__composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+}
+
+.pin-note__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  padding: 4px 0;
+  resize: none;
+  max-height: 76px;
+  line-height: 1.45;
+}
+.pin-note__input::placeholder { color: var(--pin-fg-faint); }
+
+.pin-note__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--pin-primary);
+  color: var(--pin-on-primary);
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.pin-note__send:hover { background: var(--pin-primary-hover); }
+.pin-note__send:disabled {
+  background: var(--pin-muted);
+  color: var(--pin-fg-faint);
+  cursor: default;
+}
+
+.pin-note__rel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  color: var(--pin-fg-muted);
+}
+
+/* ---------------------------------------------------------------- draw mode */
+
 .pin-draw {
   position: fixed;
   inset: 0;
@@ -369,18 +607,17 @@
 .pin-draw__bar {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  top: 16px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--pin-line);
-  background: var(--pin-surface);
-  box-shadow: var(--pin-shadow-float);
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: var(--pin-r-lg);
+  border: 1px solid var(--pin-border);
+  background: var(--pin-bg);
+  box-shadow: var(--pin-shadow);
   max-width: calc(100vw - 32px);
-  flex-wrap: nowrap;
 }
 
 .pin-draw__swatch {
@@ -389,115 +626,17 @@
   border-radius: 999px;
   flex: 0 0 auto;
   border: 2px solid transparent;
-  box-shadow: inset 0 0 0 1px rgba(41, 44, 51, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12);
 }
-.pin-draw__swatch[data-active="true"] {
-  border-color: var(--pin-ink);
-}
+.pin-draw__swatch[data-active="true"] { border-color: var(--pin-fg); }
 
-/* --------------------------------------------------------------- pin object */
-
-.pin-object {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  width: max-content;
-  max-width: 340px;
-  pointer-events: auto;
-  cursor: grab;
-}
-.pin-object:active {
-  cursor: grabbing;
-}
-
-.pin-object__card {
-  border: 1.5px solid var(--pin-cobalt);
-  border-radius: var(--pin-radius-md);
-  background: var(--pin-surface);
-  box-shadow: var(--pin-shadow-float);
-  overflow: hidden;
-}
-
-.pin-object__shot {
-  display: block;
-  max-width: 336px;
-  max-height: 260px;
-  object-fit: contain;
-  background: var(--pin-paper);
-}
-
-.pin-object__marker {
-  align-self: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  background: var(--pin-sky-tint);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: -13px;
-  z-index: 1;
-  flex: 0 0 auto;
-}
-.pin-object__marker::after {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--pin-cobalt);
-}
-.pin-object__marker[data-pulse="true"] {
-  animation: pin-pulse 620ms ease-out 1;
-}
-
-@keyframes pin-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(30, 63, 216, 0.45);
-  }
-  100% {
-    box-shadow: 0 0 0 18px rgba(30, 63, 216, 0);
-  }
-}
-
-.pin-object__meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 7px;
-  background: var(--pin-sky-tint);
-  border-bottom: 1px solid rgba(30, 63, 216, 0.15);
-  font-family: var(--pin-mono);
-  font-size: 10px;
-  color: var(--pin-cobalt);
-}
-
-.pin-object__annotation {
-  margin-top: 8px;
-  border: 1px solid var(--pin-line);
-  border-radius: var(--pin-radius-md);
-  background: var(--pin-surface);
-  box-shadow: var(--pin-shadow-float);
-  padding: 8px 9px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 240px;
-}
-
-.pin-object__annotation-text {
-  flex: 1;
-  font-size: 12px;
-  color: var(--pin-ink);
-  white-space: pre-wrap;
-}
-
-/* -------------------------------------------------------------- side panel */
+/* --------------------------------------------------------------- side panel */
 
 .pin-panel {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--pin-paper);
+  background: var(--pin-bg);
 }
 
 .pin-panel__header {
@@ -505,47 +644,46 @@
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--pin-line);
-  background: var(--pin-surface);
+  border-bottom: 1px solid var(--pin-border);
   flex: 0 0 auto;
 }
 
 .pin-panel__tabs {
   display: flex;
-  gap: 2px;
-  padding: 8px 14px 0;
-  background: var(--pin-surface);
-  border-bottom: 1px solid var(--pin-line);
+  gap: 16px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--pin-border);
   flex: 0 0 auto;
 }
 
 .pin-tab {
-  padding: 7px 11px;
-  border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 0;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--pin-ink-muted);
-  border-bottom: 2px solid transparent;
+  color: var(--pin-fg-muted);
+  border-bottom: 1.5px solid transparent;
   margin-bottom: -1px;
 }
 .pin-tab[data-active="true"] {
-  color: var(--pin-cobalt);
-  border-bottom-color: var(--pin-cobalt);
+  color: var(--pin-fg);
+  border-bottom-color: var(--pin-fg);
 }
 
 .pin-panel__body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .pin-panel__footer {
   flex: 0 0 auto;
-  border-top: 1px solid var(--pin-line);
-  background: var(--pin-surface);
+  border-top: 1px solid var(--pin-border);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -553,14 +691,14 @@
 }
 
 .pin-card {
-  border: 1px solid var(--pin-line);
-  border-radius: var(--pin-radius-md);
-  background: var(--pin-surface);
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r);
+  background: var(--pin-bg);
   overflow: hidden;
 }
 .pin-card[data-selected="true"] {
-  border-color: var(--pin-cobalt);
-  box-shadow: 0 0 0 3px var(--pin-sky-tint);
+  border-color: var(--pin-select);
+  box-shadow: 0 0 0 3px var(--pin-select-ring);
 }
 
 .pin-row {
@@ -571,21 +709,19 @@
   width: 100%;
   text-align: left;
 }
-.pin-row:hover {
-  background: var(--pin-paper);
-}
+.pin-row:hover { background: var(--pin-subtle); }
 .pin-row[data-done="true"] .pin-row__title {
   text-decoration: line-through;
-  color: var(--pin-ink-muted);
+  color: var(--pin-fg-muted);
 }
 
 .pin-row__thumb {
-  width: 54px;
-  height: 40px;
+  width: 52px;
+  height: 38px;
   flex: 0 0 auto;
-  border: 1px solid var(--pin-line);
-  border-radius: 4px;
-  background: var(--pin-paper);
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r-sm);
+  background: var(--pin-muted);
   object-fit: cover;
 }
 
@@ -594,7 +730,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .pin-row__head {
@@ -604,7 +740,7 @@
 }
 
 .pin-row__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -614,13 +750,13 @@
 .pin-row__route {
   font-family: var(--pin-mono);
   font-size: 10px;
-  color: var(--pin-ink-muted);
+  color: var(--pin-fg-faint);
   flex: 0 0 auto;
 }
 
 .pin-row__note {
-  font-size: 11px;
-  color: var(--pin-ink-muted);
+  font-size: 12px;
+  color: var(--pin-fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -636,19 +772,19 @@
 }
 
 .pin-expand {
-  border-top: 1px solid var(--pin-line);
+  border-top: 1px solid var(--pin-border);
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 9px;
-  background: var(--pin-paper);
+  background: var(--pin-subtle);
 }
 
 .pin-expand__shot {
   width: 100%;
-  border: 1px solid var(--pin-line);
-  border-radius: var(--pin-radius-sm);
-  background: var(--pin-surface);
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r-sm);
+  background: var(--pin-bg);
   display: block;
 }
 
@@ -658,9 +794,7 @@
   gap: 4px 8px;
   font-size: 11px;
 }
-.pin-meta-grid dt {
-  color: var(--pin-ink-muted);
-}
+.pin-meta-grid dt { color: var(--pin-fg-muted); }
 .pin-meta-grid dd {
   margin: 0;
   font-family: var(--pin-mono);
@@ -668,10 +802,11 @@
   overflow-wrap: anywhere;
 }
 
+/* The style diff. Neutral chrome, so the values carry the emphasis. */
 .pin-diff {
-  border: 1px solid var(--pin-cobalt);
-  border-radius: var(--pin-radius-sm);
-  background: var(--pin-sky-tint);
+  border: 1px solid var(--pin-border);
+  border-radius: var(--pin-r-sm);
+  background: var(--pin-subtle);
   padding: 8px 9px;
   display: flex;
   flex-direction: column;
@@ -680,24 +815,23 @@
 
 .pin-diff__row {
   display: grid;
-  grid-template-columns: 86px 1fr auto 1fr;
-  gap: 6px;
+  grid-template-columns: 88px 1fr auto 1fr;
+  gap: 8px;
   align-items: baseline;
   font-family: var(--pin-mono);
   font-size: 10px;
 }
 .pin-diff__from {
-  color: var(--pin-ink-muted);
+  color: var(--pin-fg-faint);
+  text-decoration: line-through;
 }
-.pin-diff__arrow {
-  color: var(--pin-cobalt);
-}
+.pin-diff__arrow { color: var(--pin-fg-faint); }
 
 .pin-empty {
   padding: 32px 16px;
   text-align: center;
-  color: var(--pin-ink-muted);
-  font-size: 12px;
+  color: var(--pin-fg-muted);
+  font-size: 13px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -705,12 +839,10 @@
 }
 
 .pin-section-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--pin-ink-muted);
-  padding: 4px 2px 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pin-fg-muted);
+  padding: 6px 2px 2px;
 }
 
 .pin-banner {
@@ -718,9 +850,10 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: var(--pin-radius-sm);
-  background: var(--pin-amber-tint);
-  color: var(--pin-amber-ink);
-  font-size: 11px;
+  border-radius: var(--pin-r-sm);
+  border: 1px solid var(--pin-border);
+  background: var(--pin-amber-soft);
+  color: var(--pin-amber);
+  font-size: 12px;
   line-height: 1.5;
 }
