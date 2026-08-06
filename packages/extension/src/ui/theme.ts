@@ -18,19 +18,20 @@
 export type Scheme = "light" | "dark";
 
 /**
- * Five of Design Mode's eight, kept in its order — the sixth selection wraps
- * back to blue.
+ * Six hues, rose first.
  *
- * Three were dropped on measurement rather than taste. Teal sits 36° from green
- * and 29° from blue, the tightest crowding on the wheel. Olive is 2.3:1 on
- * white and reads muddy. Red is 28° from pink, and red is already spoken for by
- * the brand mark, so losing it from the selection set is a gain: it keeps red
- * meaning exactly one thing.
+ * The *system* is Design Mode's and worth keeping: a rotating set assigned per
+ * selection rather than one accent, so the chrome never has to match a page it
+ * has never seen — it only has to stay distinguishable from its siblings.
  *
- * What is left has a minimum separation of 42°, which is what makes five
- * simultaneous selections tellable apart at a glance.
+ * The *values* are ours. Using Cursor's literal palette in a product positioned
+ * against Cursor would read as a reskin rather than an argument, and the
+ * ordering gave it away as much as the colours did. So these are derived to the
+ * same constraints — 42 degrees minimum separation, mid-lightness so one value
+ * serves both schemes, muted enough not to fight the product underneath — in a
+ * softer register, and rose leads instead of blue.
  */
-export const SELECTION_HUES = ["blue", "purple", "green", "orange", "pink", "slate"] as const;
+export const SELECTION_HUES = ["rose", "plum", "fern", "apricot", "sky", "stone"] as const;
 export type SelectionHue = (typeof SELECTION_HUES)[number];
 
 /**
@@ -44,21 +45,22 @@ export type SelectionHue = (typeof SELECTION_HUES)[number];
  * a second palette.
  */
 const HUES: Record<SelectionHue, string> = {
-  blue: "#3996dd",
-  purple: "#9b59b6",
-  green: "#3aab5f",
-  orange: "#f2994b",
-  pink: "#db4486",
+  rose: "#e0708c",
+  plum: "#a865c0",
+  fern: "#5aa876",
+  apricot: "#eda265",
+  sky: "#6aa6d4",
   /*
-   * Sixth, and the only one that does not compete on hue. There is no opening
-   * left on the wheel wider than 42° except the one yellow would fill, and
-   * yellow cannot hold contrast on white without darkening into the olive we
-   * already dropped. Slate sidesteps the problem: it sits near blue in hue but
-   * at roughly a quarter the saturation, so it separates on chroma and cannot
-   * crowd anything added later. Last in the rotation because it reads quieter
-   * than the other five, and a sixth simultaneous selection is rare.
+   * Sixth, and the only one that does not compete on hue. No opening is left on
+   * the wheel wider than 42° except the one yellow would fill, and yellow
+   * cannot hold contrast on white without darkening into an olive. This
+   * separates on chroma instead — near-neutral, so it cannot crowd anything
+   * added later — and is deepened to 3.9:1, because the softer greys it came
+   * from sat at 2.6:1 and vanished against a white header. Last in the
+   * rotation: it reads quieter than the other five, and six simultaneous
+   * selections are rare.
    */
-  slate: "#64748b",
+  stone: "#8a8079",
 };
 
 /** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */

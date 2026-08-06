@@ -35,15 +35,15 @@
    * it is transient — it exists for the half second before you click, never
    * alongside a second one, so it has nothing to be distinguishable from.
    */
-  --pin-select: #3996dd;
-  --pin-select-soft: rgba(57, 150, 221, 0.1);
-  --pin-select-ring: rgba(57, 150, 221, 0.2);
+  --pin-select: #e0708c;
+  --pin-select-soft: rgba(224, 112, 140, 0.1);
+  --pin-select-ring: rgba(224, 112, 140, 0.2);
 
   /* Set per pin from the hue set. Falls back so a stray element still renders.
      --pin-hue strokes, --pin-hue-text labels, --pin-hue-soft fills. */
-  --pin-hue: #3996dd;
-  --pin-hue-text: #3996dd;
-  --pin-hue-soft: rgba(57, 150, 221, 0.1);
+  --pin-hue: #e0708c;
+  --pin-hue-text: #e0708c;
+  --pin-hue-soft: rgba(224, 112, 140, 0.1);
 
   --pin-red: #ed1c24;
   --pin-amber: #b45309;
@@ -88,9 +88,9 @@
   --pin-primary-hover: #e6e5df;
   --pin-on-primary: #26251e;
 
-  --pin-select: #3996dd;
-  --pin-select-soft: rgba(57, 150, 221, 0.18);
-  --pin-select-ring: rgba(57, 150, 221, 0.3);
+  --pin-select: #e0708c;
+  --pin-select-soft: rgba(224, 112, 140, 0.18);
+  --pin-select-ring: rgba(224, 112, 140, 0.3);
 
   --pin-amber: #fbbf24;
   --pin-amber-soft: #292215;
