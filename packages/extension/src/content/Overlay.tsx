@@ -4,7 +4,7 @@ import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from ".
 import { ExtensionReloadedError, send } from "../lib/messages";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
-import { PinObject, type AnchorEdge } from "./PinObject";
+import { PinObject, type AnchorEdge, type SelectionChip } from "./PinObject";
 import { DrawLayer } from "./DrawLayer";
 import { detectScheme, hueForPin, hueTokens, watchScheme, type Scheme } from "../ui/theme";
 
@@ -81,7 +81,11 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [justPinned, setJustPinned] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [stale, setStale] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  /**
+   * Ordered, because the first selected pin is the reference when relating a
+   * group and the last is the one that renders the composer.
+   */
+  const [selected, setSelected] = useState<string[]>([]);
   const [connecting, setConnecting] = useState<Connecting | null>(null);
   const [cardRects, setCardRects] = useState<Record<string, DOMRect>>({});
   const [scheme, setScheme] = useState<Scheme>(() => detectScheme());
@@ -149,6 +153,56 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     void chrome.storage.local.set({ [posKey(pinId)]: position });
   }, []);
 
+  /* ---------------------------------------------------------- multi-select */
+
+  /**
+   * Plain click replaces the selection; meta, ctrl or shift adds to it, and
+   * re-clicking a selected pin removes it. Order is kept because the first pin
+   * is the reference when relating a group.
+   */
+  const selectPin = useCallback((pinId: string, additive: boolean) => {
+    setSelected((prev) => {
+      if (!additive) return prev.length === 1 && prev[0] === pinId ? prev : [pinId];
+      return prev.includes(pinId) ? prev.filter((id) => id !== pinId) : [...prev, pinId];
+    });
+  }, []);
+
+  /** One prompt, however many pins — the note is appended to each in turn. */
+  const commitNote = useCallback(
+    async (text: string) => {
+      const pins = board?.pins ?? [];
+      for (const pinId of selected) {
+        const pin = pins.find((p) => p.id === pinId);
+        if (!pin) continue;
+        const annotation = pin.annotation ? `${pin.annotation}\n${text}` : text;
+        try {
+          await send("pin/update", { pinId, patch: { annotation } });
+        } catch (err) {
+          if (guard(err)) return;
+          throw err;
+        }
+      }
+      api.refresh();
+    },
+    [selected, board, api, guard],
+  );
+
+  /**
+   * Relate the whole selection in one gesture instead of dragging N wires: the
+   * first pin selected becomes the reference, every later one a target — which
+   * is exactly the one-source-many-targets shape the schema already holds.
+   */
+  const relateSelected = useCallback(async () => {
+    const [source, ...targets] = selected;
+    if (!source || targets.length === 0) return;
+    try {
+      await send("relationship/create", { sourcePinId: source, targetPinIds: targets });
+      api.refresh();
+    } catch (err) {
+      if (!guard(err)) console.error("[pinnables] could not relate pins", err);
+    }
+  }, [selected, api, guard]);
+
   /* ------------------------------------------------------- connector layout */
 
   /**
@@ -175,7 +229,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [positions, board, selected, dismissed]);
+  }, [positions, board, selected.length, dismissed]);
 
   const onAnchorDown = useCallback((pinId: string, edge: AnchorEdge, event: React.PointerEvent) => {
     setConnecting({ fromPinId: pinId, fromEdge: edge, cursor: { x: event.clientX, y: event.clientY } });
@@ -263,7 +317,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         });
         setJustPinned(pin.id);
         // Newly captured is newly selected — the composer opens ready to type.
-        setSelected(pin.id);
+        setSelected([pin.id]);
         window.setTimeout(() => setJustPinned((id) => (id === pin.id ? null : id)), 900);
       } catch (err) {
         if (!guard(err)) console.error("[pinnables] capture failed", err);
@@ -304,12 +358,12 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         .composedPath()
         .some((n) => n instanceof Element && n.classList?.contains("pin-object"));
       if (insidePin || !target) return;
-      setSelected(null);
+      setSelected([]);
     };
 
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [state.enabled, selected]);
+  }, [state.enabled, selected.length]);
 
   /* -------------------------------------------------------------- esc layer */
 
@@ -337,9 +391,9 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         setConnecting(null);
         return;
       }
-      if (selected) {
+      if (selected.length > 0) {
         event.preventDefault();
-        setSelected(null);
+        setSelected([]);
         return;
       }
       if (mode !== "browse") {
@@ -353,7 +407,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [state.enabled, mode, selected, connecting, guard]);
+  }, [state.enabled, mode, selected.length, connecting, guard]);
 
   /* --------------------------------------------------------- reveal a pin */
 
@@ -395,6 +449,17 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
   const pins: Pin[] = board?.pins ?? [];
   const drawing = mode === "draw";
+
+  // The last pin selected renders the composer; the rest contribute a chip.
+  const primaryPinId = selected.length > 0 ? selected[selected.length - 1] : null;
+  const chips: SelectionChip[] = selected
+    .map((id) => pins.find((p) => p.id === id))
+    .filter((p): p is Pin => p !== undefined)
+    .map((p) => ({
+      id: p.id,
+      label: p.componentName ?? p.elementText.slice(0, 24) ?? "element",
+      hue: hueTokens(hueForPin(p.id), scheme),
+    }));
   const visible = drawing ? [] : pins.filter((p) => !dismissed.has(p.id));
 
   // Existing relationships, resolved to on-screen endpoints. A wire takes its
@@ -472,13 +537,16 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           board={board!}
           position={positions[pin.id] ?? { x: 24, y: 96 }}
           pulse={justPinned === pin.id}
-          selected={selected === pin.id}
+          selected={selected.includes(pin.id)}
+          primary={primaryPinId === pin.id}
+          chips={chips}
           connecting={connecting !== null}
           hue={hueTokens(hueForPin(pin.id), scheme)}
-          onSelect={() => setSelected(pin.id)}
+          onSelect={(additive) => selectPin(pin.id, additive)}
           onMove={(next) => persistPosition(pin.id, next)}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}
-          onChanged={api.refresh}
+          onCommit={commitNote}
+          onRelate={relateSelected}
           onAnchorDown={onAnchorDown}
           onAnchorEnter={(pinId, edge) => (hoverAnchor.current = { pinId, edge })}
           onAnchorLeave={() => (hoverAnchor.current = null)}

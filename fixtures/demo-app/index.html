@@ -7,12 +7,13 @@
 <!--
   A deliberately inconsistent app to pin things in.
 
-  The card styles here are the ones the fixture board complains about, so the
-  demo board's story and this app agree: the Settings plan card is the good
-  one, and the two Dashboard cards have drifted away from it.
+  Long enough to scroll, and dense enough that multi-select has something to
+  chew on. The inconsistencies are the point: the Settings plan card is the good
+  one, and everything on Dashboard has drifted from it in a different direction,
+  so a board built here has real relationships to describe.
 
   Routes are hash-based so navigating exercises the SPA path — the content
-  script survives, and floating pins have to persist across the change.
+  script survives and floating pins have to persist across the change.
 
   data-pin-source stands in for the dev-time Vite plugin, so source mapping can
   be demonstrated before that plugin exists.
@@ -28,6 +29,7 @@
   header {
     display: flex; align-items: center; gap: 22px;
     padding: 14px 28px; background: #fff; border-bottom: 1px solid #e6e4e0;
+    position: sticky; top: 0; z-index: 5;
   }
   header b { font-size: 15px; }
   nav { display: flex; gap: 4px; }
@@ -35,38 +37,75 @@
     padding: 6px 12px; border-radius: 7px; text-decoration: none;
     color: #6b6f78; font-size: 14px;
   }
-  nav a.on { background: #eef3fd; color: #1e3fd8; }
-  main { padding: 30px 28px; max-width: 940px; }
+  nav a.on { background: #eef3fd; color: #2f6fd0; }
+  main { padding: 30px 28px 96px; max-width: 1040px; }
   h1 { font-size: 25px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 34px 0 12px; }
   .sub { color: #6b6f78; margin: 0 0 24px; font-size: 14px; }
   .grid { display: flex; gap: 18px; flex-wrap: wrap; }
   .label { font-size: 13px; color: #6b6f78; }
   .big { font-size: 27px; font-weight: 600; margin-top: 6px; }
+  .delta { font-size: 12px; color: #2f9e56; margin-top: 4px; }
+  .delta.down { color: #d0453c; }
 
   /* Drifted — too much vertical padding, radius matches nothing. */
   .stat-card {
     background: #fff; padding: 32px 24px; border-radius: 4px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.06); flex: 1; min-width: 210px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06); flex: 1; min-width: 190px;
   }
   /* Drifted — same padding problem, and no shadow at all. */
   .activity-card {
     background: #fff; padding: 28px 24px; border-radius: 6px;
-    flex: 1; min-width: 260px;
+    flex: 1; min-width: 250px;
   }
-  /* The good one. This is the reference every other card should match. */
+  /* Drifted a third way — tighter, but a hairline border instead of a shadow. */
+  .mini-card {
+    background: #fff; padding: 14px 16px; border: 1px solid #e6e4e0;
+    border-radius: 10px; flex: 1; min-width: 170px;
+  }
+  /* The good one. Every other card should match this. */
   .plan-card {
     background: #fff; padding: 16px 20px; border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,.08); max-width: 300px;
+  }
+  .panel {
+    background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.06);
+    padding: 18px 20px; margin-bottom: 16px;
   }
   .empty {
     border: 1px dashed #d4d4d4; border-radius: 2px; padding: 40px;
     text-align: center; color: #6b6f78;
   }
-  button {
-    font: inherit; border: none; background: #1e3fd8; color: #fff;
-    padding: 9px 16px; border-radius: 8px; cursor: pointer; margin-top: 12px;
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left; font-weight: 500; color: #6b6f78; font-size: 12px;
+    padding: 8px 10px; border-bottom: 1px solid #e6e4e0;
   }
+  td { padding: 11px 10px; border-bottom: 1px solid #f0efec; }
+  .pill {
+    font-size: 12px; padding: 2px 9px; border-radius: 999px;
+    background: #eef6f0; color: #2f7d4f;
+  }
+  .pill.warn { background: #fdf3e3; color: #96631a; }
+  .pill.off { background: #f1f1ef; color: #6b6f78; }
+  button {
+    font: inherit; border: none; background: #2f6fd0; color: #fff;
+    padding: 9px 16px; border-radius: 8px; cursor: pointer;
+  }
+  button.ghost { background: #f1f1ef; color: #1c1e22; }
+  /* Drifted — a fourth button treatment, sharper and darker. */
+  button.legacy { background: #1c1e22; border-radius: 3px; padding: 10px 14px; }
   ul { margin: 10px 0 0; padding-left: 18px; color: #6b6f78; font-size: 14px; }
+  li { margin-bottom: 5px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid #f0efec; }
+  .avatar { width: 32px; height: 32px; border-radius: 999px; background: #e6e4e0; flex: 0 0 auto; }
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; max-width: 380px; }
+  input, select {
+    font: inherit; padding: 8px 10px; border: 1px solid #d9d7d2;
+    border-radius: 6px; background: #fff;
+  }
+  /* Drifted — a second input style with a different radius and border. */
+  input.legacy { border: 2px solid #e6e4e0; border-radius: 2px; padding: 10px; }
 </style>
 </head>
 <body>
@@ -83,41 +122,178 @@
 <main id="view"></main>
 
 <script>
+const stat = (label, value, delta, down) => `
+  <article class="stat-card" data-pin-source="src/components/StatCard.tsx:12" data-pin-component="StatCard">
+    <div class="label">${label}</div>
+    <div class="big">${value}</div>
+    <div class="delta${down ? " down" : ""}">${delta}</div>
+  </article>`;
+
+const mini = (label, value) => `
+  <article class="mini-card" data-pin-source="src/components/MiniCard.tsx:7" data-pin-component="MiniCard">
+    <div class="label">${label}</div>
+    <div class="big" style="font-size:20px">${value}</div>
+  </article>`;
+
+const projectRow = (name, status, cls, updated, owner) => `
+  <tr data-pin-source="src/components/ProjectRow.tsx:19" data-pin-component="ProjectRow">
+    <td>${name}</td>
+    <td><span class="pill ${cls}">${status}</span></td>
+    <td>${updated}</td>
+    <td>${owner}</td>
+  </tr>`;
+
+const person = (name, role) => `
+  <div class="row" data-pin-source="src/components/TeamRow.tsx:11" data-pin-component="TeamRow">
+    <span class="avatar"></span>
+    <div><div style="font-size:14px">${name}</div><div class="label">${role}</div></div>
+  </div>`;
+
 const views = {
   "/dashboard": `
     <h1>Dashboard</h1>
-    <p class="sub">Two cards here have drifted from the Settings card.</p>
+    <p class="sub">Four card treatments on one page. None of them agree.</p>
+
     <div class="grid">
-      <article class="stat-card" data-pin-source="src/components/StatCard.tsx:12" data-pin-component="StatCard">
-        <div class="label">Active users</div>
-        <div class="big">2,481</div>
-      </article>
-      <article class="stat-card" data-pin-source="src/components/StatCard.tsx:12" data-pin-component="StatCard">
-        <div class="label">Revenue</div>
-        <div class="big">$18,204</div>
+      ${stat("Active users", "2,481", "↑ 12% vs last 30 days")}
+      ${stat("Revenue", "$18,204", "↑ 8% vs last 30 days")}
+      ${stat("Open issues", "37", "↓ 3% vs last 30 days", true)}
+    </div>
+
+    <h2>At a glance</h2>
+    <div class="grid">
+      ${mini("Deployments", "128")}
+      ${mini("Contributors", "18")}
+      ${mini("Environments", "4")}
+      ${mini("Integrations", "9")}
+    </div>
+
+    <h2>Recent activity</h2>
+    <div class="grid">
+      <article class="activity-card" data-pin-source="src/components/ActivityCard.tsx:21" data-pin-component="ActivityCard">
+        <div class="label">This week</div>
+        <ul>
+          <li>Invite accepted — Sam Designer</li>
+          <li>Plan upgraded to Team</li>
+          <li>Report exported to CSV</li>
+          <li>Two environments created</li>
+          <li>Billing address updated</li>
+        </ul>
       </article>
       <article class="activity-card" data-pin-source="src/components/ActivityCard.tsx:21" data-pin-component="ActivityCard">
-        <div class="label">Recent activity</div>
-        <ul><li>Invite accepted</li><li>Plan upgraded</li><li>Report exported</li></ul>
+        <div class="label">Last week</div>
+        <ul>
+          <li>Composer run completed</li>
+          <li>Three pull requests merged</li>
+          <li>Design system synced</li>
+          <li>Two members removed</li>
+        </ul>
       </article>
+    </div>
+
+    <h2>Projects</h2>
+    <div class="panel" data-pin-source="src/components/ProjectTable.tsx:8" data-pin-component="ProjectTable">
+      <table>
+        <thead><tr><th>Project</th><th>Status</th><th>Updated</th><th>Owner</th></tr></thead>
+        <tbody>
+          ${projectRow("Web App", "Active", "", "2h ago", "Jane Developer")}
+          ${projectRow("Design System", "Active", "", "5h ago", "Sam Designer")}
+          ${projectRow("Docs Site", "Review", "warn", "1d ago", "Alex Frontend")}
+          ${projectRow("Marketing", "Paused", "off", "3d ago", "Taylor DevOps")}
+          ${projectRow("Mobile", "Active", "", "4d ago", "Jane Developer")}
+          ${projectRow("Internal Tools", "Paused", "off", "1w ago", "Alex Frontend")}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Team</h2>
+    <div class="panel" data-pin-source="src/components/TeamPanel.tsx:6" data-pin-component="TeamPanel">
+      ${person("Jane Developer", "Engineering Lead")}
+      ${person("Alex Frontend", "Senior Engineer")}
+      ${person("Sam Designer", "Product Designer")}
+      ${person("Taylor DevOps", "DevOps Engineer")}
+      ${person("Morgan Data", "Analytics")}
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button>Invite member</button>
+        <button class="ghost">Manage roles</button>
+        <button class="legacy">Export list</button>
+      </div>
     </div>`,
 
   "/settings": `
     <h1>Settings</h1>
     <p class="sub">Manage your preferences and workspace settings.</p>
+
+    <h2>Plan</h2>
     <article class="plan-card" data-pin-source="src/components/SettingsCard.tsx:8" data-pin-component="SettingsCard">
       <div class="label">Team plan</div>
       <div class="big">$29</div>
       <div class="label">per user / month</div>
-      <button>Get started</button>
-    </article>`,
+      <button style="margin-top:12px">Get started</button>
+    </article>
+
+    <h2>Workspace</h2>
+    <div class="panel" data-pin-source="src/components/WorkspaceForm.tsx:14" data-pin-component="WorkspaceForm">
+      <div class="field">
+        <span class="label">Workspace name</span>
+        <input value="Acme Inc." />
+      </div>
+      <div class="field">
+        <span class="label">Workspace ID</span>
+        <input class="legacy" value="ws_8f3e2d7a" readonly />
+      </div>
+      <div class="field">
+        <span class="label">Default environment</span>
+        <select><option>Production</option><option>Staging</option></select>
+      </div>
+      <button>Save changes</button>
+    </div>
+
+    <h2>Preferences</h2>
+    <div class="panel" data-pin-source="src/components/PreferencesPanel.tsx:9" data-pin-component="PreferencesPanel">
+      <div class="row"><div style="flex:1">Theme</div><span class="label">System</span></div>
+      <div class="row"><div style="flex:1">Time zone</div><span class="label">GMT+0</span></div>
+      <div class="row"><div style="flex:1">Weekly digest</div><span class="pill">On</span></div>
+      <div class="row"><div style="flex:1">Product updates</div><span class="pill off">Off</span></div>
+    </div>
+
+    <h2>Data</h2>
+    <div class="panel" data-pin-source="src/components/DataPanel.tsx:5" data-pin-component="DataPanel">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="flex:1">
+          <div style="font-size:14px">Export data</div>
+          <div class="label">Download a copy of your workspace data.</div>
+        </div>
+        <button class="ghost">Export</button>
+      </div>
+    </div>`,
 
   "/reports": `
     <h1>Reports</h1>
     <p class="sub">Nothing generated yet.</p>
+
     <div class="empty" data-pin-source="src/components/EmptyState.tsx:5" data-pin-component="EmptyState">
       <div>No reports yet</div>
-      <button>Create report</button>
+      <button style="margin-top:12px">Create report</button>
+    </div>
+
+    <h2>Templates</h2>
+    <div class="grid">
+      ${mini("Usage summary", "Monthly")}
+      ${mini("Billing", "Quarterly")}
+      ${mini("Activity log", "Weekly")}
+    </div>
+
+    <h2>Scheduled</h2>
+    <div class="panel" data-pin-source="src/components/ScheduleTable.tsx:8" data-pin-component="ScheduleTable">
+      <table>
+        <thead><tr><th>Report</th><th>Status</th><th>Next run</th><th>Owner</th></tr></thead>
+        <tbody>
+          ${projectRow("Weekly usage", "Active", "", "in 2d", "Jane Developer")}
+          ${projectRow("Billing summary", "Paused", "off", "—", "Morgan Data")}
+          ${projectRow("Audit log", "Review", "warn", "in 5d", "Taylor DevOps")}
+        </tbody>
+      </table>
     </div>`,
 };
 
@@ -127,6 +303,7 @@ function render() {
   document.querySelectorAll("nav a").forEach((a) => {
     a.classList.toggle("on", a.dataset.route === route);
   });
+  window.scrollTo(0, 0);
 }
 
 addEventListener("hashchange", render);

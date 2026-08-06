@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Board, Pin } from "@pinnables/shared";
-import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, CloseIcon, LinkIcon } from "../ui/icons";
 import type { HueTokens } from "../ui/theme";
@@ -9,18 +8,29 @@ import type { FloatPosition } from "./Overlay";
 export type AnchorEdge = "left" | "right" | "top" | "bottom";
 export const ANCHOR_EDGES: AnchorEdge[] = ["left", "right", "top", "bottom"];
 
+/** One entry per selected pin, for the composer's chip row. */
+export interface SelectionChip {
+  id: string;
+  label: string;
+  hue: HueTokens;
+}
+
 interface PinObjectProps {
   pin: Pin;
   board: Board;
   position: FloatPosition;
   pulse: boolean;
   selected: boolean;
+  /** Only the primary pin renders the composer — one prompt, however many pins. */
+  primary: boolean;
+  chips: SelectionChip[];
   connecting: boolean;
   hue: HueTokens;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onMove: (position: FloatPosition) => void;
   onDismiss: () => void;
-  onChanged: () => void;
+  onCommit: (text: string) => Promise<void>;
+  onRelate: () => void;
   onAnchorDown: (pinId: string, edge: AnchorEdge, event: React.PointerEvent) => void;
   onAnchorEnter: (pinId: string, edge: AnchorEdge) => void;
   onAnchorLeave: () => void;
@@ -40,18 +50,22 @@ export function PinObject({
   position,
   pulse,
   selected,
+  primary,
+  chips,
   connecting,
   hue,
   onSelect,
   onMove,
   onDismiss,
-  onChanged,
+  onCommit,
+  onRelate,
   onAnchorDown,
   onAnchorEnter,
   onAnchorLeave,
 }: PinObjectProps) {
   const [shot, setShot] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
   const [hovered, setHovered] = useState(false);
   const dragging = useRef<{ dx: number; dy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -63,17 +77,15 @@ export function PinObject({
     });
   }, [pin.id]);
 
-  // Selecting a pin should put the caret where you can type, not make you hunt
-  // for the field.
   useEffect(() => {
-    if (selected) input.current?.focus();
+    if (primary) input.current?.focus();
     else setDraft("");
-  }, [selected]);
+  }, [primary]);
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
       if ((event.target as Element).closest("[data-no-drag]")) return;
-      onSelect();
+      onSelect(event.metaKey || event.ctrlKey || event.shiftKey);
       const rect = ref.current?.getBoundingClientRect();
       if (!rect) return;
       dragging.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
@@ -96,21 +108,22 @@ export function PinObject({
 
   const commit = useCallback(async () => {
     const next = draft.trim();
-    if (!next) return;
-    // Appends rather than replaces — a pin accumulates notes the way a comment
-    // thread does, instead of the last one silently winning.
-    const annotation = pin.annotation ? `${pin.annotation}\n${next}` : next;
-    await send("pin/update", { pinId: pin.id, patch: { annotation } });
-    setDraft("");
-    onChanged();
-  }, [draft, pin.annotation, pin.id, onChanged]);
+    if (!next || saving) return;
+    setSaving(true);
+    try {
+      await onCommit(next);
+      setDraft("");
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, saving, onCommit]);
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
   // Hover only. Anchors on every selected pin would leave four dots sitting on
   // the card the whole time you are writing a note.
   const showAnchors = hovered || connecting;
-  const label = pin.componentName ?? pin.elementText.slice(0, 28) ?? "element";
+  const multi = chips.length > 1;
 
   return (
     <div
@@ -158,7 +171,6 @@ export function PinObject({
           )}
         </div>
 
-        {/* Edge midpoints. Drag one onto another pin's anchor to relate them. */}
         {showAnchors &&
           ANCHOR_EDGES.map((edge) => (
             <span
@@ -177,28 +189,39 @@ export function PinObject({
           ))}
       </div>
 
-      {/* Selected: the note panel is open. Unselected with a note: one clamped
-          line. Unselected without one: nothing, so the pin stays a picture. */}
-      {selected ? (
+      {primary ? (
         <div className="pin-note" data-no-drag>
-          {pin.annotation && (
+          {pin.annotation && !multi && (
             <div className="pin-note__saved">
               <span>{pin.annotation}</span>
             </div>
           )}
 
           <div className="pin-note__body">
-            {/* Chips lead the line and the prompt continues after them, the way
-                Cursor's composer reads. The chip carries the pin's hue so it is
-                traceable back to its card without reading the label. */}
+            {/* A chip per selected pin, each in its own hue — the same trick
+                Cursor uses so a chip is traceable to its outline without
+                reading the label. */}
             <div className="pin-note__chips">
-              <span className="pin-note__chip">{label}</span>
+              {chips.map((chip) => (
+                <span
+                  key={chip.id}
+                  className="pin-note__chip"
+                  style={
+                    {
+                      "--pin-hue-text": chip.hue.text,
+                      "--pin-hue-soft": chip.hue.soft,
+                    } as React.CSSProperties
+                  }
+                >
+                  {chip.label}
+                </span>
+              ))}
               <textarea
                 ref={input}
                 className="pin-note__input"
                 rows={1}
                 value={draft}
-                placeholder={pin.annotation ? "Add another note…" : "Describe the change"}
+                placeholder={multi ? `Describe the change for all ${chips.length}` : "Describe the change"}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && hasModifier(e.nativeEvent)) {
@@ -211,13 +234,21 @@ export function PinObject({
 
             <div className="pin-note__foot">
               <span className="pin-note__meta">
-                {pin.route} · {pin.viewport.width}
+                {multi ? `${chips.length} pins selected` : `${pin.route} · ${pin.viewport.width}`}
               </span>
+              {/* Relating N pins in one gesture, rather than dragging N wires:
+                  the first selected becomes the reference, the rest the targets. */}
+              {multi && (
+                <button className="pin-btn" style={{ height: 26 }} onClick={onRelate}>
+                  <LinkIcon size={13} />
+                  Relate
+                </button>
+              )}
               <span className="pin-kbd">{submitHintLabel}</span>
               <button
                 className="pin-note__send"
                 onClick={() => void commit()}
-                disabled={!draft.trim()}
+                disabled={!draft.trim() || saving}
                 title={`Save annotation · ${submitHintLabel}`}
                 aria-label="Save annotation"
               >
@@ -226,7 +257,7 @@ export function PinObject({
             </div>
           </div>
 
-          {targetCount > 0 && (
+          {targetCount > 0 && !multi && (
             <div className="pin-note__rel">
               <LinkIcon size={13} />
               source for {targetCount} pin{targetCount === 1 ? "" : "s"}
@@ -234,9 +265,10 @@ export function PinObject({
           )}
         </div>
       ) : (
-        pin.annotation && (
+        pin.annotation &&
+        !selected && (
           <div className="pin-note pin-note--collapsed" data-no-drag>
-            <button className="pin-note__saved" onClick={onSelect} title="Open annotation">
+            <button className="pin-note__saved" onClick={() => onSelect(false)} title="Open annotation">
               <span>{pin.annotation}</span>
             </button>
           </div>
