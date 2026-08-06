@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Board, Pin } from "@pinnables/shared";
 import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from "../lib/capture";
-import { send } from "../lib/messages";
+import { ExtensionReloadedError, send } from "../lib/messages";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
 import { PinObject } from "./PinObject";
@@ -31,7 +31,23 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [justPinned, setJustPinned] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [stale, setStale] = useState(false);
   const hovered = useRef<Element | null>(null);
+
+  /**
+   * Reloading the extension leaves this script running in the page with a dead
+   * bridge to it. Nothing here can recover — only a page reload re-injects a
+   * script bound to the new context — so every caller funnels failures through
+   * here and the overlay switches to telling the user that, rather than failing
+   * silently into the console.
+   */
+  const guard = useCallback((err: unknown) => {
+    if (err instanceof ExtensionReloadedError) {
+      setStale(true);
+      return true;
+    }
+    return false;
+  }, []);
 
   /* ------------------------------------------------------------- board sync */
 
@@ -41,11 +57,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       .then(({ board: next }) => {
         if (!cancelled) setBoard(next);
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (!cancelled) guard(err);
+      });
     return () => {
       cancelled = true;
     };
-  }, [state.revision]);
+  }, [state.revision, guard]);
 
   useEffect(() => {
     if (!board) return;
@@ -71,7 +89,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     node instanceof Element && (node.id === OVERLAY_HOST_ID || node.closest(`#${OVERLAY_HOST_ID}`) !== null);
 
   useEffect(() => {
-    if (!state.enabled || mode !== "pin" || capturing) {
+    if (!state.enabled || mode !== "pin" || capturing || stale) {
       setHighlight(null);
       hovered.current = null;
       return;
@@ -101,7 +119,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
     document.addEventListener("mousemove", onMove, true);
     return () => document.removeEventListener("mousemove", onMove, true);
-  }, [state.enabled, mode, capturing]);
+  }, [state.enabled, mode, capturing, stale]);
 
   const capture = useCallback(async (element: Element) => {
     setCapturing(true);
@@ -119,15 +137,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       setJustPinned(pin.id);
       window.setTimeout(() => setJustPinned((id) => (id === pin.id ? null : id)), 900);
     } catch (err) {
-      console.error("[pinnables] capture failed", err);
+      if (!guard(err)) console.error("[pinnables] capture failed", err);
     } finally {
       unmask();
       setCapturing(false);
     }
-  }, [persistPosition]);
+  }, [persistPosition, guard]);
 
   useEffect(() => {
-    if (!state.enabled || mode !== "pin") return;
+    if (!state.enabled || mode !== "pin" || stale) return;
 
     const onClick = (event: MouseEvent) => {
       if (isOurs(event.target)) return;
@@ -140,7 +158,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [state.enabled, mode, capture]);
+  }, [state.enabled, mode, capture, stale]);
 
   /* -------------------------------------------------------------- esc layer */
 
@@ -205,9 +223,25 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   // so they stand down while a region is being marked.
   const visible = drawing ? [] : pins.filter((p) => !dismissed.has(p.id));
 
+  if (stale) {
+    return (
+      <div className="pin-overlay">
+        <div className="pin-stale" role="alert">
+          <span className="pin-stale__dot" />
+          <span>
+            Pinnables was reloaded. Refresh this page to keep pinning — your board is safe.
+          </span>
+          <button className="pin-btn pin-btn--primary" onClick={() => location.reload()}>
+            Refresh
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pin-overlay">
-      {drawing && <DrawLayer onDone={() => setMode("pin")} />}
+      {drawing && <DrawLayer onDone={() => setMode("pin")} onStale={() => setStale(true)} />}
 
       {highlight && !drawing && (
         <div

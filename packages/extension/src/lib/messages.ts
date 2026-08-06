@@ -93,11 +93,56 @@ export type Response<K extends RequestType> =
   | { ok: false; error: string };
 
 /** Typed sender used by the side panel and the content script. */
+/**
+ * Thrown when the extension was reloaded or updated while this content script
+ * was still live in the page. The script keeps running but its bridge to the
+ * extension is gone, so every message from here on fails.
+ *
+ * There is no recovery from inside the page — only a reload re-injects a script
+ * bound to the new context — so callers should surface this rather than retry.
+ */
+export class ExtensionReloadedError extends Error {
+  constructor() {
+    super("Pinnables was reloaded. Refresh the page to continue.");
+    this.name = "ExtensionReloadedError";
+  }
+}
+
+/**
+ * `chrome.runtime.id` reads undefined once the context is torn down, which is
+ * the only reliable check available before attempting a call.
+ */
+export function isContextAlive(): boolean {
+  try {
+    return Boolean(chrome.runtime?.id);
+  } catch {
+    return false;
+  }
+}
+
+const RELOADED_PATTERNS = [
+  "Extension context invalidated",
+  "Receiving end does not exist",
+  "message port closed",
+];
+
 export async function send<K extends RequestType>(
   type: K,
   payload: Contract[K]["req"] = {} as Contract[K]["req"],
 ): Promise<Contract[K]["res"]> {
-  const res = (await chrome.runtime.sendMessage({ type, ...payload })) as Response<K> | undefined;
+  if (!isContextAlive()) throw new ExtensionReloadedError();
+
+  let res: Response<K> | undefined;
+  try {
+    res = (await chrome.runtime.sendMessage({ type, ...payload })) as Response<K> | undefined;
+  } catch (err) {
+    // Chrome reports a torn-down context as a generic Error whose message is
+    // the only thing distinguishing it, so match on the text.
+    const message = err instanceof Error ? err.message : String(err);
+    if (RELOADED_PATTERNS.some((p) => message.includes(p))) throw new ExtensionReloadedError();
+    throw err;
+  }
+
   if (!res) throw new Error(`No response from background for "${type}"`);
   if (!res.ok) throw new Error(res.error);
   return res.data;

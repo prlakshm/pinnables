@@ -6,7 +6,7 @@ import {
   strokeWidthFor,
   type DrawShape,
 } from "@pinnables/shared";
-import { send } from "../lib/messages";
+import { ExtensionReloadedError, send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { CheckIcon, CloseIcon } from "../ui/icons";
 
@@ -27,7 +27,7 @@ const SHAPES: Array<{ kind: ShapeKind; label: string }> = [
  * animated element at all. Freeze first and there is nothing left to
  * re-anchor — the frame is the record.
  */
-export function DrawLayer({ onDone }: { onDone: () => void }) {
+export function DrawLayer({ onDone, onStale }: { onDone: () => void; onStale: () => void }) {
   const [frame, setFrame] = useState<string | null>(null);
   const [kind, setKind] = useState<ShapeKind>("ellipse");
   const [color, setColor] = useState<string>(DEFAULT_DRAW_COLOR);
@@ -121,10 +121,11 @@ export function DrawLayer({ onDone }: { onDone: () => void }) {
       });
       onDone();
     } catch (err) {
-      console.error("[pinnables] region capture failed", err);
+      if (err instanceof ExtensionReloadedError) onStale();
+      else console.error("[pinnables] region capture failed", err);
       setSaving(false);
     }
-  }, [shapes, label, onDone]);
+  }, [shapes, label, onDone, onStale]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
