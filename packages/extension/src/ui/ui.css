@@ -15,23 +15,40 @@
  * on top of someone else's product without competing with it.
  */
 
+/*
+ * Neutrals are Cursor's, read from cursor.com: #f7f7f4 ground and #26251e
+ * foreground. Warm, where shadcn and Vercel default to cool zinc — the brief
+ * asked for all three and they pull apart, so Cursor wins on hue and
+ * shadcn/Vercel on structure (scale, radii, contrast-over-colour).
+ */
 :where(.pin-root) {
   --pin-bg: #ffffff;
-  --pin-subtle: #fafafa;
-  --pin-muted: #f4f4f5;
-  --pin-border: #e4e4e7;
-  --pin-border-strong: #d4d4d8;
-  --pin-fg-faint: #a1a1aa;
-  --pin-fg-muted: #71717a;
-  --pin-fg: #09090b;
+  --pin-subtle: #f7f7f4;
+  --pin-muted: #edece7;
+  --pin-border: #e2e1da;
+  --pin-border-strong: #d0cfc6;
+  --pin-fg-faint: #a3a199;
+  --pin-fg-muted: #6d6b62;
+  --pin-fg: #26251e;
 
-  --pin-primary: #18181b;
-  --pin-primary-hover: #27272a;
-  --pin-on-primary: #fafafa;
+  --pin-primary: #26251e;
+  --pin-primary-hover: #3a3830;
+  --pin-on-primary: #f7f7f4;
 
-  --pin-select: #2563eb;
-  --pin-select-soft: rgba(37, 99, 235, 0.07);
-  --pin-select-ring: rgba(37, 99, 235, 0.18);
+  /*
+   * The picker's hover outline. Unlike a pin's hue this one is fixed, because
+   * it is transient — it exists for the half second before you click, never
+   * alongside a second one, so it has nothing to be distinguishable from.
+   */
+  --pin-select: #0e7490;
+  --pin-select-soft: rgba(14, 116, 144, 0.08);
+  --pin-select-ring: rgba(14, 116, 144, 0.2);
+
+  /* Set per pin from the hue set. Falls back so a stray element still renders.
+     --pin-hue strokes, --pin-hue-text labels, --pin-hue-soft fills. */
+  --pin-hue: #93c0cd;
+  --pin-hue-text: #0e7490;
+  --pin-hue-soft: rgba(147, 192, 205, 0.22);
 
   --pin-red: #ed1c24;
   --pin-amber: #b45309;
@@ -54,6 +71,38 @@
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Dark is chosen from the host page's own background luminance, not from
+ * prefers-color-scheme — the OS setting says nothing about the app you are
+ * annotating, and a dark app on a light OS is precisely where the chrome would
+ * break. Primary inverts here: on dark, the emphatic button is the light one.
+ */
+:where(.pin-root[data-scheme="dark"]) {
+  --pin-bg: #232219;
+  --pin-subtle: #1c1b16;
+  --pin-muted: #2e2d23;
+  --pin-border: #3e3d33;
+  --pin-border-strong: #52503f;
+  --pin-fg-faint: #7a786c;
+  --pin-fg-muted: #a5a396;
+  --pin-fg: #f7f7f4;
+
+  --pin-primary: #f7f7f4;
+  --pin-primary-hover: #e6e5df;
+  --pin-on-primary: #26251e;
+
+  --pin-select: #93c0cd;
+  --pin-select-soft: rgba(147, 192, 205, 0.14);
+  --pin-select-ring: rgba(147, 192, 205, 0.28);
+
+  --pin-amber: #fbbf24;
+  --pin-amber-soft: #292215;
+  --pin-green: #4ade80;
+
+  --pin-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+  --pin-shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 30px rgba(0, 0, 0, 0.55);
 }
 
 .pin-root *,
@@ -353,33 +402,36 @@
   fill: none;
   stroke: var(--pin-fg);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: 0.4;
 }
 .pin-wire--draft {
-  stroke: var(--pin-red);
   stroke-dasharray: 4 4;
-  opacity: 0.9;
-}
-.pin-wire-dot {
-  fill: var(--pin-red);
+  opacity: 1;
 }
 
 /* Edge anchors: appear on the four edge midpoints when a pin is hovered or
    selected, and are the handle you drag to another pin's anchor. */
+/* Carries the pin's own hue, so it is obvious which card a wire is leaving. */
 .pin-anchor {
   position: absolute;
   width: 11px;
   height: 11px;
   border-radius: 999px;
-  background: var(--pin-red);
+  background: var(--pin-hue);
   border: 2px solid var(--pin-bg);
   box-shadow: 0 0 0 1px rgba(9, 9, 11, 0.12);
   pointer-events: auto;
   cursor: crosshair;
   transition: transform 100ms ease;
   z-index: 2;
+  animation: pin-anchor-in 120ms ease-out;
 }
-.pin-anchor:hover { transform: scale(1.35); }
+.pin-anchor:hover { transform: scale(1.4); }
+
+@keyframes pin-anchor-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
 .pin-anchor[data-edge="left"] { left: -6px; top: 50%; margin-top: -5.5px; }
 .pin-anchor[data-edge="right"] { right: -6px; top: 50%; margin-top: -5.5px; }
 .pin-anchor[data-edge="top"] { top: -6px; left: 50%; margin-left: -5.5px; }
@@ -407,10 +459,10 @@
   overflow: visible;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-/* Selected is the one place blue appears on a pin. */
+/* Selected wears the pin's own hue, matching its chip, anchors, and wires. */
 .pin-object[data-selected="true"] .pin-object__card {
-  border-color: var(--pin-select);
-  box-shadow: 0 0 0 3px var(--pin-select-ring), var(--pin-shadow);
+  border-color: var(--pin-hue);
+  box-shadow: 0 0 0 3px var(--pin-hue-soft), var(--pin-shadow);
 }
 
 .pin-object__inner {
@@ -426,35 +478,43 @@
   background: var(--pin-muted);
 }
 
+/*
+ * A half-disc seated on the card's top edge — flat side down, so it reads as
+ * part of the card rather than a separate floating dot, and leaves the card's
+ * own corners intact. Its borders merge with the card's via the -1px offset.
+ */
 .pin-object__marker {
   align-self: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
+  width: 28px;
+  height: 14px;
+  border-radius: 14px 14px 0 0;
   background: var(--pin-bg);
   border: 1px solid var(--pin-border);
+  border-bottom: none;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  margin-bottom: -11px;
+  padding-bottom: 3px;
+  margin-bottom: -1px;
   z-index: 3;
   flex: 0 0 auto;
-  box-shadow: var(--pin-shadow);
 }
 .pin-object__marker::after {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
-  background: var(--pin-red);
+  background: var(--pin-hue);
 }
-.pin-object__marker[data-pulse="true"] {
-  animation: pin-pulse 620ms ease-out 1;
+/* The pulse fires once on capture, on the dot rather than the disc, so the
+   ring expands from the point you actually clicked. */
+.pin-object__marker[data-pulse="true"]::after {
+  animation: pin-pulse 700ms ease-out 1;
 }
 
 @keyframes pin-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(237, 28, 36, 0.4); }
-  100% { box-shadow: 0 0 0 16px rgba(237, 28, 36, 0); }
+  0% { box-shadow: 0 0 0 0 var(--pin-hue); opacity: 1; }
+  100% { box-shadow: 0 0 0 14px transparent; opacity: 1; }
 }
 
 .pin-object__meta {
@@ -519,28 +579,69 @@
 }
 .pin-note--collapsed .pin-note__saved span { -webkit-line-clamp: 1; }
 
-/* The composer. Placeholder left, shortcut hint right, send on the end —
-   matching the reference exactly. */
-.pin-note__composer {
+/*
+ * The composer, following Cursor's: the element's own chips lead the line, the
+ * prompt continues inline after them, and the controls sit on a quieter row
+ * underneath. Chips carry the pin's hue — the same trick Cursor uses so a chip
+ * is traceable to the outline it came from without reading the label.
+ */
+.pin-note__body {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 6px;
+}
+
+.pin-note__chips {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pin-note__chip {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 10px;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pin-hue-text);
+  background: var(--pin-hue-soft);
+  border-radius: 5px;
+  padding: 2px 6px;
+  white-space: nowrap;
 }
 
 .pin-note__input {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 120px;
+  min-width: 100px;
   border: none;
   outline: none;
   background: transparent;
   font-size: 13px;
-  padding: 4px 0;
+  padding: 2px 0;
   resize: none;
-  max-height: 76px;
+  max-height: 84px;
   line-height: 1.45;
 }
 .pin-note__input::placeholder { color: var(--pin-fg-faint); }
+
+.pin-note__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.pin-note__meta {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-fg-faint);
+  margin-right: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .pin-note__send {
   display: inline-flex;
@@ -565,7 +666,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 10px 8px;
+  padding: 0 10px 8px;
   font-size: 11px;
   color: var(--pin-fg-muted);
 }

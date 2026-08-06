@@ -6,6 +6,7 @@ import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
 import { PinObject, type AnchorEdge } from "./PinObject";
 import { DrawLayer } from "./DrawLayer";
+import { detectScheme, hueForPin, hueTokens, watchScheme, type Scheme } from "../ui/theme";
 
 interface HighlightBox {
   x: number;
@@ -83,8 +84,23 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<Connecting | null>(null);
   const [cardRects, setCardRects] = useState<Record<string, DOMRect>>({});
+  const [scheme, setScheme] = useState<Scheme>(() => detectScheme());
   const hovered = useRef<Element | null>(null);
   const hoverAnchor = useRef<{ pinId: string; edge: AnchorEdge } | null>(null);
+
+  /**
+   * The scheme comes from the host page's background, not the OS — and it is
+   * re-checked when the page mutates its own theme, since apps flip a class on
+   * <html> rather than reloading.
+   */
+  useEffect(() => {
+    const root = document
+      .getElementById(OVERLAY_HOST_ID)
+      ?.shadowRoot?.querySelector<HTMLElement>(".pin-root");
+    root?.setAttribute("data-scheme", scheme);
+  }, [scheme]);
+
+  useEffect(() => watchScheme(setScheme), []);
 
   /**
    * Reloading the extension leaves this script running in the page with a dead
@@ -381,19 +397,21 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const drawing = mode === "draw";
   const visible = drawing ? [] : pins.filter((p) => !dismissed.has(p.id));
 
-  // Existing relationships, resolved to on-screen endpoints.
-  const wires: Array<{ id: string; d: string; from: Point; to: Point }> = [];
+  // Existing relationships, resolved to on-screen endpoints. A wire takes its
+  // source pin's hue, so it is obvious which card a connection leaves from.
+  const wires: Array<{ id: string; d: string; from: Point; to: Point; color: string }> = [];
   if (board && !drawing) {
     for (const rel of board.relationships) {
       const a = cardRects[rel.sourcePinId];
       if (!a) continue;
+      const color = hueTokens(hueForPin(rel.sourcePinId), scheme).line;
       for (const targetId of rel.targetPinIds) {
         const b = cardRects[targetId];
         if (!b) continue;
         const [ea, eb] = bestEdges(a, b);
         const from = edgePoint(a, ea);
         const to = edgePoint(b, eb);
-        wires.push({ id: `${rel.id}-${targetId}`, d: wirePath(from, to), from, to });
+        wires.push({ id: `${rel.id}-${targetId}`, d: wirePath(from, to), from, to, color });
       }
     }
   }
@@ -403,6 +421,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       ? {
           from: edgePoint(cardRects[connecting.fromPinId], connecting.fromEdge),
           to: connecting.cursor,
+          color: hueTokens(hueForPin(connecting.fromPinId), scheme).line,
         }
       : null;
 
@@ -414,15 +433,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         <svg className="pin-wires" aria-hidden>
           {wires.map((wire) => (
             <g key={wire.id}>
-              <path className="pin-wire" d={wire.d} />
-              <circle className="pin-wire-dot" cx={wire.from.x} cy={wire.from.y} r="3.5" />
-              <circle className="pin-wire-dot" cx={wire.to.x} cy={wire.to.y} r="3.5" />
+              <path className="pin-wire" d={wire.d} stroke={wire.color} />
+              <circle cx={wire.from.x} cy={wire.from.y} r="3.5" fill={wire.color} />
+              <circle cx={wire.to.x} cy={wire.to.y} r="3.5" fill={wire.color} />
             </g>
           ))}
           {draft && (
             <>
-              <path className="pin-wire pin-wire--draft" d={wirePath(draft.from, draft.to)} />
-              <circle className="pin-wire-dot" cx={draft.from.x} cy={draft.from.y} r="3.5" />
+              <path
+                className="pin-wire pin-wire--draft"
+                d={wirePath(draft.from, draft.to)}
+                stroke={draft.color}
+              />
+              <circle cx={draft.from.x} cy={draft.from.y} r="3.5" fill={draft.color} />
             </>
           )}
         </svg>
@@ -451,6 +474,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           pulse={justPinned === pin.id}
           selected={selected === pin.id}
           connecting={connecting !== null}
+          hue={hueTokens(hueForPin(pin.id), scheme)}
           onSelect={() => setSelected(pin.id)}
           onMove={(next) => persistPosition(pin.id, next)}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}

@@ -3,6 +3,7 @@ import type { Board, Pin } from "@pinnables/shared";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, CloseIcon, LinkIcon } from "../ui/icons";
+import type { HueTokens } from "../ui/theme";
 import type { FloatPosition } from "./Overlay";
 
 export type AnchorEdge = "left" | "right" | "top" | "bottom";
@@ -15,6 +16,7 @@ interface PinObjectProps {
   pulse: boolean;
   selected: boolean;
   connecting: boolean;
+  hue: HueTokens;
   onSelect: () => void;
   onMove: (position: FloatPosition) => void;
   onDismiss: () => void;
@@ -39,6 +41,7 @@ export function PinObject({
   pulse,
   selected,
   connecting,
+  hue,
   onSelect,
   onMove,
   onDismiss,
@@ -104,7 +107,10 @@ export function PinObject({
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
-  const showAnchors = selected || hovered || connecting;
+  // Hover only. Anchors on every selected pin would leave four dots sitting on
+  // the card the whole time you are writing a note.
+  const showAnchors = hovered || connecting;
+  const label = pin.componentName ?? pin.elementText.slice(0, 28) ?? "element";
 
   return (
     <div
@@ -112,7 +118,15 @@ export function PinObject({
       className="pin-object"
       data-selected={selected}
       data-pin-id={pin.id}
-      style={{ left: position.x, top: position.y }}
+      style={
+        {
+          left: position.x,
+          top: position.y,
+          "--pin-hue": hue.line,
+          "--pin-hue-text": hue.text,
+          "--pin-hue-soft": hue.soft,
+        } as React.CSSProperties
+      }
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={() => (dragging.current = null)}
@@ -173,31 +187,43 @@ export function PinObject({
             </div>
           )}
 
-          <div className="pin-note__composer">
-            <textarea
-              ref={input}
-              className="pin-note__input"
-              rows={1}
-              value={draft}
-              placeholder={pin.annotation ? "Add another note…" : "Add an annotation…"}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && hasModifier(e.nativeEvent)) {
-                  e.preventDefault();
-                  void commit();
-                }
-              }}
-            />
-            <span className="pin-kbd">{submitHintLabel}</span>
-            <button
-              className="pin-note__send"
-              onClick={() => void commit()}
-              disabled={!draft.trim()}
-              title={`Save annotation · ${submitHintLabel}`}
-              aria-label="Save annotation"
-            >
-              <ArrowUpRightIcon size={14} />
-            </button>
+          <div className="pin-note__body">
+            {/* Chips lead the line and the prompt continues after them, the way
+                Cursor's composer reads. The chip carries the pin's hue so it is
+                traceable back to its card without reading the label. */}
+            <div className="pin-note__chips">
+              <span className="pin-note__chip">{label}</span>
+              <textarea
+                ref={input}
+                className="pin-note__input"
+                rows={1}
+                value={draft}
+                placeholder={pin.annotation ? "Add another note…" : "Describe the change"}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && hasModifier(e.nativeEvent)) {
+                    e.preventDefault();
+                    void commit();
+                  }
+                }}
+              />
+            </div>
+
+            <div className="pin-note__foot">
+              <span className="pin-note__meta">
+                {pin.route} · {pin.viewport.width}
+              </span>
+              <span className="pin-kbd">{submitHintLabel}</span>
+              <button
+                className="pin-note__send"
+                onClick={() => void commit()}
+                disabled={!draft.trim()}
+                title={`Save annotation · ${submitHintLabel}`}
+                aria-label="Save annotation"
+              >
+                <ArrowUpRightIcon size={14} />
+              </button>
+            </div>
           </div>
 
           {targetCount > 0 && (
