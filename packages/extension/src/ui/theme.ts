@@ -60,7 +60,7 @@ const HUES: Record<SelectionHue, string> = {
    * rotation: it reads quieter than the other five, and six simultaneous
    * selections are rare.
    */
-  stone: "#8a8079",
+  stone: "#88807a",
 };
 
 /** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */
