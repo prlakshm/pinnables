@@ -480,42 +480,17 @@
 }
 
 /*
- * A half-disc seated on the card's top edge — flat side down, so it reads as
- * part of the card rather than a separate floating dot, and leaves the card's
- * own corners intact. Its borders merge with the card's via the -1px offset.
+ * Capture feedback rides on the card itself. It was a marker seated on the top
+ * edge; without that, a single ring expanding from the card's own bounds says
+ * the same thing without adding a piece of chrome that has no other job.
  */
-.pin-object__marker {
-  align-self: center;
-  width: 28px;
-  height: 14px;
-  border-radius: 14px 14px 0 0;
-  background: var(--pin-bg);
-  border: 1px solid var(--pin-border);
-  border-bottom: none;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 3px;
-  margin-bottom: -1px;
-  z-index: 3;
-  flex: 0 0 auto;
-}
-.pin-object__marker::after {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--pin-hue);
-}
-/* The pulse fires once on capture, on the dot rather than the disc, so the
-   ring expands from the point you actually clicked. */
-.pin-object__marker[data-pulse="true"]::after {
+.pin-object__card[data-pulse="true"] {
   animation: pin-pulse 700ms ease-out 1;
 }
 
 @keyframes pin-pulse {
-  0% { box-shadow: 0 0 0 0 var(--pin-hue); opacity: 1; }
-  100% { box-shadow: 0 0 0 14px transparent; opacity: 1; }
+  0% { box-shadow: 0 0 0 0 var(--pin-hue-soft), var(--pin-shadow); }
+  100% { box-shadow: 0 0 0 18px transparent, var(--pin-shadow); }
 }
 
 .pin-object__meta {

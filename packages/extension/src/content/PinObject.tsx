@@ -99,9 +99,14 @@ export function PinObject({
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
-  // Hover only. Anchors on every selected pin would leave four dots sitting on
-  // the card the whole time you are writing a note.
-  const showAnchors = hovered || connecting;
+  /**
+   * Anchors are a connection affordance, so they stay hidden until there is
+   * something to connect *to* — one pin on the board means four dots offering
+   * an action that cannot be completed. Beyond that they wait for hover or
+   * selection rather than sitting on every card permanently.
+   */
+  const canConnect = board.pins.length >= 2;
+  const showAnchors = canConnect && (hovered || selected || connecting);
   const multi = chips.length > 1;
 
   return (
@@ -125,9 +130,7 @@ export function PinObject({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span className="pin-object__marker" data-pulse={pulse} aria-hidden />
-
-      <div className="pin-object__card">
+      <div className="pin-object__card" data-pulse={pulse}>
         <div className="pin-object__inner">
           <div className="pin-object__meta">
             <span>{pin.route}</span>
