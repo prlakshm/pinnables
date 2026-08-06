@@ -17,14 +17,19 @@
 
 export type Scheme = "light" | "dark";
 
+/**
+ * Order matters and is not alphabetical — this is the sequence Design Mode
+ * hands them out in, traced frame by frame through a screen recording. The
+ * ninth selection wraps back to blue.
+ */
 export const SELECTION_HUES = [
   "blue",
   "purple",
-  "orange",
-  "pink",
-  "teal",
-  "red",
   "green",
+  "orange",
+  "teal",
+  "pink",
+  "red",
   "olive",
 ] as const;
 export type SelectionHue = (typeof SELECTION_HUES)[number];
@@ -86,13 +91,13 @@ function withAlpha(hex: string, alpha: number): string {
 }
 
 /**
- * A pin keeps the same hue for its whole life, derived from its id — indexing
- * into the board would reshuffle every colour whenever a pin is deleted.
+ * Hues are handed out in creation order, cycling — the first pin is blue, the
+ * ninth is blue again. A hash of the id would be stable against deletion but
+ * would scatter the colours, and the sequence is the recognisable part: the
+ * first thing you pin is always blue.
  */
-export function hueForPin(pinId: string): SelectionHue {
-  let hash = 0;
-  for (let i = 0; i < pinId.length; i += 1) hash = (hash * 31 + pinId.charCodeAt(i)) >>> 0;
-  return SELECTION_HUES[hash % SELECTION_HUES.length];
+export function hueForIndex(index: number): SelectionHue {
+  return SELECTION_HUES[((index % SELECTION_HUES.length) + SELECTION_HUES.length) % SELECTION_HUES.length];
 }
 
 /** WCAG relative luminance, for deciding which side of the fence a colour is on. */

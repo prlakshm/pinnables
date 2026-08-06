@@ -289,10 +289,13 @@
  */
 .pin-highlight {
   position: fixed;
-  outline: 2px solid var(--pin-select);
+  outline: 2px solid var(--pin-hue);
   outline-offset: -2px;
   border-radius: 0;
-  background: var(--pin-select-soft);
+  /* No fill. Design Mode reserves the wash for *selected* — hover is outline
+     only, and keeping the distinction means you can tell at a glance whether a
+     click has landed. */
+  background: transparent;
   pointer-events: none;
   transition: all 60ms linear;
 }
@@ -305,7 +308,7 @@
   align-items: center;
   height: 18px;
   padding: 0 5px;
-  background: var(--pin-select);
+  background: var(--pin-hue);
   color: #fff;
   font-family: var(--pin-mono);
   font-size: 10px;

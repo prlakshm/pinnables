@@ -6,7 +6,7 @@ import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
 import { PinObject, type AnchorEdge, type SelectionChip } from "./PinObject";
 import { DrawLayer } from "./DrawLayer";
-import { detectScheme, hueForPin, hueTokens, watchScheme, type Scheme } from "../ui/theme";
+import { detectScheme, hueForIndex, hueTokens, watchScheme, type Scheme } from "../ui/theme";
 
 interface HighlightBox {
   x: number;
@@ -450,6 +450,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const pins: Pin[] = board?.pins ?? [];
   const drawing = mode === "draw";
 
+  // Hue follows creation order, so sort by it rather than trusting array order.
+  const ordered = [...pins].sort((a, b) => a.order - b.order);
+  const indexOfPin = (pinId: string) => ordered.findIndex((p) => p.id === pinId);
+  // The hover outline previews the hue this element is about to be given, so
+  // the colour never changes at the moment of the click.
+  const nextHue = hueTokens(hueForIndex(ordered.length), scheme);
+
   // The last pin selected renders the composer; the rest contribute a chip.
   const primaryPinId = selected.length > 0 ? selected[selected.length - 1] : null;
   const chips: SelectionChip[] = selected
@@ -458,7 +465,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     .map((p) => ({
       id: p.id,
       label: p.componentName ?? p.elementText.slice(0, 24) ?? "element",
-      hue: hueTokens(hueForPin(p.id), scheme),
+      hue: hueTokens(hueForIndex(indexOfPin(p.id)), scheme),
     }));
   const visible = drawing ? [] : pins.filter((p) => !dismissed.has(p.id));
 
@@ -469,7 +476,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     for (const rel of board.relationships) {
       const a = cardRects[rel.sourcePinId];
       if (!a) continue;
-      const color = hueTokens(hueForPin(rel.sourcePinId), scheme).line;
+      const color = hueTokens(hueForIndex(indexOfPin(rel.sourcePinId)), scheme).line;
       for (const targetId of rel.targetPinIds) {
         const b = cardRects[targetId];
         if (!b) continue;
@@ -486,7 +493,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       ? {
           from: edgePoint(cardRects[connecting.fromPinId], connecting.fromEdge),
           to: connecting.cursor,
-          color: hueTokens(hueForPin(connecting.fromPinId), scheme).line,
+          color: hueTokens(hueForIndex(indexOfPin(connecting.fromPinId)), scheme).line,
         }
       : null;
 
@@ -519,12 +526,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       {highlight && !drawing && (
         <div
           className="pin-highlight"
-          style={{
-            left: highlight.x,
-            top: highlight.y,
-            width: highlight.width,
-            height: highlight.height,
-          }}
+          style={
+            {
+              left: highlight.x,
+              top: highlight.y,
+              width: highlight.width,
+              height: highlight.height,
+              "--pin-hue": nextHue.line,
+            } as React.CSSProperties
+          }
         >
           <span className="pin-highlight__label">{highlight.label}</span>
         </div>
@@ -541,7 +551,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           primary={primaryPinId === pin.id}
           chips={chips}
           connecting={connecting !== null}
-          hue={hueTokens(hueForPin(pin.id), scheme)}
+          hue={hueTokens(hueForIndex(indexOfPin(pin.id)), scheme)}
           onSelect={(additive) => selectPin(pin.id, additive)}
           onMove={(next) => persistPosition(pin.id, next)}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}
