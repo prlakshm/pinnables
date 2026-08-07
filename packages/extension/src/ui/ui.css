@@ -607,17 +607,15 @@
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   overflow: visible;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: box-shadow 120ms ease;
 }
 /*
- * Selection stays in the measurement grey rather than turning blue. The card
- * already wears that grey as a hairline, so selecting it deepens what is there
- * instead of recolouring it — and blue keeps meaning "the tool you are holding"
- * rather than splitting across two unrelated ideas. The glow is a heavier alpha
- * of the same grey, so the whole state is one colour at two weights.
+ * Selection adds a glow and touches nothing else. The border keeps the weight
+ * and colour it already had — restating it here, even at the same value, invites
+ * the two to drift apart later and makes the rule read as though selection
+ * changes the edge. It does not; it puts a ring outside it.
  */
 .pin-object[data-selected="true"] .pin-object__card {
-  border-color: var(--pin-measure);
   box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
 }
 
