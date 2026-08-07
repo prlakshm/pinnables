@@ -233,9 +233,10 @@ export function DrawLayer({ onDone, onStale }: { onDone: () => void; onStale: ()
         >
           <CheckIcon size={14} />
           {saving ? "Pinning…" : "Pin region"}
-          <span className="pin-kbd" style={{ borderColor: "rgba(255,255,255,.4)", color: "#fff" }}>
-            {submitHintLabel}
-          </span>
+          {/* Inherits the button's own foreground rather than assuming white —
+              on a dark host page the primary button inverts, and a hardcoded
+              #fff put white text on a light fill. */}
+          <span className="pin-kbd pin-kbd--on-fill">{submitHintLabel}</span>
         </button>
         <button className="pin-icon-btn" onClick={cancel} title="Cancel · Esc" aria-label="Cancel">
           <CloseIcon size={17} />

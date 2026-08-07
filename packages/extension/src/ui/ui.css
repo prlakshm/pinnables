@@ -391,6 +391,13 @@
   flex: 0 0 auto;
 }
 
+/* A shortcut hint sitting inside a filled button, where the page's own
+   background would be invisible. */
+.pin-kbd--on-fill {
+  background: rgba(127, 127, 127, 0.28);
+  color: inherit;
+}
+
 .pin-field {
   width: 100%;
   border: 1px solid var(--pin-rule);
