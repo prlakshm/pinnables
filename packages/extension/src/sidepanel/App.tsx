@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Board } from "@pinnables/shared";
 import { send, type Broadcast, type ExtensionState } from "../lib/messages";
+import { useSiteAccess } from "./useSiteAccess";
 // Flat variant: same highlight, no gradient. The header renders at 17px, where
 // radial shading has nothing to resolve into but the highlight still reads.
 import wordmarkUrl from "../ui/wordmark-flat.svg";
@@ -16,6 +17,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>("pins");
   const [pointer, setPointer] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const site = useSiteAccess();
 
   const reload = useCallback(async () => {
     const [{ board: next }, extState] = await Promise.all([
@@ -95,6 +97,38 @@ export function App() {
       </nav>
 
       <div className="pin-panel__body">
+        {/* Capture mode is global, but the overlay can only exist on a site we
+            hold permission for. Without this the state says "Capturing" and
+            nothing appears on the page, which reads as the tool being broken. */}
+        {state?.captureMode && !site.granted && (
+          <div className="pin-banner">
+            <span style={{ flex: 1 }}>
+              {site.annotatable ? (
+                <>
+                  Pinnables can&apos;t reach <strong>{site.origin}</strong> yet. Grant access to pin
+                  on this site.
+                </>
+              ) : (
+                <>This page can&apos;t be annotated — browser pages are off limits to extensions.</>
+              )}
+            </span>
+            {site.annotatable && (
+              <button
+                className="pin-btn"
+                style={{ height: 26, flex: "0 0 auto" }}
+                onClick={async () => {
+                  await site.request();
+                  // Re-broadcast so the newly reachable tab gets its overlay
+                  // without the user toggling capture mode off and on.
+                  await send("capture/setMode", { enabled: true });
+                }}
+              >
+                Allow
+              </button>
+            )}
+          </div>
+        )}
+
         {!board || pinCount === 0 ? (
           <div className="pin-empty">
             <PinIcon size={22} />

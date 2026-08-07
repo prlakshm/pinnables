@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Board, Pin } from "@pinnables/shared";
 import { CloseIcon, LinkIcon } from "../ui/icons";
-import type { HueTokens } from "../ui/theme";
-import { Composer, type SelectionChip } from "./Composer";
+import { defaultEdgeFor, nearestEdge, type AnchorEdge } from "../ui/theme";
+import { Composer } from "./Composer";
 import type { FloatPosition } from "./Overlay";
 
-export type { SelectionChip };
-
-export type AnchorEdge = "left" | "right" | "top" | "bottom";
-export const ANCHOR_EDGES: AnchorEdge[] = ["left", "right", "top", "bottom"];
+export type { AnchorEdge };
 
 interface PinObjectProps {
   pin: Pin;
@@ -22,9 +19,8 @@ interface PinObjectProps {
    * implies that card is the subject, when the prompt applies to all of them.
    */
   primary: boolean;
-  chips: SelectionChip[];
+  selectionCount: number;
   connecting: boolean;
-  hue: HueTokens;
   onSelect: (additive: boolean) => void;
   onMove: (position: FloatPosition) => void;
   onDismiss: () => void;
@@ -50,9 +46,8 @@ export function PinObject({
   pulse,
   selected,
   primary,
-  chips,
+  selectionCount,
   connecting,
-  hue,
   onSelect,
   onMove,
   onDismiss,
@@ -64,8 +59,10 @@ export function PinObject({
 }: PinObjectProps) {
   const [shot, setShot] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
+  const [nearEdge, setNearEdge] = useState<AnchorEdge | null>(null);
   const dragging = useRef<{ dx: number; dy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void chrome.storage.local.get(`shot:${pin.id}`).then((bag) => {
@@ -88,26 +85,40 @@ export function PinObject({
   const onPointerMove = useCallback(
     (event: React.PointerEvent) => {
       const drag = dragging.current;
-      if (!drag) return;
-      onMove({
-        x: Math.max(4, event.clientX - drag.dx),
-        y: Math.max(4, event.clientY - drag.dy),
-      });
+      if (drag) {
+        onMove({
+          x: Math.max(4, event.clientX - drag.dx),
+          y: Math.max(4, event.clientY - drag.dy),
+        });
+        return;
+      }
+      const rect = card.current?.getBoundingClientRect();
+      if (rect) setNearEdge(nearestEdge(rect, { x: event.clientX, y: event.clientY }));
     },
     [onMove],
   );
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
+
   /**
+   * One anchor, on one edge.
+   *
    * Anchors are a connection affordance, so they stay hidden until there is
-   * something to connect *to* — one pin on the board means four dots offering
-   * an action that cannot be completed. Beyond that they wait for hover or
-   * selection rather than sitting on every card permanently.
+   * something to connect *to* — one pin on the board means dots offering an
+   * action that cannot be completed. Beyond that: the edge with the most room
+   * to run a wire into is offered by default (a card against the right of the
+   * screen offers its left, one at the top offers its bottom), and moving
+   * toward any other edge midpoint offers that one instead. All four stay
+   * reachable without four dots sitting on every card.
    */
   const canConnect = board.pins.length >= 2;
-  const showAnchors = canConnect && (hovered || selected || connecting);
-  const multi = chips.length > 1;
+  const showAnchor = canConnect && (hovered || selected || connecting);
+  const rect = card.current?.getBoundingClientRect();
+  const fallbackEdge: AnchorEdge = rect
+    ? defaultEdgeFor(rect, { width: window.innerWidth, height: window.innerHeight })
+    : "left";
+  const anchorEdge = nearEdge ?? fallbackEdge;
 
   return (
     <div
@@ -115,22 +126,17 @@ export function PinObject({
       className="pin-object"
       data-selected={selected}
       data-pin-id={pin.id}
-      style={
-        {
-          left: position.x,
-          top: position.y,
-          "--pin-hue": hue.line,
-          "--pin-hue-text": hue.text,
-          "--pin-hue-soft": hue.soft,
-        } as React.CSSProperties
-      }
+      style={{ left: position.x, top: position.y }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={() => (dragging.current = null)}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setNearEdge(null);
+      }}
     >
-      <div className="pin-object__card" data-pulse={pulse}>
+      <div className="pin-object__card" data-pulse={pulse} ref={card}>
         <div className="pin-object__inner">
           <div className="pin-object__meta">
             <span>{pin.route}</span>
@@ -153,41 +159,33 @@ export function PinObject({
           )}
         </div>
 
-        {showAnchors &&
-          ANCHOR_EDGES.map((edge) => (
-            <span
-              key={edge}
-              className="pin-anchor"
-              data-edge={edge}
-              data-no-drag
-              title="Drag to another pin to connect them"
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                onAnchorDown(pin.id, edge, event);
-              }}
-              onPointerEnter={() => onAnchorEnter(pin.id, edge)}
-              onPointerLeave={onAnchorLeave}
-            />
-          ))}
+        {showAnchor && (
+          <span
+            className="pin-anchor"
+            data-edge={anchorEdge}
+            data-no-drag
+            title="Drag to another pin to connect them"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              onAnchorDown(pin.id, anchorEdge, event);
+            }}
+            onPointerEnter={() => onAnchorEnter(pin.id, anchorEdge)}
+            onPointerLeave={onAnchorLeave}
+          />
+        )}
       </div>
 
       {primary ? (
         <div className="pin-note" data-no-drag>
-          {pin.annotation && !multi && (
+          {pin.annotation && (
             <div className="pin-note__saved">
               <span>{pin.annotation}</span>
             </div>
           )}
 
-          <Composer
-            chips={chips}
-            meta={multi ? `${chips.length} pins selected` : `${pin.route} · ${pin.viewport.width}`}
-            onCommit={onCommit}
-            onRelate={onRelate}
-            autoFocus
-          />
+          <Composer count={selectionCount} onCommit={onCommit} onRelate={onRelate} autoFocus />
 
-          {targetCount > 0 && !multi && (
+          {targetCount > 0 && (
             <div className="pin-note__rel">
               <LinkIcon size={13} />
               source for {targetCount} pin{targetCount === 1 ? "" : "s"}

@@ -4,10 +4,10 @@ import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from ".
 import { ExtensionReloadedError, send } from "../lib/messages";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
-import { PinObject, type AnchorEdge } from "./PinObject";
-import { Composer, type SelectionChip } from "./Composer";
+import { PinObject } from "./PinObject";
+import { Composer } from "./Composer";
 import { DrawLayer } from "./DrawLayer";
-import { detectScheme, hueForIndex, hueTokens, watchScheme, type Scheme } from "../ui/theme";
+import { detectScheme, watchScheme, type AnchorEdge, type Scheme } from "../ui/theme";
 
 interface HighlightBox {
   x: number;
@@ -451,41 +451,24 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const pins: Pin[] = board?.pins ?? [];
   const drawing = mode === "draw";
 
-  // Hue follows creation order, so sort by it rather than trusting array order.
-  const ordered = [...pins].sort((a, b) => a.order - b.order);
-  const indexOfPin = (pinId: string) => ordered.findIndex((p) => p.id === pinId);
-  // The hover outline previews the hue this element is about to be given, so
-  // the colour never changes at the moment of the click.
-  const nextHue = hueTokens(hueForIndex(ordered.length), scheme);
-
   // A lone selection docks its composer under the card. Two or more and it
   // detaches — see the floating block below.
   const primaryPinId = selected.length === 1 ? selected[0] : null;
-  const chips: SelectionChip[] = selected
-    .map((id) => pins.find((p) => p.id === id))
-    .filter((p): p is Pin => p !== undefined)
-    .map((p) => ({
-      id: p.id,
-      label: p.componentName ?? p.elementText.slice(0, 24) ?? "element",
-      hue: hueTokens(hueForIndex(indexOfPin(p.id)), scheme),
-    }));
   const visible = drawing ? [] : pins.filter((p) => !dismissed.has(p.id));
 
-  // Existing relationships, resolved to on-screen endpoints. A wire takes its
-  // source pin's hue, so it is obvious which card a connection leaves from.
-  const wires: Array<{ id: string; d: string; from: Point; to: Point; color: string }> = [];
+  // Existing relationships, resolved to on-screen endpoints.
+  const wires: Array<{ id: string; d: string; from: Point; to: Point }> = [];
   if (board && !drawing) {
     for (const rel of board.relationships) {
       const a = cardRects[rel.sourcePinId];
       if (!a) continue;
-      const color = hueTokens(hueForIndex(indexOfPin(rel.sourcePinId)), scheme).line;
       for (const targetId of rel.targetPinIds) {
         const b = cardRects[targetId];
         if (!b) continue;
         const [ea, eb] = bestEdges(a, b);
         const from = edgePoint(a, ea);
         const to = edgePoint(b, eb);
-        wires.push({ id: `${rel.id}-${targetId}`, d: wirePath(from, to), from, to, color });
+        wires.push({ id: `${rel.id}-${targetId}`, d: wirePath(from, to), from, to });
       }
     }
   }
@@ -503,7 +486,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     const right = Math.max(...rects.map((r) => r.right));
     const bottom = Math.max(...rects.map((r) => r.bottom));
     return {
-      x: Math.min(Math.max(12, (left + right) / 2 - 180), window.innerWidth - 372),
+      x: Math.min(Math.max(12, (left + right) / 2 - 190), window.innerWidth - 392),
       y: Math.min(bottom + 12, window.innerHeight - 120),
     };
   })();
@@ -513,7 +496,6 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       ? {
           from: edgePoint(cardRects[connecting.fromPinId], connecting.fromEdge),
           to: connecting.cursor,
-          color: hueTokens(hueForIndex(indexOfPin(connecting.fromPinId)), scheme).line,
         }
       : null;
 
@@ -521,23 +503,21 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     <div className="pin-overlay">
       {drawing && <DrawLayer onDone={() => setMode("pin")} onStale={() => setStale(true)} />}
 
+      {/* Hairline and neutral, with a red dot at each end — the logo's tittle,
+          reused so a connection reads as the product's own gesture. */}
       {!drawing && (wires.length > 0 || draft) && (
         <svg className="pin-wires" aria-hidden>
           {wires.map((wire) => (
             <g key={wire.id}>
-              <path className="pin-wire" d={wire.d} stroke={wire.color} />
-              <circle cx={wire.from.x} cy={wire.from.y} r="3.5" fill={wire.color} />
-              <circle cx={wire.to.x} cy={wire.to.y} r="3.5" fill={wire.color} />
+              <path className="pin-wire" d={wire.d} />
+              <circle cx={wire.from.x} cy={wire.from.y} r="3.5" fill="var(--pin-red)" />
+              <circle cx={wire.to.x} cy={wire.to.y} r="3.5" fill="var(--pin-red)" />
             </g>
           ))}
           {draft && (
             <>
-              <path
-                className="pin-wire pin-wire--draft"
-                d={wirePath(draft.from, draft.to)}
-                stroke={draft.color}
-              />
-              <circle cx={draft.from.x} cy={draft.from.y} r="3.5" fill={draft.color} />
+              <path className="pin-wire pin-wire--draft" d={wirePath(draft.from, draft.to)} />
+              <circle cx={draft.from.x} cy={draft.from.y} r="3.5" fill="var(--pin-red)" />
             </>
           )}
         </svg>
@@ -546,15 +526,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       {highlight && !drawing && (
         <div
           className="pin-highlight"
-          style={
-            {
-              left: highlight.x,
-              top: highlight.y,
-              width: highlight.width,
-              height: highlight.height,
-              "--pin-hue": nextHue.line,
-            } as React.CSSProperties
-          }
+          // The label rides above the box, except when the box is already at the
+          // top of the viewport and there is nowhere above to ride.
+          data-label={highlight.y < 22 ? "inside" : "above"}
+          style={{
+            left: highlight.x,
+            top: highlight.y,
+            width: highlight.width,
+            height: highlight.height,
+          }}
         >
           <span className="pin-highlight__label">{highlight.label}</span>
         </div>
@@ -569,9 +549,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           pulse={justPinned === pin.id}
           selected={selected.includes(pin.id)}
           primary={primaryPinId === pin.id}
-          chips={chips}
+          selectionCount={selected.length}
           connecting={connecting !== null}
-          hue={hueTokens(hueForIndex(indexOfPin(pin.id)), scheme)}
           onSelect={(additive) => selectPin(pin.id, additive)}
           onMove={(next) => persistPosition(pin.id, next)}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}
@@ -586,8 +565,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       {groupBox && (
         <div className="pin-note pin-note--floating" style={{ left: groupBox.x, top: groupBox.y }}>
           <Composer
-            chips={chips}
-            meta={`${chips.length} pins selected`}
+            count={selected.length}
             onCommit={commitNote}
             onRelate={relateSelected}
             autoFocus

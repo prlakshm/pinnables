@@ -58,6 +58,13 @@ export const PinSchema = z.object({
   sourceFile: z.string().nullable(),
   /** Allowlisted properties only. See styles.ts. */
   computedStyles: z.record(z.string(), z.string()),
+  /**
+   * Values the user typed over the captured ones in the inspector — the wanted
+   * state, not the current one. Kept apart from `computedStyles` on purpose:
+   * merging them would destroy the before/after pair, and the pair is the whole
+   * instruction. An empty object means "no numbers requested, read the note."
+   */
+  styleEdits: z.record(z.string(), z.string()).default({}),
   annotation: z.string(),
   captureState: z.string(),
   status: PinStatusSchema,

@@ -153,10 +153,49 @@ async function notifyBoardChanged(boardId: string): Promise<void> {
   for (const tab of tabs) if (tab.id) broadcastToTab(tab.id, message);
 }
 
+/**
+ * Turn capture mode on in a tab that may not be listening yet.
+ *
+ * `chrome.tabs.sendMessage` fails silently when nothing is receiving, and there
+ * are two ordinary ways for that to happen: the tab was open before the
+ * extension was installed or reloaded (manifest content scripts inject at
+ * navigation, not retroactively), or the page is outside the manifest's match
+ * list and only reachable through an optional host permission. Either way the
+ * state flips, the panel says "Capturing", and no toolbar appears.
+ *
+ * So: try the message, and on failure inject the script and try once more. The
+ * duplicate-injection case is covered by the content script itself, which keeps
+ * one overlay per page.
+ */
+async function armTab(tabId: number, enabled: boolean): Promise<void> {
+  const message = { kind: "capture-mode" as const, enabled };
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+    return;
+  } catch {
+    // Nothing listening — fall through and inject.
+  }
+  // Only worth injecting to turn capture *on*; there is nothing to switch off
+  // in a tab that never had an overlay.
+  if (!enabled) return;
+  // Read the built filename out of the manifest rather than hardcoding it —
+  // the bundler content-hashes the content script, so a literal path here would
+  // break on the next build without failing anything at compile time.
+  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
+  if (files.length === 0) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files });
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // chrome:// pages, the Web Store, PDFs, and any host we hold no permission
+    // for. Not an error — those tabs simply cannot be annotated.
+  }
+}
+
 async function setCaptureMode(enabled: boolean): Promise<void> {
   await store.patchState({ captureMode: enabled });
   const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) if (tab.id) broadcastToTab(tab.id, { kind: "capture-mode", enabled });
+  await Promise.all(tabs.map((tab) => (tab.id ? armTab(tab.id, enabled) : Promise.resolve())));
 }
 
 const handlers: Handlers = {
@@ -204,6 +243,7 @@ const handlers: Handlers = {
       componentName: element.componentName,
       sourceFile: element.sourceFile,
       computedStyles: element.computedStyles,
+      styleEdits: {},
       annotation: "",
       captureState: element.viewport.width < 640 ? "mobile" : "default",
       status: "todo",
@@ -273,6 +313,7 @@ const handlers: Handlers = {
       componentName: null,
       sourceFile: null,
       computedStyles: {},
+      styleEdits: {},
       annotation: "",
       captureState: viewport.width < 640 ? "mobile" : "default",
       status: "todo",

@@ -35,6 +35,13 @@ export function renderBoardManifest(board: Board): string {
     } else {
       lines.push(pin.sourceFile ? `source \`${pin.sourceFile}\`` : "source unresolved");
     }
+    // Exact numbers belong in pin context, but the manifest has to say they
+    // exist — otherwise an agent working from the manifest alone reads a vague
+    // note and never learns the user already specified the answer.
+    const edits = Object.keys(pin.styleEdits);
+    if (edits.length > 0) {
+      lines.push(`requested values for ${edits.join(", ")} — see \`get_pin_context\``);
+    }
     lines.push(`> ${pin.annotation}`);
     lines.push("");
   }
@@ -143,6 +150,20 @@ export function renderPinContext(
     lines.push(`## Captured styles`);
     lines.push(formatStyles(pin.computedStyles));
     lines.push("");
+    // Requested values are their own section rather than a patched style block:
+    // the agent needs both numbers to know what it is changing, and a merged
+    // block would read as the current state of the component.
+    const edits = Object.entries(pin.styleEdits);
+    if (edits.length > 0) {
+      lines.push(`## Requested values`);
+      lines.push("These were typed into the inspector. Treat them as the target.");
+      lines.push("");
+      for (const [property, wanted] of edits) {
+        const current = pin.computedStyles[property] ?? "unset";
+        lines.push(`- \`${property}\`  ${current} → **${wanted}**`);
+      }
+      lines.push("");
+    }
     lines.push(`## Markup`);
     lines.push("```html");
     lines.push(pin.outerHtml);

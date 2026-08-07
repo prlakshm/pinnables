@@ -63,7 +63,10 @@ export interface Contract {
   };
 
   "pin/update": {
-    req: { pinId: string; patch: Partial<Pick<Pin, "annotation" | "status" | "order" | "groupId">> };
+    req: {
+      pinId: string;
+      patch: Partial<Pick<Pin, "annotation" | "status" | "order" | "groupId" | "styleEdits">>;
+    };
     res: { board: Board };
   };
   "pin/delete": { req: { pinId: string }; res: { board: Board } };

@@ -1,112 +1,34 @@
 /**
- * Theming for an overlay that has to sit on top of somebody else's product.
+ * Palette and scheme detection.
  *
- * Two problems, one system.
- *
- * The first is that a single accent cannot work everywhere — a fixed blue looks
- * deliberate on a white dashboard and looks like a bug on a blue one. Cursor
- * solves this with a *set* of mutually distinguishable hues assigned per item
- * rather than one accent. A rotating set never has to match the page; it only
- * has to be distinguishable from its siblings, which is a far easier bar.
- *
- * The second is light versus dark. `prefers-color-scheme` is the wrong signal —
- * it reports the OS, not the page, and a dark-themed app on a light OS is
- * exactly where the chrome would break. The scheme is derived from the host
- * page's own background luminance instead.
+ * Values are sampled from the brand palette artboard in Paper, not eyeballed.
+ * The rotating per-selection hue set that used to live here is retired — see
+ * `brand/palettes/warm-rose.md` for the values and the reasoning, kept because
+ * the system may be worth returning to. Selection is now one grey and one blue,
+ * which is a simpler promise: the overlay never competes with the page, and
+ * colour carries state rather than identity.
  */
 
 export type Scheme = "light" | "dark";
 
-/**
- * Six hues, rose first.
- *
- * The *system* is Design Mode's and worth keeping: a rotating set assigned per
- * selection rather than one accent, so the chrome never has to match a page it
- * has never seen — it only has to stay distinguishable from its siblings.
- *
- * The *values* are ours. Using Cursor's literal palette in a product positioned
- * against Cursor would read as a reskin rather than an argument, and the
- * ordering gave it away as much as the colours did. So these are derived to the
- * same constraints — 42 degrees minimum separation, mid-lightness so one value
- * serves both schemes, muted enough not to fight the product underneath — in a
- * softer register, and rose leads instead of blue.
- */
-export const SELECTION_HUES = ["rose", "plum", "fern", "apricot", "sky", "stone"] as const;
-export type SelectionHue = (typeof SELECTION_HUES)[number];
-
-/**
- * Sampled pixel-by-pixel out of a Design Mode screenshot — see
- * `scripts/sample-outline-colors.mjs`. These are the actual stroke values, not
- * estimates: eight hues, each mid-lightness and moderately saturated.
- *
- * That pitch is the whole trick. Saturated enough to separate from each other
- * and from the page, muted enough not to fight the product underneath, and
- * mid-lightness so the same value works on a white app and a dark one without
- * a second palette.
- */
-const HUES: Record<SelectionHue, string> = {
-  rose: "#da6a93",
-  plum: "#a865c0",
-  fern: "#5aa876",
-  apricot: "#eda265",
-  sky: "#6aa6d4",
-  /*
-   * Sixth, and the only one that does not compete on hue. No opening is left on
-   * the wheel wider than 42° except the one yellow would fill, and yellow
-   * cannot hold contrast on white without darkening into an olive. This
-   * separates on chroma instead — near-neutral, so it cannot crowd anything
-   * added later — and is deepened to 3.9:1, because the softer greys it came
-   * from sat at 2.6:1 and vanished against a white header. Last in the
-   * rotation: it reads quieter than the other five, and six simultaneous
-   * selections are rare.
+export const PALETTE = {
+  /** Active tool fill, badge fill. */
+  skyBlue: "#76cafd",
+  /** Active tool glyph, badge text, primary action. */
+  cobalt: "#0953dd",
+  /** Brand mark, edge anchors, delete. Never chrome. */
+  red: "#f41616",
+  /** The lighter red off the flat mark. Anchor halo, destructive hover fill. */
+  redSoft: "#f4564b",
+  charcoal: "#2b2e34",
+  offWhite: "#fbf9f7",
+  /**
+   * Estimated from the toolbar reference rather than sampled — that image was
+   * pasted, not saved. Carries the selection outline and the pinned-card
+   * hairline, so it has to be visible without reading as a colour.
    */
-  stone: "#8a8079",
-};
-
-/** Cursor's verified neutrals. Warm, not the cool zinc shadcn defaults to. */
-export const NEUTRALS = {
-  light: { bg: "#f7f7f4", fg: "#26251e" },
-  dark: { bg: "#1c1b16", fg: "#f7f7f4" },
+  grey: "#8a8d93",
 } as const;
-
-export const BRAND_ACCENT = "#f44e00";
-
-/**
- * One value per hue does stroke and text; only the fill alpha changes with the
- * scheme. The sampled values sit at mid-lightness by design, so they hold
- * contrast against white and near-black alike — a second dark palette would
- * solve a problem these values already avoid. Dark carries a little more fill
- * because a 10% wash disappears on a dark ground.
- */
-export interface HueTokens {
-  line: string;
-  text: string;
-  soft: string;
-}
-
-export function hueTokens(hue: SelectionHue, scheme: Scheme): HueTokens {
-  const value = HUES[hue];
-  return {
-    line: value,
-    text: value,
-    soft: withAlpha(value, scheme === "dark" ? 0.18 : 0.1),
-  };
-}
-
-function withAlpha(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
-/**
- * Hues are handed out in creation order, cycling — the first pin is blue, the
- * ninth is blue again. A hash of the id would be stable against deletion but
- * would scatter the colours, and the sequence is the recognisable part: the
- * first thing you pin is always blue.
- */
-export function hueForIndex(index: number): SelectionHue {
-  return SELECTION_HUES[((index % SELECTION_HUES.length) + SELECTION_HUES.length) % SELECTION_HUES.length];
-}
 
 /** WCAG relative luminance, for deciding which side of the fence a colour is on. */
 function luminance(r: number, g: number, b: number): number {
@@ -126,9 +48,10 @@ function parseRgb(value: string): [number, number, number, number] | null {
 }
 
 /**
- * Walk up from the body for the first background that actually paints. Pages
- * routinely leave `body` transparent and colour `html`, or the reverse, so the
- * first opaque one wins and light is the fallback.
+ * The scheme comes from the host page's own background, not from
+ * prefers-color-scheme — that setting reports the OS, and a dark app on a light
+ * OS is exactly where the chrome would break. Pages routinely leave `body`
+ * transparent and colour `html`, or the reverse, so the first opaque one wins.
  */
 export function detectScheme(): Scheme {
   for (const node of [document.body, document.documentElement].filter(Boolean)) {
@@ -160,4 +83,57 @@ export function watchScheme(onChange: (scheme: Scheme) => void): () => void {
     observer.observe(document.body, { attributes: true, attributeFilter: ["class", "style"] });
   }
   return () => observer.disconnect();
+}
+
+export type AnchorEdge = "left" | "right" | "top" | "bottom";
+export const ANCHOR_EDGES: AnchorEdge[] = ["left", "right", "top", "bottom"];
+
+/**
+ * Which edge shows an anchor by default, given where the card sits on screen.
+ *
+ * A card near the right edge of the viewport has nothing to its right worth
+ * connecting to, so its anchor belongs on the left; one near the top gets its
+ * anchor on the bottom. Whichever side has the most room to run a wire into
+ * wins, and horizontal beats vertical on a tie because pins usually end up side
+ * by side rather than stacked.
+ */
+export function defaultEdgeFor(
+  rect: { left: number; right: number; top: number; bottom: number },
+  viewport: { width: number; height: number },
+): AnchorEdge {
+  const room = {
+    left: rect.left,
+    right: viewport.width - rect.right,
+    top: rect.top,
+    bottom: viewport.height - rect.bottom,
+  };
+  const horizontal: AnchorEdge = room.left >= room.right ? "left" : "right";
+  const vertical: AnchorEdge = room.top >= room.bottom ? "top" : "bottom";
+  return Math.max(room.left, room.right) >= Math.max(room.top, room.bottom) ? horizontal : vertical;
+}
+
+/** The edge midpoint the pointer is nearest, if it is close enough to mean it. */
+export function nearestEdge(
+  rect: { left: number; right: number; top: number; bottom: number },
+  point: { x: number; y: number },
+  threshold = 56,
+): AnchorEdge | null {
+  const cx = (rect.left + rect.right) / 2;
+  const cy = (rect.top + rect.bottom) / 2;
+  const mid: Record<AnchorEdge, { x: number; y: number }> = {
+    left: { x: rect.left, y: cy },
+    right: { x: rect.right, y: cy },
+    top: { x: cx, y: rect.top },
+    bottom: { x: cx, y: rect.bottom },
+  };
+  let best: AnchorEdge | null = null;
+  let bestDistance = threshold;
+  for (const edge of ANCHOR_EDGES) {
+    const d = Math.hypot(mid[edge].x - point.x, mid[edge].y - point.y);
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = edge;
+    }
+  }
+  return best;
 }

@@ -1,33 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
-import type { HueTokens } from "../ui/theme";
-
-/** One entry per selected pin, for the chip row. */
-export interface SelectionChip {
-  id: string;
-  label: string;
-  hue: HueTokens;
-}
 
 interface ComposerProps {
-  chips: SelectionChip[];
-  meta: string;
+  /** How many pins this prompt will be written to. Drives the placeholder. */
+  count: number;
   onCommit: (text: string) => Promise<void>;
   onRelate?: () => void;
   autoFocus?: boolean;
 }
 
 /**
- * One prompt, however many pins.
+ * One prompt, however many pins — and one line.
  *
  * Shared by the inline case (docked under a single pin) and the floating case
- * (parked beneath a multi-selection), so the two can never drift apart. Chips
- * lead the line and the prompt continues after them, each chip wearing its own
- * pin's hue — the trick that makes a chip traceable to its outline without
- * reading the label.
+ * (parked beneath a multi-selection), so the two can never drift apart.
+ *
+ * It stays a single row on purpose. Chips naming the selected pins used to lead
+ * the line, but the page already outlines those pins in blue; repeating their
+ * names inside the box spent a row saying what the user was looking at. What
+ * the pin *is* — its component name, its measurements — belongs in the
+ * inspector, where there is room to make it editable.
  */
-export function Composer({ chips, meta, onCommit, onRelate, autoFocus }: ComposerProps) {
+export function Composer({ count, onCommit, onRelate, autoFocus }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -48,62 +43,51 @@ export function Composer({ chips, meta, onCommit, onRelate, autoFocus }: Compose
     }
   }, [draft, saving, onCommit]);
 
-  const multi = chips.length > 1;
+  const multi = count > 1;
 
   return (
     <div className="pin-note__body">
-      <div className="pin-note__chips">
-        {chips.map((chip) => (
-          <span
-            key={chip.id}
-            className="pin-note__chip"
-            style={
-              {
-                "--pin-hue-text": chip.hue.text,
-                "--pin-hue-soft": chip.hue.soft,
-              } as React.CSSProperties
-            }
-          >
-            {chip.label}
-          </span>
-        ))}
-        <textarea
-          ref={input}
-          className="pin-note__input"
-          rows={1}
-          value={draft}
-          placeholder={multi ? `Describe the change for all ${chips.length}` : "Describe the change"}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && hasModifier(e.nativeEvent)) {
-              e.preventDefault();
-              void commit();
-            }
-          }}
-        />
-      </div>
+      <textarea
+        ref={input}
+        className="pin-note__input"
+        rows={1}
+        value={draft}
+        placeholder={multi ? `Describe the change for all ${count}` : "Describe the change"}
+        onChange={(e) => setDraft(e.target.value.replace(/\n/g, " "))}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          // Enter alone would insert a newline into a box that is one line by
+          // construction, so both forms submit and neither can break the row.
+          e.preventDefault();
+          if (hasModifier(e.nativeEvent) || !e.shiftKey) void commit();
+        }}
+      />
 
-      <div className="pin-note__foot">
-        <span className="pin-note__meta">{meta}</span>
-        {/* Relating N pins in one gesture rather than dragging N wires: the
-            first selected is the reference, the rest are targets. */}
-        {multi && onRelate && (
-          <button className="pin-btn" style={{ height: 26 }} onClick={onRelate}>
-            <LinkIcon size={13} />
-            Relate
-          </button>
-        )}
-        <span className="pin-kbd">{submitHintLabel}</span>
+      {/* Relating N pins in one gesture rather than dragging N wires: the first
+          selected is the reference, the rest are targets. */}
+      {multi && onRelate && (
         <button
-          className="pin-note__send"
-          onClick={() => void commit()}
-          disabled={!draft.trim() || saving}
-          title={`Save annotation · ${submitHintLabel}`}
-          aria-label="Save annotation"
+          className="pin-icon-btn"
+          style={{ width: 26, height: 26 }}
+          onClick={onRelate}
+          title={`Match the other ${count - 1} to the first selected`}
+          aria-label="Relate the selected pins"
         >
-          <ArrowUpRightIcon size={14} />
+          <LinkIcon size={14} />
         </button>
-      </div>
+      )}
+
+      <span className="pin-kbd">{submitHintLabel}</span>
+
+      <button
+        className="pin-note__send"
+        onClick={() => void commit()}
+        disabled={!draft.trim() || saving}
+        title={`Save annotation · ${submitHintLabel}`}
+        aria-label="Save annotation"
+      >
+        <ArrowUpRightIcon size={14} />
+      </button>
     </div>
   );
 }

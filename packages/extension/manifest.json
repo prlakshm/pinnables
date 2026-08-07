@@ -35,6 +35,13 @@
   ],
   "permissions": ["storage", "unlimitedStorage", "sidePanel", "scripting", "activeTab", "tabs"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["http://*/*", "https://*/*"],
+      "use_dynamic_url": false
+    }
+  ],
   "commands": {
     "toggle-capture": {
       "suggested_key": { "default": "Alt+Shift+P" },
