@@ -79,13 +79,29 @@ for (const [name, spec] of Object.entries(tokens.semantic)) {
   }
 }
 
+/**
+ * Properties a component sets inline at runtime, so they never appear in the
+ * stylesheet as a declaration. Each needs a reason — an unexplained entry here
+ * is how a genuine typo gets waved through.
+ */
+const SET_AT_RUNTIME = new Map([
+  ["--pin-card-radius", "PinObject.tsx — the pinned card takes its element's captured border-radius"],
+]);
+
 /** Anything used across the whole stylesheet but never defined anywhere in it. */
-const definedAnywhere = new Set(
-  [...css.matchAll(/(--pin-[\w-]+)\s*:/g)].map((m) => m[1]),
-);
+const definedAnywhere = new Set([
+  ...[...css.matchAll(/(--pin-[\w-]+)\s*:/g)].map((m) => m[1]),
+  ...SET_AT_RUNTIME.keys(),
+]);
 const used = new Set([...css.matchAll(/var\((--pin-[\w-]+)/g)].map((m) => m[1]));
 for (const name of used) {
   if (!definedAnywhere.has(name)) problems.push(`${name} is referenced but never defined`);
+}
+
+for (const [name, why] of SET_AT_RUNTIME) {
+  if (!css.includes(`var(${name}`)) {
+    problems.push(`${name} is allowlisted as runtime-set (${why}) but the stylesheet never reads it`);
+  }
 }
 
 /** Tokens nothing uses. Not an error — dead weight worth seeing. */

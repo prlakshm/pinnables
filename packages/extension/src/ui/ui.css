@@ -38,7 +38,7 @@
   --pin-grey-200: #d3d2ce;           /* derived */
   --pin-grey-400: #a1a4ab;           /* derived */
   --pin-grey-500: #6b6f78;           /* Paper: ink-muted */
-  --pin-grey-700: #3d434d;           /* derived */
+  --pin-grey-600: #525963;           /* derived */
   --pin-grey-900: #292c33;           /* Paper: ink */
 
   --pin-blue-100: #e4f1fd;           /* Paper: sky-tint */
@@ -60,9 +60,18 @@
   --pin-ink-faint: var(--pin-grey-400);
   --pin-ink-muted: var(--pin-grey-500);
   --pin-ink: var(--pin-grey-900);
-  /* Hover for anything filled with ink. Lifting is the only direction available
-     to something that is already the strongest thing on screen. */
-  --pin-ink-lift: var(--pin-grey-700);
+  /*
+   * Hover for anything filled with ink. Lifting is the only direction available
+   * to something already the strongest thing on screen, and the step has to be
+   * big enough to read at a glance — roughly the +20 L* that #000 → #333 gives
+   * on Vercel. One swatch along was a change you had to look for.
+   */
+  --pin-ink-lift: var(--pin-grey-600);
+
+  /* And the mirror for the off state: one step down, so hovering something
+     switched off acknowledges the pointer without pretending to be available. */
+  --pin-off: var(--pin-grey-100);
+  --pin-off-hover: var(--pin-grey-150);
 
   /* State — the tool you are holding, the pin that is selected, the count. Only
      ever in the overlay's own chrome. `--pin-sky-fill` is a step deeper than the
@@ -81,7 +90,7 @@
    */
   --pin-measure: var(--pin-grey-500);
   --pin-measure-wash: color-mix(in srgb, var(--pin-grey-500) 8%, transparent);
-  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-500) 22%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-500) 32%, transparent);
 
   /* The mark — the logo's tittle, reused for edge anchors and for delete. */
   --pin-red: var(--pin-red-500);
@@ -146,7 +155,7 @@
 
   --pin-measure: #9ba0a8;
   --pin-measure-wash: color-mix(in srgb, #9ba0a8 12%, transparent);
-  --pin-measure-glow: color-mix(in srgb, #9ba0a8 30%, transparent);
+  --pin-measure-glow: color-mix(in srgb, #9ba0a8 42%, transparent);
 
   /* Red holds against both grounds, so only its wash needs opening up. */
   --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 24%, transparent);
@@ -236,14 +245,24 @@
 }
 .pin-btn--quiet,
 .pin-btn--primary:disabled {
-  background: var(--pin-paper-sunk);
+  background: var(--pin-off);
   border-color: transparent;
   color: var(--pin-ink-muted);
   filter: none;
 }
+/*
+ * Both off states darken a step on hover. The difference is the text: `--quiet`
+ * is switched off but clickable, so its label comes up to full ink; a disabled
+ * button acknowledges the pointer with the fill alone and keeps the muted label,
+ * because brightening the text of something that will not respond is a promise
+ * it cannot keep.
+ */
 .pin-btn--quiet:hover {
-  background: var(--pin-rule);
+  background: var(--pin-off-hover);
   color: var(--pin-ink);
+}
+.pin-btn--primary:disabled:hover {
+  background: var(--pin-off-hover);
 }
 .pin-btn--ghost {
   border-color: transparent;
@@ -783,10 +802,13 @@
 /* Light grey on grey — the same "will not act" state as a disabled Capture or
    Ready for agent, so the three read as one control in three places. */
 .pin-note__send:disabled {
-  background: var(--pin-paper-sunk);
+  background: var(--pin-off);
   color: var(--pin-ink-faint);
   cursor: default;
   filter: none;
+}
+.pin-note__send:disabled:hover {
+  background: var(--pin-off-hover);
 }
 
 .pin-note__rel {
