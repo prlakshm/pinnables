@@ -38,7 +38,7 @@
   --pin-grey-200: #d3d2ce;           /* derived */
   --pin-grey-400: #a1a4ab;           /* derived */
   --pin-grey-500: #6b6f78;           /* Paper: ink-muted */
-  --pin-grey-600: #525963;           /* derived */
+  --pin-grey-600: #454b55;           /* derived */
   --pin-grey-900: #292c33;           /* Paper: ink */
 
   --pin-blue-100: #e4f1fd;           /* Paper: sky-tint */
@@ -62,9 +62,10 @@
   --pin-ink: var(--pin-grey-900);
   /*
    * Hover for anything filled with ink. Lifting is the only direction available
-   * to something already the strongest thing on screen, and the step has to be
-   * big enough to read at a glance — roughly the +20 L* that #000 → #333 gives
-   * on Vercel. One swatch along was a change you had to look for.
+   * to something already the strongest thing on screen. Sized between the two
+   * misses: one swatch along the ramp was a change you had to hunt for, and
+   * Vercel's full +20 L* pulled the button toward slate. This lands at +13,
+   * which reads immediately and still looks black.
    */
   --pin-ink-lift: var(--pin-grey-600);
 
@@ -83,14 +84,17 @@
 
   /*
    * Measurement — the outline around what you are about to pin, the hairline
-   * around what you already pinned. Deliberately the same primitive as muted
-   * ink, because it is the same grey the reference draws its toolbar icons in;
-   * the alias is what records that they are one decision rather than two that
-   * happen to match.
+   * around what you already pinned.
+   *
+   * A step lighter than the grey the toolbar icons are drawn in, and not for
+   * consistency's sake. Those glyphs sit on our own white pill where they have
+   * to carry; this outline lands on somebody else's page, on top of the thing
+   * being judged. `ink-muted` at 2px read as a hard rule around the component
+   * rather than a measurement laid over it.
    */
-  --pin-measure: var(--pin-grey-500);
-  --pin-measure-wash: color-mix(in srgb, var(--pin-grey-500) 8%, transparent);
-  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-500) 22%, transparent);
+  --pin-measure: var(--pin-grey-400);
+  --pin-measure-wash: color-mix(in srgb, var(--pin-grey-400) 10%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-400) 30%, transparent);
 
   /* The mark — the logo's tittle, reused for edge anchors and for delete. */
   --pin-red: var(--pin-red-500);
@@ -617,13 +621,18 @@
  */
 .pin-object[data-selected="true"] .pin-object__card {
   box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
-  /* The label lands on this edge, so the top-left corner straightens to receive
-     it. The other three keep the element's own radius. */
-  border-top-left-radius: 0;
 }
 
 .pin-object__inner {
-  border-radius: inherit;
+  /*
+   * Minus the border, not `inherit`.
+   *
+   * A rounded box's inner curve is its outer curve less its border width, so a
+   * child that inherits the outer radius bulges past the border's inner edge and
+   * leaves a sliver of card visible at all four corners. At 1px it is small and
+   * it is exactly the kind of thing you see without being able to name.
+   */
+  border-radius: calc(var(--pin-card-radius, var(--pin-radius)) - 1px);
   overflow: hidden;
 }
 
@@ -675,8 +684,11 @@
   align-items: center;
   height: 28px;
   padding: 0 12px;
+  /* Square only where the strip meets it; the other three corners are the
+     outside of a floating shape. */
   border-radius: var(--pin-label-radius, var(--pin-radius-sm))
-    var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
+    var(--pin-label-radius, var(--pin-radius-sm)) 0
+    var(--pin-label-radius, var(--pin-radius-sm));
   background: var(--pin-ink);
   font-size: 13px;
   font-weight: 600;
@@ -694,7 +706,8 @@
   gap: 8px;
   height: 22px;
   padding: 0 3px 0 9px;
-  border-radius: 0 var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
+  border-radius: 0 var(--pin-label-radius, var(--pin-radius-sm))
+    var(--pin-label-radius, var(--pin-radius-sm)) 0;
   background: var(--pin-ink);
   flex: 1 1 auto;
   min-width: 0;
