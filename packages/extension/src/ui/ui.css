@@ -26,6 +26,9 @@
   --pin-ink-faint: #a1a4ab;
   --pin-ink-muted: #6b6f78;
   --pin-ink: #292c33;
+  /* Hover for anything filled with ink. Lifting is the only direction available
+     to something that is already the strongest thing on screen. */
+  --pin-ink-lift: #3d434d;
 
   /* State, and only in the overlay's own chrome — the active tool, the count
      badge. `--pin-sky-fill` is the disc measured off the nav reference, a step
@@ -86,6 +89,8 @@
   --pin-ink-faint: #71757c;
   --pin-ink-muted: #9ba0a8;
   --pin-ink: #f6f5f3;
+  /* Inverted here: ink is the light one, so its hover settles rather than lifts. */
+  --pin-ink-lift: #ffffff;
 
   /* Cobalt is unreadable on a dark ground, so sky takes the glyph and the fill
      drops to a wash of it. The pair swaps roles rather than gaining a token. */
@@ -149,7 +154,14 @@
   white-space: nowrap;
   transition: background 120ms ease, border-color 120ms ease;
 }
-.pin-btn:hover {
+/*
+ * `:where(:hover)` rather than `:hover`. A bare `.pin-btn:hover` is (0,0,2,0)
+ * and out-specifies every single-class variant below it, so hovering a black
+ * button repainted its fill light grey while the text stayed white — the button
+ * vanished. Zeroing the pseudo-class keeps this a default that variants can
+ * simply state their way out of, which is what it was always meant to be.
+ */
+.pin-btn:where(:hover) {
   background: var(--pin-paper-sunk);
 }
 /*
@@ -167,8 +179,11 @@
   border-color: var(--pin-ink);
   color: var(--pin-paper);
 }
+/* Hover lifts the black rather than replacing it — an enabled button that is
+   already the strongest thing on screen has nowhere louder to go. */
 .pin-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.25);
+  background: var(--pin-ink-lift);
+  border-color: var(--pin-ink-lift);
 }
 .pin-btn--quiet,
 .pin-btn--primary:disabled {
@@ -208,7 +223,7 @@
   color: var(--pin-ink-muted);
   transition: background 120ms ease, color 120ms ease;
 }
-.pin-icon-btn:hover {
+.pin-icon-btn:where(:hover) {
   background: var(--pin-paper-sunk);
   color: var(--pin-ink);
 }
@@ -220,6 +235,11 @@
 .pin-icon-btn[data-active="true"] {
   background: var(--pin-sky-fill);
   color: var(--pin-cobalt);
+}
+/* The tool you are already holding still answers the pointer — it deepens
+   rather than switching to the neutral hover, which would read as turning off. */
+.pin-icon-btn[data-active="true"]:hover {
+  background: var(--pin-sky);
 }
 
 /*
@@ -722,7 +742,7 @@
   color: var(--pin-paper);
   transition: background 120ms ease, color 120ms ease;
 }
-.pin-note__send:hover { filter: brightness(1.25); }
+.pin-note__send:hover:not(:disabled) { background: var(--pin-ink-lift); }
 /* Light grey on grey — the same "will not act" state as a disabled Capture or
    Ready for agent, so the three read as one control in three places. */
 .pin-note__send:disabled {
