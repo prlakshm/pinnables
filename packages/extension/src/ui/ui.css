@@ -696,7 +696,11 @@
   height: 28px;
   padding: 0 4px 0 11px;
   margin-bottom: var(--pin-label-gap);
-  border-radius: var(--pin-label-radius, var(--pin-radius-sm));
+  /* Rounded on top, square along the bottom — the picker's label profile. The
+     flat edge is what points the label at the thing below it; rounding all four
+     corners made it read as a pill that happened to be nearby. */
+  border-radius: var(--pin-label-radius, var(--pin-radius-sm))
+    var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
   background: var(--pin-ink);
   color: var(--pin-paper);
   box-shadow: var(--pin-shadow);
