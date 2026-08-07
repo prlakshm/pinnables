@@ -103,6 +103,24 @@ export function PinObject({
   /** The component name where the build provides one, else the text it wraps. */
   const label = pin.componentName ?? pin.elementText.slice(0, 28).trim() ?? "";
 
+  /*
+   * The card keeps the element's own corners.
+   *
+   * The picker already traces them, so a fixed radius here meant the outline you
+   * drew and the card you got disagreed — you selected a 4px stat card and were
+   * handed a 10px one. What floats is a picture of the component, so it should
+   * be that component's shape. Clamped, because an element with a pill radius
+   * would turn its card into a lozenge, and region pins fall back since they
+   * have no element to borrow from.
+   */
+  const cardRadius = (() => {
+    if (pin.kind !== "element") return undefined;
+    const captured = pin.computedStyles["border-radius"];
+    if (captured === undefined) return "0px";
+    const px = Number.parseFloat(captured);
+    return Number.isFinite(px) ? `${Math.min(px, 18)}px` : undefined;
+  })();
+
   /**
    * One anchor, on one edge.
    *
@@ -138,7 +156,12 @@ export function PinObject({
         setNearEdge(null);
       }}
     >
-      <div className="pin-object__card" data-pulse={pulse} ref={card}>
+      <div
+        className="pin-object__card"
+        data-pulse={pulse}
+        ref={card}
+        style={cardRadius ? ({ "--pin-card-radius": cardRadius } as React.CSSProperties) : undefined}
+      >
         <div className="pin-object__inner">
           {/*
             * What it is, then where it lives. A floating card used to be

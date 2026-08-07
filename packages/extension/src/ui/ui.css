@@ -582,7 +582,9 @@
 .pin-object__card {
   position: relative;
   border: 1px solid var(--pin-measure);
-  border-radius: var(--pin-radius);
+  /* Set per pin from the element's own captured radius; the fallback is for
+     region pins, which have no element to borrow from. */
+  border-radius: var(--pin-card-radius, var(--pin-radius));
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   overflow: visible;
@@ -601,7 +603,7 @@
 }
 
 .pin-object__inner {
-  border-radius: var(--pin-radius);
+  border-radius: inherit;
   overflow: hidden;
 }
 
