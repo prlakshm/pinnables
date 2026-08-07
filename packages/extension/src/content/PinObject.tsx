@@ -22,7 +22,10 @@ interface PinObjectProps {
   selectionCount: number;
   connecting: boolean;
   onSelect: (additive: boolean) => void;
+  /** Live, per frame — state only, never storage. */
   onMove: (position: FloatPosition) => void;
+  /** Once, on release. This is the one that writes to disk. */
+  onMoveEnd: (position: FloatPosition) => void;
   onDismiss: () => void;
   onCommit: (text: string) => Promise<void>;
   onRelate: () => void;
@@ -50,6 +53,7 @@ export function PinObject({
   connecting,
   onSelect,
   onMove,
+  onMoveEnd,
   onDismiss,
   onCommit,
   onRelate,
@@ -60,7 +64,7 @@ export function PinObject({
   const [shot, setShot] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
   const [nearEdge, setNearEdge] = useState<AnchorEdge | null>(null);
-  const dragging = useRef<{ dx: number; dy: number } | null>(null);
+  const dragging = useRef<{ dx: number; dy: number; at: FloatPosition } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
 
@@ -76,7 +80,11 @@ export function PinObject({
       onSelect(event.metaKey || event.ctrlKey || event.shiftKey);
       const rect = ref.current?.getBoundingClientRect();
       if (!rect) return;
-      dragging.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+      dragging.current = {
+        dx: event.clientX - rect.left,
+        dy: event.clientY - rect.top,
+        at: { x: rect.left, y: rect.top },
+      };
       (event.currentTarget as Element).setPointerCapture(event.pointerId);
     },
     [onSelect],
@@ -86,16 +94,38 @@ export function PinObject({
     (event: React.PointerEvent) => {
       const drag = dragging.current;
       if (drag) {
-        onMove({
+        const next = {
           x: Math.max(4, event.clientX - drag.dx),
           y: Math.max(4, event.clientY - drag.dy),
-        });
+        };
+        drag.at = next;
+        onMove(next);
         return;
       }
       const rect = card.current?.getBoundingClientRect();
       if (rect) setNearEdge(nearestEdge(rect, { x: event.clientX, y: event.clientY }));
     },
     [onMove],
+  );
+
+  /**
+   * Release ends the drag, and it is the only moment anything is written down.
+   * Persisting per frame meant a storage round-trip for every pixel of travel,
+   * which is what made a card feel like it was being dragged through treacle.
+   *
+   * `pointercancel` has to do the same work: the browser fires it instead of
+   * `pointerup` when a gesture is taken over — a scroll, a window losing focus —
+   * and without it the card stays stuck to the cursor with no button held.
+   */
+  const endDrag = useCallback(
+    (event: React.PointerEvent) => {
+      const drag = dragging.current;
+      dragging.current = null;
+      const target = event.currentTarget as Element;
+      if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
+      if (drag) onMoveEnd(drag.at);
+    },
+    [onMoveEnd],
   );
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
@@ -159,7 +189,8 @@ export function PinObject({
       style={{ left: position.x, top: position.y, ...shape }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={() => (dragging.current = null)}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -177,13 +208,14 @@ export function PinObject({
         * lie about what that component looks like.
         */}
       {selected && (
-        <div className="pin-object__label" data-no-drag>
+        <div className="pin-object__label">
           <span className="pin-object__name">{label}</span>
           <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
             {pin.sourceFile ?? pin.route}
           </span>
           <button
             className="pin-icon-btn"
+            data-no-drag
             style={{ width: 20, height: 20, flex: "0 0 auto" }}
             onClick={onDismiss}
             title="Hide from this page — the pin stays on the board"

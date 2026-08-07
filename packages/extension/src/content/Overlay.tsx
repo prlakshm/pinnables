@@ -99,6 +99,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [cardRects, setCardRects] = useState<Record<string, DOMRect>>({});
   const [scheme, setScheme] = useState<Scheme>(() => detectScheme());
   const hovered = useRef<Element | null>(null);
+  const pressStartedInOurs = useRef(false);
   const hoverAnchor = useRef<{ pinId: string; edge: AnchorEdge } | null>(null);
 
   /**
@@ -157,6 +158,12 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     });
   }, [board?.pins.length]);
 
+  /** Live position, per frame. State only — dragging must not touch storage. */
+  const moveTo = useCallback((pinId: string, position: FloatPosition) => {
+    setPositions((prev) => ({ ...prev, [pinId]: position }));
+  }, []);
+
+  /** Where it came to rest. The one write. */
   const persistPosition = useCallback((pinId: string, position: FloatPosition) => {
     setPositions((prev) => ({ ...prev, [pinId]: position }));
     void chrome.storage.local.set({ [posKey(pinId)]: position });
@@ -277,6 +284,26 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const isOurs = (node: EventTarget | null): boolean =>
     node instanceof Element && (node.id === OVERLAY_HOST_ID || node.closest(`#${OVERLAY_HOST_ID}`) !== null);
 
+  /**
+   * Whether the gesture in progress started on our own UI.
+   *
+   * `click` fires on the nearest common ancestor of where the press began and
+   * where it ended, so dragging a pin across the page and releasing over it
+   * produced a click on <body> — which the picker happily treated as "pin this",
+   * capturing whatever the card had been dragged over. Checking the click target
+   * cannot catch that; only remembering where the press landed can.
+   */
+  useEffect(() => {
+    if (!state.enabled) return;
+    const onDown = (event: PointerEvent) => {
+      pressStartedInOurs.current = event
+        .composedPath()
+        .some((n) => n instanceof Element && n.id === OVERLAY_HOST_ID);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [state.enabled]);
+
   useEffect(() => {
     if (!state.enabled || mode !== "pin" || capturing || stale || connecting) {
       setHighlight(null);
@@ -343,7 +370,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     if (!state.enabled || mode !== "pin" || stale || connecting) return;
 
     const onClick = (event: MouseEvent) => {
-      if (isOurs(event.target)) return;
+      if (isOurs(event.target) || pressStartedInOurs.current) return;
       const el = document.elementFromPoint(event.clientX, event.clientY);
       if (!el) return;
       event.preventDefault();
@@ -563,7 +590,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           selectionCount={selected.length}
           connecting={connecting !== null}
           onSelect={(additive) => selectPin(pin.id, additive)}
-          onMove={(next) => persistPosition(pin.id, next)}
+          onMove={(next) => moveTo(pin.id, next)}
+          onMoveEnd={(next) => persistPosition(pin.id, next)}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}
           onCommit={commitNote}
           onRelate={relateSelected}
