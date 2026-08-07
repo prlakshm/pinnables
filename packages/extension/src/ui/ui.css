@@ -608,7 +608,6 @@
    the click, thinned. Same colour, less weight: pinned, no longer pending. */
 .pin-object__card {
   position: relative;
-  border: 1px solid var(--pin-measure);
   /* Set per pin from the element's own captured radius; the fallback is for
      region pins, which have no element to borrow from. */
   border-radius: var(--pin-card-radius, var(--pin-radius));
@@ -616,6 +615,29 @@
   box-shadow: var(--pin-shadow);
   overflow: visible;
   transition: box-shadow 120ms ease;
+}
+
+/*
+ * The hairline is drawn on top of the content, not as a border around it.
+ *
+ * A real border forces a choice with no right answer. What sits inside is a
+ * *screenshot* — a rectangular crop of a rounded element, so its four corners
+ * hold whatever page was behind it. Clipping that at the border's inner curve
+ * (radius − 1) is tighter than the element's own curve, which leaves a crescent
+ * of that page background showing at every corner. Clipping at the full radius
+ * fixes the crescent and re-opens a sliver of card between border and content.
+ *
+ * A ring painted over the top has neither problem: the content clips at exactly
+ * the radius the element itself used, and the hairline covers the outermost
+ * pixel, antialiasing and all.
+ */
+.pin-object__card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--pin-measure);
+  pointer-events: none;
 }
 /*
  * Selection adds a glow and touches nothing else. The border keeps the weight
@@ -628,15 +650,9 @@
 }
 
 .pin-object__inner {
-  /*
-   * Minus the border, not `inherit`.
-   *
-   * A rounded box's inner curve is its outer curve less its border width, so a
-   * child that inherits the outer radius bulges past the border's inner edge and
-   * leaves a sliver of card visible at all four corners. At 1px it is small and
-   * it is exactly the kind of thing you see without being able to name.
-   */
-  border-radius: calc(var(--pin-card-radius, var(--pin-radius)) - 1px);
+  /* Exactly the element's own radius — the same curve the screenshot was cut
+     along, so nothing of the page behind it survives at the corners. */
+  border-radius: inherit;
   overflow: hidden;
 }
 
