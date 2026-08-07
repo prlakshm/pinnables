@@ -680,76 +680,37 @@
 }
 
 /*
- * A folder tab, not a bar.
+ * The name floats above the card rather than sitting on it, and only while the
+ * pin is selected.
  *
- * It is still the picker's label kept after the click, inverted to black so
- * hovering and having-pinned are never confused. What changed is the silhouette:
- * the name sits in a tab sized to itself and standing taller than the strip
- * beside it, which is how a folder reads as a folder before you have read
- * anything written on it.
- *
- * It floats clear of the card by the same gap the picker's label leaves above
- * its outline. The two are one object at two moments — grey while you decide,
- * black once it is yours — and any difference in how they sit reads as a
- * mistake rather than a distinction.
+ * It is the picker's label kept after the click — same shape, same gap above the
+ * thing it names, inverted to black so hovering and having-pinned are never
+ * mistaken for each other. Keeping it off the card matters more here than in
+ * most UI: the card is a picture of the component, and a bar drawn across its
+ * top is a lie about what that component looks like.
  */
 .pin-object__label {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px 0 11px;
   margin-bottom: var(--pin-label-gap);
+  border-radius: var(--pin-label-radius, var(--pin-radius-sm));
+  background: var(--pin-ink);
   color: var(--pin-paper);
-  filter: drop-shadow(0 1px 2px rgba(9, 9, 11, 0.14));
+  box-shadow: var(--pin-shadow);
 }
 
-.pin-object__tab {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  /* Square only where the strip meets it; the other three corners are the
-     outside of a floating shape. */
-  border-radius: var(--pin-label-radius, var(--pin-radius-sm))
-    var(--pin-label-radius, var(--pin-radius-sm)) 0
-    var(--pin-label-radius, var(--pin-radius-sm));
-  background: var(--pin-ink);
+/* Sans and heavier — this is the name of a thing, not a measurement. */
+.pin-object__name {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.005em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 62%;
   flex: 0 1 auto;
-}
-
-.pin-object__strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 22px;
-  padding: 0 3px 0 9px;
-  border-radius: 0 var(--pin-label-radius, var(--pin-radius-sm))
-    var(--pin-label-radius, var(--pin-radius-sm)) 0;
-  background: var(--pin-ink);
-  flex: 1 1 auto;
-  min-width: 0;
-  position: relative;
-}
-
-/*
- * The concave corner where the tab steps down to the strip. A square notch is
- * legible but mechanical; a folder's tab flares into its body. Drawn as a
- * radial gradient rather than a border-radius because the curve has to be cut
- * *out* of the corner, which no border property can do.
- */
-.pin-object__strip::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 7px;
-  height: 7px;
-  background: radial-gradient(circle at 100% 100%, transparent 0 7px, var(--pin-ink) 7px);
 }
 
 /* The path stays mono and quiet, and gives up its space first — the name is what

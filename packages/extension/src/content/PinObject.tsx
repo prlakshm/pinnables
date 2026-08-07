@@ -178,24 +178,19 @@ export function PinObject({
         */}
       {selected && (
         <div className="pin-object__label" data-no-drag>
-          {/* The tab proper: only as wide as the name, and taller than the strip
-              beside it. That step is the whole shape — a folder is recognisable
-              from its silhouette before you read anything on it. */}
-          <span className="pin-object__tab">{label}</span>
-          <span className="pin-object__strip">
-            <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
-              {pin.sourceFile ?? pin.route}
-            </span>
-            <button
-              className="pin-icon-btn"
-              style={{ width: 20, height: 20, flex: "0 0 auto" }}
-              onClick={onDismiss}
-              title="Hide from this page — the pin stays on the board"
-              aria-label="Hide pin from page"
-            >
-              <CloseIcon size={13} />
-            </button>
+          <span className="pin-object__name">{label}</span>
+          <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
+            {pin.sourceFile ?? pin.route}
           </span>
+          <button
+            className="pin-icon-btn"
+            style={{ width: 20, height: 20, flex: "0 0 auto" }}
+            onClick={onDismiss}
+            title="Hide from this page — the pin stays on the board"
+            aria-label="Hide pin from page"
+          >
+            <CloseIcon size={13} />
+          </button>
         </div>
       )}
 
