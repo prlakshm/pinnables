@@ -16,19 +16,54 @@ export const PinStatusSchema = z.enum(["todo", "done", "blocked"]);
  */
 export const PinKindSchema = z.enum(["element", "region"]);
 
+/**
+ * What a mark is pinned to.
+ *
+ * Marks used to live on a frozen photograph of the viewport, which made them
+ * durable by making them dead — nothing could move underneath them because
+ * nothing was alive. Anchoring to an element instead keeps them durable *and*
+ * alive: the page can reflow, the window can resize, and a circle drawn around
+ * a card stays around that card because it is measured in fractions of that
+ * card, not in pixels of the page.
+ *
+ * `rect` is the anchor's box at the moment of drawing. It is the fallback when
+ * the element can no longer be found — better to put a mark roughly where it
+ * was than to lose it.
+ */
+export const DrawAnchorSchema = z.object({
+  selector: z.string(),
+  domPath: z.string(),
+  rect: z.object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number(),
+    height: z.number(),
+  }),
+});
+
 export const DrawShapeSchema = z.object({
   id: z.string(),
   kind: z.enum(["rect", "ellipse", "arrow", "freehand"]),
   /**
-   * Normalised 0–1 against the frozen frame, never page pixels. The frame is
-   * immutable once captured, so a drawing can never drift the way a
-   * coordinate-anchored overlay on a live page would — and it stays correct at
-   * whatever size the image is later displayed.
+   * Fractions of whatever the shape is anchored to — never page pixels.
+   *
+   * With an anchor, they are fractions of that element's box, which is what lets
+   * a mark reflow with the page: the element moves and resizes, the mark moves
+   * and resizes with it. Values outside 0–1 are fine and expected, since a
+   * circle drawn *around* something extends past its edges.
+   *
+   * Without an anchor, they are fractions of a captured frame.
    *
    * rect / ellipse / arrow use two points; freehand uses many.
    */
   points: z.array(z.object({ x: z.number(), y: z.number() })).min(2),
   color: z.string(),
+  /**
+   * Null means the points are fractions of a captured frame — the old frozen
+   * model, still how a composited screenshot is described. Set means they are
+   * fractions of the anchor element's box, and the mark follows that element.
+   */
+  anchor: DrawAnchorSchema.nullable().default(null),
 });
 
 export const BoardStatusSchema = z.enum(["draft", "ready", "in-progress", "done"]);
@@ -38,7 +73,13 @@ export const PinSchema = z.object({
   schemaVersion: z.number().int(),
   boardId: z.string(),
   kind: PinKindSchema.default("element"),
-  /** Annotations drawn over the frozen frame. Empty for element pins. */
+  /**
+   * Marks drawn on this route. Empty for element pins.
+   *
+   * A route has at most one region pin, and these are its contents — drawing on
+   * /dashboard adds to the /dashboard pin rather than making a new one, which is
+   * why the marks are still there when you navigate back.
+   */
   drawings: z.array(DrawShapeSchema).default([]),
   /** Fractional index — reordering touches one pin, not the whole list. */
   order: z.number(),
@@ -46,6 +87,18 @@ export const PinSchema = z.object({
   url: z.string(),
   route: z.string(),
   viewport: ViewportSchema,
+  /**
+   * The element's own size in CSS pixels at capture.
+   *
+   * Not cosmetic. Screenshots are cut at device pixels, so on a 2x display a
+   * 264px element becomes a 529px PNG — and an <img> with no size renders a
+   * bitmap at its pixel count, which drew every pinned card at twice the size of
+   * the thing it was a picture of. This is what puts it back to life size, and
+   * what lets the corner radius be scaled to match.
+   */
+  elementSize: z
+    .object({ width: z.number(), height: z.number() })
+    .default({ width: 0, height: 0 }),
   screenshotPath: z.string(),
   thumbnailPath: z.string(),
   selector: z.string(),
@@ -117,6 +170,7 @@ export type Viewport = z.infer<typeof ViewportSchema>;
 export type PinStatus = z.infer<typeof PinStatusSchema>;
 export type PinKind = z.infer<typeof PinKindSchema>;
 export type DrawShape = z.infer<typeof DrawShapeSchema>;
+export type DrawAnchor = z.infer<typeof DrawAnchorSchema>;
 export type BoardStatus = z.infer<typeof BoardStatusSchema>;
 export type Pin = z.infer<typeof PinSchema>;
 export type Relationship = z.infer<typeof RelationshipSchema>;

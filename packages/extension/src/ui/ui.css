@@ -663,6 +663,12 @@
   overflow: hidden;
 }
 
+/*
+ * Sized by the component, not here. A screenshot is cut at device pixels, so an
+ * <img> left to choose its own size renders it at its pixel count — twice life
+ * size on a 2x display. The max-* below are only the fallback for pins captured
+ * before the element's size was recorded.
+ */
 .pin-object__shot {
   display: block;
   border-radius: inherit;
@@ -891,63 +897,97 @@
 
 /* ---------------------------------------------------------------- draw mode */
 
-.pin-draw {
-  position: fixed;
-  inset: 0;
-  pointer-events: auto;
+/*
+ * Marks live in document space, not the viewport. That one choice is what makes
+ * scrolling free: the layer scrolls with the page like any other absolutely
+ * positioned element, so there is no scroll handler and no per-frame work. Only
+ * a reflow moves anything, and only then does anything re-measure.
+ */
+.pin-ink {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+/*
+ * The eraser takes whole strokes, so every stroke carries a fat invisible copy
+ * of itself as a hit target — a 2.5px line is not something anyone can click.
+ *
+ * `pointer-events` on the layer is `none` and these opt back in, which is legal
+ * and is the point: an ancestor set to none does not stop a descendant that
+ * names its own value. That is what lets the ink sit above a surface that is
+ * still swallowing clicks, so a miss lands on nothing instead of on the page.
+ */
+.pin-ink[data-erasing="true"] .pin-ink__hit {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.pin-ink__stroke {
+  transition: opacity 100ms ease;
+}
+/* What is about to go, before it goes. */
+.pin-ink[data-erasing="true"] g:hover .pin-ink__stroke {
+  opacity: 0.3;
 }
 
+/* The surface you draw into. Document-sized, so a stroke can start anywhere on
+   the page rather than only in the fold you happen to be looking at. */
 .pin-draw__surface {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  width: 100%;
   cursor: crosshair;
   touch-action: none;
   user-select: none;
+  pointer-events: auto;
 }
-
-.pin-draw__frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
-  pointer-events: none;
-  -webkit-user-drag: none;
-}
-
-.pin-draw__ink {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+/*
+ * The surface keeps swallowing clicks with the eraser up, and the ink simply
+ * sits on top of it. Letting the surface step aside instead would have meant a
+ * miss went through to the page — clicking a link, submitting a form, navigating
+ * away from the marks you were tidying.
+ */
+.pin-draw__surface[data-tool="erase"] {
+  cursor: default;
 }
 
 .pin-draw__bar {
-  position: absolute;
+  position: fixed;
   left: 50%;
   top: 16px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 5px 7px;
   border-radius: 999px;
   border: 1px solid var(--pin-rule);
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   max-width: calc(100vw - 32px);
+  pointer-events: auto;
+  z-index: 2;
 }
 
 .pin-draw__swatch {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   flex: 0 0 auto;
+  margin: 0 2px;
   border: 2px solid transparent;
   box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12);
+  transition: transform 100ms ease;
 }
-.pin-draw__swatch[data-active="true"] { border-color: var(--pin-ink); }
+.pin-draw__swatch:hover { transform: scale(1.12); }
+/* A ring outside the swatch rather than a border inside it — a border eats into
+   the colour, and the colour is the only thing the control is showing. */
+.pin-draw__swatch[data-active="true"] {
+  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12), 0 0 0 2px var(--pin-paper),
+    0 0 0 4px var(--pin-ink);
+}
 
 /* --------------------------------------------------------------- side panel */
 

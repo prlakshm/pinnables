@@ -237,3 +237,48 @@ export function refindElement(pin: {
 
   return null;
 }
+
+/**
+ * Which element a mark should hang off.
+ *
+ * The frozen-frame model made marks durable by making the world under them
+ * dead. Anchoring keeps them durable while the world stays alive: store a mark
+ * as fractions of an element's box and it moves and resizes with that element
+ * through any reflow, because it is measured in the same units the layout is.
+ *
+ * The walk goes up from whatever is under the mark's centre until it finds a box
+ * that contains the whole mark, so a circle drawn *around* a card anchors to the
+ * card's container rather than to the card it encloses. `body` is the last
+ * resort — a mark on it scales with the page, which is where we started.
+ */
+export function anchorForBox(box: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): { element: Element; rect: DOMRect } {
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const start = document.elementFromPoint(centre.x - scrollX, centre.y - scrollY);
+  let node: Element | null =
+    start && !start.closest(`#${OVERLAY_HOST_ID}`) ? start : document.body;
+
+  // A mark thinner than a hairline in one axis still needs a real box to sit in.
+  const pad = 1;
+  while (node && node !== document.body) {
+    const rect = node.getBoundingClientRect();
+    const contains =
+      rect.left + scrollX <= box.x + pad &&
+      rect.top + scrollY <= box.y + pad &&
+      rect.right + scrollX >= box.x + box.width - pad &&
+      rect.bottom + scrollY >= box.y + box.height - pad;
+    if (contains && rect.width > 0 && rect.height > 0) return { element: node, rect };
+    node = node.parentElement;
+  }
+  return { element: document.body, rect: document.body.getBoundingClientRect() };
+}
+
+/** The anchor's box in document coordinates, which is the space marks are stored in. */
+export function documentRect(element: Element): { x: number; y: number; width: number; height: number } {
+  const rect = element.getBoundingClientRect();
+  return { x: rect.left + scrollX, y: rect.top + scrollY, width: rect.width, height: rect.height };
+}

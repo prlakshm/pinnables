@@ -134,8 +134,10 @@ export function renderPinContext(
     lines.push(pin.annotation);
     lines.push("");
     lines.push(
-      "This pin marks an *area*, not a component — it has no selector or source file. " +
-        "The annotated screenshot is the specification; open it to see what was circled.",
+      "This pin marks an *area*, not a component — it has no selector or source file " +
+        "of its own. The screenshot is the specification; open it to see what was " +
+        "circled. Each mark records the element it was drawn over, which is the " +
+        "closest thing here to a target.",
     );
   } else {
     lines.push(`source      ${pin.sourceFile ?? "unresolved"}`);

@@ -1,12 +1,4 @@
-import {
-  SCHEMA_VERSION,
-  drawingsBounds,
-  pathFor,
-  strokeWidthFor,
-  type Board,
-  type DrawShape,
-  type Pin,
-} from "@pinnables/shared";
+import { SCHEMA_VERSION, type Board, type Pin } from "@pinnables/shared";
 import {
   broadcastToTab,
   type Broadcast,
@@ -69,73 +61,6 @@ async function encodeCanvas(
     reader.readAsDataURL(blob);
   });
 }
-
-/** Padding around the marks, as a fraction of the frame. A circled thing with
- *  nothing around it loses the context that made it worth circling. */
-const REGION_PAD = 0.12;
-
-/**
- * Crop the frozen frame to the marks, then stroke the marks onto it. Shapes
- * come in normalised against the whole frame and are re-normalised into the
- * crop, so the stored shapes always match the stored image.
- */
-async function compositeRegion(
-  frame: string,
-  shapes: DrawShape[],
-): Promise<{ full: string; thumb: string; shapes: DrawShape[] }> {
-  const bitmap = await createImageBitmap(await (await fetch(frame)).blob());
-  const bounds = drawingsBounds(shapes) ?? { x: 0, y: 0, width: 1, height: 1 };
-
-  const nx = Math.max(0, bounds.x - REGION_PAD);
-  const ny = Math.max(0, bounds.y - REGION_PAD);
-  const nw = Math.min(1 - nx, bounds.width + REGION_PAD * 2);
-  const nh = Math.min(1 - ny, bounds.height + REGION_PAD * 2);
-
-  const sx = Math.round(nx * bitmap.width);
-  const sy = Math.round(ny * bitmap.height);
-  const sw = Math.max(1, Math.round(nw * bitmap.width));
-  const sh = Math.max(1, Math.round(nh * bitmap.height));
-
-  const rebased: DrawShape[] = shapes.map((shape) => ({
-    ...shape,
-    points: shape.points.map((p) => ({
-      x: (p.x - nx) / nw,
-      y: (p.y - ny) / nh,
-    })),
-  }));
-
-  const canvas = new OffscreenCanvas(sw, sh);
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
-  bitmap.close();
-
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.lineWidth = strokeWidthFor(sw);
-  for (const shape of rebased) {
-    const d = pathFor(shape, sw, sh);
-    if (!d) continue;
-    ctx.strokeStyle = shape.color;
-    ctx.stroke(new Path2D(d));
-  }
-
-  const scale = Math.min(1, THUMB_WIDTH / sw);
-  const thumbCanvas = new OffscreenCanvas(
-    Math.max(1, Math.round(sw * scale)),
-    Math.max(1, Math.round(sh * scale)),
-  );
-  thumbCanvas
-    .getContext("2d")!
-    .drawImage(canvas, 0, 0, sw, sh, 0, 0, thumbCanvas.width, thumbCanvas.height);
-
-  return {
-    full: await encodeCanvas(canvas, "image/png"),
-    thumb: await encodeCanvas(thumbCanvas, "image/webp", 0.75),
-    shapes: rebased,
-  };
-}
-
-const freezeKey = (tabId: number) => `freeze:${tabId}`;
 
 /* ---------------------------------------------------------------- handlers */
 
@@ -276,6 +201,7 @@ const handlers: Handlers = {
       url: element.url,
       route: element.route,
       viewport: element.viewport,
+      elementSize: { width: element.rect.width, height: element.rect.height },
       screenshotPath: `pins/${pinId}.png`,
       thumbnailPath: `pins/${pinId}.thumb.webp`,
       selector: element.selector,
@@ -300,59 +226,98 @@ const handlers: Handlers = {
     return { pin };
   },
 
-  async "capture/freeze"(_req, sender) {
+  async "drawing/save"({ shapes, url, route, viewport, shotRect }, sender) {
     const tab = sender.tab;
-    if (!tab?.id || tab.windowId === undefined) throw new Error("Freeze must come from a tab");
-    const frame = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-    await chrome.storage.local.set({ [freezeKey(tab.id)]: frame });
-    return {
-      frame,
-      viewport: { width: tab.width ?? 0, height: tab.height ?? 0 },
-    };
-  },
-
-  async "capture/discardFreeze"(_req, sender) {
-    if (sender.tab?.id) await chrome.storage.local.remove(freezeKey(sender.tab.id));
-    return { ok: true };
-  },
-
-  async "capture/region"({ shapes, url, route, viewport, label }, sender) {
-    const tabId = sender.tab?.id;
-    if (tabId === undefined) throw new Error("Region capture must come from a tab");
-    if (shapes.length === 0) throw new Error("Nothing was drawn");
-
-    const bag = await chrome.storage.local.get(freezeKey(tabId));
-    const frame = bag[freezeKey(tabId)] as string | undefined;
-    if (!frame) throw new Error("The frozen frame expired — draw again");
-
+    if (tab?.id === undefined || tab.windowId === undefined) {
+      throw new Error("Drawing must come from a tab");
+    }
     const board = await store.ensureActiveBoard();
-    const { full, thumb, shapes: rebased } = await compositeRegion(frame, shapes);
-
-    const pinId = store.nextId("pin");
+    const existing = board.pins.find((p) => p.kind === "region" && p.route === route);
     const now = new Date().toISOString();
-    const highest = store.sortedPins(board).at(-1)?.order ?? 0;
 
-    // A region pin carries no element identity by construction — the marked
-    // screenshot is the specification, so selector/styles/markup stay empty
-    // rather than being filled with something misleading.
+    // No marks left means no region pin. A route the user erased clean should
+    // not leave an empty pin on the shelf for them to tidy up.
+    if (shapes.length === 0) {
+      if (!existing) return { pin: null };
+      await store.dropScreenshot(existing.id);
+      await store.writeBoard({
+        ...board,
+        pins: board.pins.filter((p) => p.id !== existing.id),
+        relationships: board.relationships
+          .filter((r) => r.sourcePinId !== existing.id)
+          .map((r) => ({ ...r, targetPinIds: r.targetPinIds.filter((t) => t !== existing.id) }))
+          .filter((r) => r.targetPinIds.length > 0),
+      });
+      await notifyBoardChanged(board.id);
+      return { pin: null };
+    }
+
+    /*
+     * The screenshot is the agent's copy of what was drawn, and it can only be
+     * taken of what is on screen. When the marks are out of view the last good
+     * one is kept rather than replaced with a picture of the wrong part of the
+     * page — stale beats wrong.
+     */
+    const pinId = existing?.id ?? store.nextId("pin");
+    if (shotRect) {
+      const frame = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+      const bitmap = await createImageBitmap(await (await fetch(frame)).blob());
+      // captureVisibleTab returns the viewport at device pixel ratio; the rect
+      // is CSS pixels against that same viewport.
+      const dpr = bitmap.width / viewport.width;
+      const sx = Math.max(0, Math.round(shotRect.x * dpr));
+      const sy = Math.max(0, Math.round(shotRect.y * dpr));
+      const sw = Math.max(1, Math.min(bitmap.width - sx, Math.round(shotRect.width * dpr)));
+      const sh = Math.max(1, Math.min(bitmap.height - sy, Math.round(shotRect.height * dpr)));
+      const canvas = new OffscreenCanvas(sw, sh);
+      canvas.getContext("2d")!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+      const scale = Math.min(1, THUMB_WIDTH / sw);
+      const thumb = new OffscreenCanvas(
+        Math.max(1, Math.round(sw * scale)),
+        Math.max(1, Math.round(sh * scale)),
+      );
+      thumb.getContext("2d")!.drawImage(canvas, 0, 0, sw, sh, 0, 0, thumb.width, thumb.height);
+      bitmap.close();
+      await store.putScreenshot(
+        pinId,
+        await encodeCanvas(canvas, "image/png"),
+        await encodeCanvas(thumb, "image/webp", 0.75),
+      );
+    }
+
+    if (existing) {
+      const updated: Pin = { ...existing, drawings: shapes, url, viewport, updatedAt: now };
+      await store.writeBoard({
+        ...board,
+        pins: board.pins.map((p) => (p.id === existing.id ? updated : p)),
+      });
+      await notifyBoardChanged(board.id);
+      return { pin: updated };
+    }
+
+    const highest = store.sortedPins(board).at(-1)?.order ?? 0;
     const pin: Pin = {
       id: pinId,
       schemaVersion: SCHEMA_VERSION,
       boardId: board.id,
       kind: "region",
-      drawings: rebased,
+      drawings: shapes,
       order: highest + 1,
       groupId: null,
       url,
       route,
       viewport,
+      // A region has no element behind it, so its crop is its own size.
+      elementSize: { width: 0, height: 0 },
       screenshotPath: `pins/${pinId}.png`,
       thumbnailPath: `pins/${pinId}.thumb.webp`,
+      // A region marks an area, so it carries no element identity by
+      // construction — leaving these empty is more honest than filling them in.
       selector: "",
       domPath: "",
       outerHtml: "",
       classList: [],
-      elementText: label,
+      elementText: `marks on ${route}`,
       componentName: null,
       sourceFile: null,
       computedStyles: {},
@@ -363,10 +328,7 @@ const handlers: Handlers = {
       createdAt: now,
       updatedAt: now,
     };
-
-    await store.putScreenshot(pinId, full, thumb);
     await store.writeBoard({ ...board, pins: [...board.pins, pin] });
-    await chrome.storage.local.remove(freezeKey(tabId));
     await notifyBoardChanged(board.id);
     return { pin };
   },

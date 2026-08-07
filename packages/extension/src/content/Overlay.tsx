@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { Board, Pin } from "@pinnables/shared";
+import type { Board, DrawShape, Pin } from "@pinnables/shared";
 import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from "../lib/capture";
-import { ExtensionReloadedError, send } from "../lib/messages";
+import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type ToolMode } from "./Toolbar";
 import { PinObject } from "./PinObject";
 import { Composer } from "./Composer";
 import { DrawLayer } from "./DrawLayer";
+import { InkLayer, placeShapes, shapeBox, usePlacedShapes, type Box } from "./InkLayer";
 import { detectScheme, watchScheme, type AnchorEdge, type Scheme } from "../ui/theme";
 
 interface HighlightBox {
@@ -98,6 +99,14 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [connecting, setConnecting] = useState<Connecting | null>(null);
   const [cardRects, setCardRects] = useState<Record<string, DOMRect>>({});
   const [scheme, setScheme] = useState<Scheme>(() => detectScheme());
+  /**
+   * Which page we are on, watched rather than read once.
+   *
+   * Marks belong to a route, and a single-page app changes route without ever
+   * reloading — so nothing would tell us to swap them. History is patched
+   * because pushState and replaceState fire no event of their own.
+   */
+  const [route, setRoute] = useState(() => location.pathname + location.search);
   const hovered = useRef<Element | null>(null);
   const pressStartedInOurs = useRef(false);
   const hoverAnchor = useRef<{ pinId: string; edge: AnchorEdge } | null>(null);
@@ -115,6 +124,29 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   }, [scheme]);
 
   useEffect(() => watchScheme(setScheme), []);
+
+  useEffect(() => {
+    const read = () => setRoute(location.pathname + location.search);
+    const patch = (name: "pushState" | "replaceState") => {
+      const original = history[name];
+      history[name] = function patched(this: History, ...args: Parameters<History["pushState"]>) {
+        const result = original.apply(this, args);
+        read();
+        return result;
+      };
+      return () => {
+        history[name] = original;
+      };
+    };
+    const undo = [patch("pushState"), patch("replaceState")];
+    window.addEventListener("popstate", read);
+    window.addEventListener("hashchange", read);
+    return () => {
+      undo.forEach((fn) => fn());
+      window.removeEventListener("popstate", read);
+      window.removeEventListener("hashchange", read);
+    };
+  }, []);
 
   /**
    * Reloading the extension leaves this script running in the page with a dead
@@ -168,6 +200,59 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     setPositions((prev) => ({ ...prev, [pinId]: position }));
     void chrome.storage.local.set({ [posKey(pinId)]: position });
   }, []);
+
+  /* ------------------------------------------------------------------ ink */
+
+  const regionPin = board?.pins.find((p) => p.kind === "region" && p.route === route) ?? null;
+  const shapes = regionPin?.drawings ?? [];
+  const placed = usePlacedShapes(shapes);
+
+  /**
+   * Marks save as they are drawn — there is no commit step, because a route's
+   * marks *are* its region pin rather than a draft of one.
+   *
+   * The screenshot is the agent's copy of what was drawn and can only be taken
+   * of what is on screen, so it is skipped when the marks are scrolled out of
+   * view. The worker keeps the previous one in that case: stale beats wrong.
+   */
+  const saveShapes = useCallback(
+    async (next: DrawShape[]) => {
+      let shotRect: Contract["drawing/save"]["req"]["shotRect"] = null;
+      const boxes = placeShapes(next)
+        .map(({ shape, rect }) => shapeBox(shape, rect))
+        .filter((b): b is Box => b !== null);
+      if (boxes.length > 0) {
+        const union = {
+          x: Math.min(...boxes.map((b) => b.x)),
+          y: Math.min(...boxes.map((b) => b.y)),
+          right: Math.max(...boxes.map((b) => b.x + b.width)),
+          bottom: Math.max(...boxes.map((b) => b.y + b.height)),
+        };
+        // Document space to viewport space, padded, then clamped to the fold.
+        const pad = 24;
+        const vx = Math.max(0, union.x - window.scrollX - pad);
+        const vy = Math.max(0, union.y - window.scrollY - pad);
+        const vw = Math.min(window.innerWidth - vx, union.right - union.x + pad * 2);
+        const vh = Math.min(window.innerHeight - vy, union.bottom - union.y + pad * 2);
+        if (vw > 8 && vh > 8) {
+          shotRect = { x: vx, y: vy, width: vw, height: vh };
+        }
+      }
+      try {
+        await send("drawing/save", {
+          shapes: next,
+          url: location.href,
+          route,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          shotRect,
+        });
+        api.refresh();
+      } catch (err) {
+        if (!guard(err)) console.error("[pinnables] could not save marks", err);
+      }
+    },
+    [route, api, guard],
+  );
 
   /* ---------------------------------------------------------- multi-select */
 
@@ -537,8 +622,22 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       : null;
 
   return (
-    <div className="pin-overlay">
-      {drawing && <DrawLayer onDone={() => setMode("pin")} onStale={() => setStale(true)} />}
+    <>
+      {/*
+        * The ink sits outside `.pin-overlay` on purpose. That element is fixed to
+        * the viewport, and anything absolutely positioned inside it would be
+        * fixed too — marks have to live in document space so they scroll away
+        * with the content they were drawn on.
+        *
+        * They are always on. Draw mode adds a surface to draw *into*; what you
+        * already drew belongs to the page whether or not you are drawing.
+        */}
+      {!drawing && <InkLayer placed={placed} />}
+      {drawing && (
+        <DrawLayer shapes={shapes} onChange={(next) => void saveShapes(next)} onDone={() => setMode("pin")} />
+      )}
+
+      <div className="pin-overlay">
 
       {/* Hairline and neutral, with a red dot at each end — the logo's tittle,
           reused so a connection reads as the product's own gesture. */}
@@ -622,6 +721,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           onExit={() => void send("capture/setMode", { enabled: false }).catch(guard)}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }

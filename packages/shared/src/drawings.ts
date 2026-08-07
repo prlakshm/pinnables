@@ -19,7 +19,7 @@ import type { DrawShape } from "./schema.js";
  * this list to them so the two palettes cannot fork.
  */
 export const DRAW_COLORS = ["#ED1C24", "#9BD3F9", "#1E3FD8", "#292C33"] as const;
-export const DEFAULT_DRAW_COLOR = DRAW_COLORS[0];
+export const DEFAULT_DRAW_COLOR: string = DRAW_COLORS[0];
 
 /** Stroke width scales with the frame so a mark reads the same at any size. */
 export function strokeWidthFor(width: number): number {
@@ -105,5 +105,9 @@ export function describeDrawings(shapes: readonly DrawShape[]): string {
   const counts = new Map<string, number>();
   for (const shape of shapes) counts.set(shape.kind, (counts.get(shape.kind) ?? 0) + 1);
   const parts = [...counts].map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`);
-  return `${parts.join(", ")} drawn over the captured frame`;
+  // Anchored marks name what they were drawn on, which is worth telling the
+  // agent: "over .stat-card" is a much stronger hint than "somewhere on screen".
+  const anchors = [...new Set(shapes.map((s) => s.anchor?.selector).filter(Boolean))];
+  const over = anchors.length > 0 ? ` over ${anchors.slice(0, 3).join(", ")}` : "";
+  return `${parts.join(", ")} drawn on the page${over}`;
 }

@@ -1,203 +1,184 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  DEFAULT_DRAW_COLOR,
-  DRAW_COLORS,
-  pathFor,
-  strokeWidthFor,
-  type DrawShape,
-} from "@pinnables/shared";
-import { ExtensionReloadedError, send } from "../lib/messages";
-import { hasModifier, submitHintLabel } from "../lib/platform";
-import { CheckIcon, CloseIcon } from "../ui/icons";
+import { DEFAULT_DRAW_COLOR, DRAW_COLORS, type DrawShape } from "@pinnables/shared";
+import { anchorForBox, buildDomPath, buildSelector, documentRect } from "../lib/capture";
+import { CloseIcon, EraserIcon, PencilIcon } from "../ui/icons";
+import { InkLayer, usePlacedShapes } from "./InkLayer";
 
-type ShapeKind = DrawShape["kind"];
-
-const SHAPES: Array<{ kind: ShapeKind; label: string }> = [
-  { kind: "ellipse", label: "Circle a section" },
-  { kind: "rect", label: "Box a region" },
-  { kind: "arrow", label: "Point at something" },
-  { kind: "freehand", label: "Free mark" },
-];
+type Tool = "draw" | "erase";
 
 /**
- * Drawing happens over a frozen frame of the viewport, not the live page.
+ * Drawing on the live page.
  *
- * That single decision is what makes marks durable: a coordinate-anchored
- * overlay on a live page drifts the moment anything reflows, and can't mark an
- * animated element at all. Freeze first and there is nothing left to
- * re-anchor — the frame is the record.
+ * The earlier version froze the viewport to a screenshot and drew on that, which
+ * made marks durable by making the page under them dead. This one keeps the page
+ * alive and anchors each mark to the element it was drawn over, so it survives
+ * the two things that used to break it — scrolling, and the page reflowing
+ * underneath.
+ *
+ * Nothing here is committed. Marks belong to the route they were made on and
+ * save as they are drawn, which is why there is no "pin region" button and why
+ * they are still there when you navigate back.
  */
-export function DrawLayer({ onDone, onStale }: { onDone: () => void; onStale: () => void }) {
-  const [frame, setFrame] = useState<string | null>(null);
-  const [kind, setKind] = useState<ShapeKind>("ellipse");
+export function DrawLayer({
+  shapes,
+  onChange,
+  onDone,
+}: {
+  shapes: DrawShape[];
+  onChange: (shapes: DrawShape[]) => void;
+  onDone: () => void;
+}) {
+  const [tool, setTool] = useState<Tool>("draw");
   const [color, setColor] = useState<string>(DEFAULT_DRAW_COLOR);
-  const [shapes, setShapes] = useState<DrawShape[]>([]);
-  const [drafting, setDrafting] = useState<DrawShape | null>(null);
-  const [label, setLabel] = useState("");
-  const [saving, setSaving] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
+  /** Points in document coordinates, only while the pointer is down. */
+  const [draft, setDraft] = useState<Array<{ x: number; y: number }> | null>(null);
   const drawingId = useRef(0);
+  const placed = usePlacedShapes(shapes);
 
-  useEffect(() => {
-    let cancelled = false;
-    void send("capture/freeze", {})
-      .then((res) => {
-        if (!cancelled) setFrame(res.frame);
-      })
-      .catch(() => onDone());
-    return () => {
-      cancelled = true;
-    };
-  }, [onDone]);
-
-  const toNormalized = useCallback((event: React.PointerEvent) => {
-    const rect = surface.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return {
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-    };
-  }, []);
+  const pointAt = (event: React.PointerEvent) => ({
+    x: event.clientX + window.scrollX,
+    y: event.clientY + window.scrollY,
+  });
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
-      if (event.button !== 0) return;
-      const point = toNormalized(event);
-      drawingId.current += 1;
-      setDrafting({
-        id: `shape-${drawingId.current}`,
-        kind,
-        points: [point, point],
-        color,
-      });
+      if (event.button !== 0 || tool !== "draw") return;
+      setDraft([pointAt(event), pointAt(event)]);
       (event.currentTarget as Element).setPointerCapture(event.pointerId);
       event.preventDefault();
     },
-    [kind, color, toNormalized],
+    [tool],
   );
 
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent) => {
-      setDrafting((current) => {
-        if (!current) return current;
-        const point = toNormalized(event);
-        return current.kind === "freehand"
-          ? { ...current, points: [...current.points, point] }
-          : { ...current, points: [current.points[0], point] };
-      });
-    },
-    [toNormalized],
-  );
-
-  const onPointerUp = useCallback(() => {
-    setDrafting((current) => {
-      if (!current) return null;
-      const [a, b] = current.points;
-      const moved = Math.hypot(b.x - a.x, b.y - a.y);
-      // A click with no drag is not a shape.
-      if (current.points.length < 3 && moved < 0.008) return null;
-      setShapes((prev) => [...prev, current]);
-      return null;
-    });
+  const onPointerMove = useCallback((event: React.PointerEvent) => {
+    setDraft((current) => (current ? [...current, pointAt(event)] : current));
   }, []);
 
-  const undo = useCallback(() => setShapes((prev) => prev.slice(0, -1)), []);
+  /**
+   * On release the stroke is measured, given an anchor, and rewritten as
+   * fractions of that anchor's box. Everything after this point is relative —
+   * which is the whole reason the mark can survive a resize.
+   */
+  const onPointerUp = useCallback(
+    (event: React.PointerEvent) => {
+      const target = event.currentTarget as Element;
+      if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
 
-  const cancel = useCallback(() => {
-    void send("capture/discardFreeze", {});
-    onDone();
-  }, [onDone]);
+      setDraft((points) => {
+        if (!points || points.length < 2) return null;
+        const xs = points.map((p) => p.x);
+        const ys = points.map((p) => p.y);
+        const box = {
+          x: Math.min(...xs),
+          y: Math.min(...ys),
+          width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+          height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+        };
+        // A tap is not a stroke.
+        if (box.width < 4 && box.height < 4) return null;
 
-  const commit = useCallback(async () => {
-    if (shapes.length === 0) return;
-    setSaving(true);
-    try {
-      await send("capture/region", {
-        shapes,
-        url: location.href,
-        route: location.pathname + location.search,
-        viewport: { width: window.innerWidth, height: window.innerHeight },
-        label: label.trim() || "marked region",
+        const { element } = anchorForBox(box);
+        const rect = documentRect(element);
+        drawingId.current += 1;
+        const shape: DrawShape = {
+          id: `shape-${Date.now()}-${drawingId.current}`,
+          kind: "freehand",
+          color,
+          points: points.map((p) => ({
+            x: (p.x - rect.x) / Math.max(1, rect.width),
+            y: (p.y - rect.y) / Math.max(1, rect.height),
+          })),
+          anchor: {
+            selector: buildSelector(element),
+            domPath: buildDomPath(element),
+            rect,
+          },
+        };
+        onChange([...shapes, shape]);
+        return null;
       });
-      onDone();
-    } catch (err) {
-      if (err instanceof ExtensionReloadedError) onStale();
-      else console.error("[pinnables] region capture failed", err);
-      setSaving(false);
-    }
-  }, [shapes, label, onDone, onStale]);
+    },
+    [color, shapes, onChange],
+  );
+
+  const erase = useCallback(
+    (shapeId: string) => onChange(shapes.filter((s) => s.id !== shapeId)),
+    [shapes, onChange],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        cancel();
+        onDone();
         return;
       }
-      if (event.key.toLowerCase() === "z" && hasModifier(event)) {
-        event.preventDefault();
-        undo();
-        return;
-      }
-      if (event.key === "Enter" && hasModifier(event)) {
-        event.preventDefault();
-        void commit();
-      }
+      if (event.key.toLowerCase() === "e") setTool((t) => (t === "erase" ? "draw" : "erase"));
+      if (event.key.toLowerCase() === "b") setTool("draw");
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [cancel, undo, commit]);
+  }, [onDone]);
 
-  if (!frame) return null;
-
-  const rect = surface.current?.getBoundingClientRect();
-  const w = rect?.width ?? window.innerWidth;
-  const h = rect?.height ?? window.innerHeight;
-  const visible = drafting ? [...shapes, drafting] : shapes;
+  /** The stroke in progress, still in document pixels and not yet anchored. */
+  const draftPath = draft
+    ? `M${draft.map((p) => `${p.x} ${p.y}`).join("L")}`
+    : null;
 
   return (
-    <div className="pin-draw">
+    <>
       <div
         className="pin-draw__surface"
-        ref={surface}
+        data-tool={tool}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-      >
-        <img className="pin-draw__frame" src={frame} alt="" draggable={false} />
-        <svg className="pin-draw__ink" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
-          {visible.map((shape) => {
-            const d = pathFor(shape, w, h);
-            return d ? (
-              <path
-                key={shape.id}
-                d={d}
-                fill="none"
-                stroke={shape.color}
-                strokeWidth={strokeWidthFor(w)}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ) : null;
-          })}
+        onPointerCancel={onPointerUp}
+        style={{ height: document.documentElement.scrollHeight }}
+      />
+
+      <InkLayer placed={placed} onErase={tool === "erase" ? erase : undefined} />
+
+      {draftPath && (
+        <svg
+          className="pin-ink"
+          width={document.documentElement.scrollWidth}
+          height={document.documentElement.scrollHeight}
+          aria-hidden
+        >
+          <path
+            d={draftPath}
+            stroke={color}
+            strokeWidth={2.5}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
-      </div>
+      )}
 
       <div className="pin-draw__bar">
-        {SHAPES.map((shape) => (
-          <button
-            key={shape.kind}
-            className="pin-icon-btn"
-            data-active={kind === shape.kind}
-            onClick={() => setKind(shape.kind)}
-            title={shape.label}
-            aria-label={shape.label}
-            aria-pressed={kind === shape.kind}
-          >
-            <ShapeGlyph kind={shape.kind} />
-          </button>
-        ))}
+        <button
+          className="pin-icon-btn"
+          data-active={tool === "draw"}
+          onClick={() => setTool("draw")}
+          title="Draw · B"
+          aria-label="Draw"
+          aria-pressed={tool === "draw"}
+        >
+          <PencilIcon />
+        </button>
+        <button
+          className="pin-icon-btn"
+          data-active={tool === "erase"}
+          onClick={() => setTool("erase")}
+          title="Erase a whole stroke · E"
+          aria-label="Erase"
+          aria-pressed={tool === "erase"}
+        >
+          <EraserIcon />
+        </button>
 
         <span className="pin-toolbar__divider" />
 
@@ -207,7 +188,10 @@ export function DrawLayer({ onDone, onStale }: { onDone: () => void; onStale: ()
             className="pin-draw__swatch"
             data-active={color === swatch}
             style={{ background: swatch }}
-            onClick={() => setColor(swatch)}
+            onClick={() => {
+              setColor(swatch);
+              setTool("draw");
+            }}
             title={`Draw in ${swatch}`}
             aria-label={`Draw in ${swatch}`}
           />
@@ -215,73 +199,10 @@ export function DrawLayer({ onDone, onStale }: { onDone: () => void; onStale: ()
 
         <span className="pin-toolbar__divider" />
 
-        <input
-          className="pin-field"
-          style={{ width: 180 }}
-          placeholder="Name this region…"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-        />
-
-        <button className="pin-btn" onClick={undo} disabled={shapes.length === 0}>
-          Undo
-        </button>
-        <button
-          className="pin-btn pin-btn--primary"
-          onClick={() => void commit()}
-          disabled={shapes.length === 0 || saving}
-        >
-          <CheckIcon size={14} />
-          {saving ? "Pinning…" : "Pin region"}
-          {/* Inherits the button's own foreground rather than assuming white —
-              on a dark host page the primary button inverts, and a hardcoded
-              #fff put white text on a light fill. */}
-          <span className="pin-kbd pin-kbd--on-fill">{submitHintLabel}</span>
-        </button>
-        <button className="pin-icon-btn" onClick={cancel} title="Cancel · Esc" aria-label="Cancel">
+        <button className="pin-icon-btn" onClick={onDone} title="Done · Esc" aria-label="Done drawing">
           <CloseIcon size={17} />
         </button>
       </div>
-    </div>
+    </>
   );
-}
-
-function ShapeGlyph({ kind }: { kind: ShapeKind }) {
-  const props = {
-    width: 18,
-    height: 18,
-    viewBox: "0 0 20 20",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.6,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-  switch (kind) {
-    case "ellipse":
-      return (
-        <svg {...props}>
-          <ellipse cx="10" cy="10" rx="7.2" ry="5.6" />
-        </svg>
-      );
-    case "rect":
-      return (
-        <svg {...props}>
-          <rect x="3.2" y="5" width="13.6" height="10" rx="2" />
-        </svg>
-      );
-    case "arrow":
-      return (
-        <svg {...props}>
-          <path d="M4 16L16 4M16 4h-6.5M16 4v6.5" />
-        </svg>
-      );
-    case "freehand":
-      return (
-        <svg {...props}>
-          <path d="M3.5 13.5c3-6 5-6 6.5-2.5s3.5 3.5 6.5-3" />
-        </svg>
-      );
-  }
 }

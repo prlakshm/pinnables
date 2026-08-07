@@ -36,21 +36,24 @@ export interface Contract {
   "capture/element": { req: { element: CapturedElement }; res: { pin: Pin } };
 
   /**
-   * Freeze the viewport so the user draws on an immutable frame rather than a
-   * live page. This is what makes marks safe on animated or reflowing pages —
-   * there is nothing left to re-anchor to.
+   * Save the marks for a route. Upsert, not create: a route has one region pin
+   * and drawing on it edits that pin, which is what makes marks reappear when
+   * you navigate back. Sending an empty list deletes it.
    */
-  "capture/freeze": { req: Record<string, never>; res: { frame: string; viewport: Viewport } };
-  "capture/discardFreeze": { req: Record<string, never>; res: { ok: boolean } };
-  "capture/region": {
+  "drawing/save": {
     req: {
       shapes: DrawShape[];
       url: string;
       route: string;
       viewport: Viewport;
-      label: string;
+      /**
+       * Where the marks are in the viewport, for the worker to photograph and
+       * crop to. Null when they are scrolled out of view — there is nothing
+       * worth a picture, and the previous one is kept.
+       */
+      shotRect: { x: number; y: number; width: number; height: number } | null;
     };
-    res: { pin: Pin };
+    res: { pin: Pin | null };
   };
 
   "board/get": { req: { boardId?: string }; res: { board: Board | null } };

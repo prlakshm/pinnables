@@ -136,6 +136,15 @@ export function CloseIcon({ size = 16 }: IconProps) {
   );
 }
 
+export function EraserIcon({ size = 18 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M8.2 16.5H16.5M3.9 13.1l5.4 5.4a1 1 0 001.4 0l6-6a1 1 0 000-1.4l-4-4a1 1 0 00-1.4 0l-7.4 7.4a1 1 0 000 1.4z" />
+      <path d="M7.6 9.4l4.8 4.8" />
+    </svg>
+  );
+}
+
 export function LinkIcon({ size = 16 }: IconProps) {
   return (
     <svg {...svgProps(size)}>

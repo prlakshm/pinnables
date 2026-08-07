@@ -55,11 +55,25 @@ export async function mountOverlay(): Promise<OverlayApi> {
   const host = document.createElement("div");
   host.id = OVERLAY_HOST_ID;
   host.setAttribute("data-pinnables", "");
-  // The host itself must never intercept pointer events — only the toolbar and
-  // pin objects inside it opt back in.
+  /*
+   * Absolute and zero-sized, not fixed.
+   *
+   * The ink layer is positioned in document coordinates so it scrolls with the
+   * page for free — and an absolutely positioned child resolves against its
+   * nearest positioned ancestor, so a fixed host would nail the marks to the
+   * viewport. Everything that *should* stay put says so itself: `.pin-overlay`
+   * and the draw bar are `position: fixed`, which still resolves to the viewport
+   * regardless of this element.
+   *
+   * The host never intercepts pointer events; only the toolbar and pin objects
+   * inside it opt back in.
+   */
   Object.assign(host.style, {
-    position: "fixed",
-    inset: "0",
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "0",
+    height: "0",
     zIndex: "2147483000",
     pointerEvents: "none",
   });

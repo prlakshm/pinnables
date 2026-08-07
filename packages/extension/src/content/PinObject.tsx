@@ -143,12 +143,42 @@ export function PinObject({
    * would turn its card into a lozenge, and region pins fall back since they
    * have no element to borrow from.
    */
+  /**
+   * Life size, and a radius that agrees with it.
+   *
+   * A screenshot is cut at device pixels, so on a 2x display a 264px element
+   * arrives as a 529px PNG — and an <img> left to itself renders that at 529 CSS
+   * px. Every card was drawn at twice the size of the thing it pictured, and
+   * `max-width: 336px` then shrank it back by whatever factor happened to fall
+   * out of the bitmap's dimensions.
+   *
+   * That arbitrary factor is what produced the corner gap. It shrank the
+   * bitmap's own rounded corner along with everything else, while the clip
+   * radius stayed at the captured value — so the clip was looser than the curve
+   * the element had actually been cut along, and a crescent of page background
+   * survived at each corner.
+   *
+   * So: render at the captured size, shrink only when it genuinely will not fit,
+   * and scale the radius by exactly the same factor. Then the clip and the
+   * bitmap agree at every size.
+   */
+  const MAX_SHOT = { width: 336, height: 260 };
+  const captured = pin.elementSize;
+  const fit =
+    captured && captured.width > 0 && captured.height > 0
+      ? Math.min(1, MAX_SHOT.width / captured.width, MAX_SHOT.height / captured.height)
+      : null;
+  const shotStyle =
+    fit !== null && captured
+      ? { width: Math.round(captured.width * fit), height: Math.round(captured.height * fit) }
+      : undefined;
+
   const radiusPx = (() => {
     if (pin.kind !== "element") return null;
-    const captured = pin.computedStyles["border-radius"];
-    if (captured === undefined) return 0;
-    const px = Number.parseFloat(captured);
-    return Number.isFinite(px) ? Math.min(px, 18) : null;
+    const value = pin.computedStyles["border-radius"];
+    const px = value === undefined ? 0 : Number.parseFloat(value);
+    if (!Number.isFinite(px)) return null;
+    return px * (fit ?? 1);
   })();
   const shape =
     radiusPx === null
@@ -156,7 +186,7 @@ export function PinObject({
       : ({
           "--pin-card-radius": `${radiusPx}px`,
           // The label follows the card's corners so the two read as one object,
-          // but capped well short of it — past about 8px on a 24px bar the
+          // but capped well short of it — past about 8px on a 28px bar the
           // curves eat the ends and crowd the text against them.
           "--pin-label-radius": `${Math.min(radiusPx, 8)}px`,
         } as React.CSSProperties);
@@ -229,7 +259,12 @@ export function PinObject({
       <div className="pin-object__card" data-pulse={pulse} ref={card}>
         <div className="pin-object__inner">
           {shot ? (
-            <img className="pin-object__shot" src={shot} alt={pin.elementText || "Pinned element"} />
+            <img
+              className="pin-object__shot"
+              src={shot}
+              style={shotStyle}
+              alt={pin.elementText || "Pinned element"}
+            />
           ) : (
             <div className="pin-object__shot" style={{ width: 180, height: 90 }} />
           )}
