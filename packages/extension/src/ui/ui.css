@@ -90,7 +90,7 @@
    */
   --pin-measure: var(--pin-grey-500);
   --pin-measure-wash: color-mix(in srgb, var(--pin-grey-500) 8%, transparent);
-  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-500) 32%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-500) 22%, transparent);
 
   /* The mark — the logo's tittle, reused for edge anchors and for delete. */
   --pin-red: var(--pin-red-500);
@@ -155,7 +155,7 @@
 
   --pin-measure: #9ba0a8;
   --pin-measure-wash: color-mix(in srgb, #9ba0a8 12%, transparent);
-  --pin-measure-glow: color-mix(in srgb, #9ba0a8 42%, transparent);
+  --pin-measure-glow: color-mix(in srgb, #9ba0a8 30%, transparent);
 
   /* Red holds against both grounds, so only its wash needs opening up. */
   --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 24%, transparent);
@@ -617,6 +617,9 @@
  */
 .pin-object[data-selected="true"] .pin-object__card {
   box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
+  /* The label lands on this edge, so the top-left corner straightens to receive
+     it. The other three keep the element's own radius. */
+  border-top-left-radius: 0;
 }
 
 .pin-object__inner {
@@ -648,46 +651,77 @@
 }
 
 /*
- * The floating name bar. The picker's label, kept after the click and inverted
- * to black — one language for "what is this", two colours so hovering and
- * having-pinned are never mistaken for each other. It spans the card's full
- * width with the dismiss on the far end, which is what lets the card underneath
- * stay a clean rectangle: nothing is drawn on the picture of the component.
+ * A folder tab, not a bar.
+ *
+ * It is still the picker's label kept after the click, inverted to black so
+ * hovering and having-pinned are never confused. What changed is the silhouette:
+ * the name sits in a tab sized to itself and standing taller than the strip
+ * beside it, which is how a folder reads as a folder before you have read
+ * anything written on it. The label attaches to the card rather than floating
+ * clear of it, because a tab that is not attached to something is just a shape.
  */
 .pin-object__label {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 24px;
-  padding: 0 3px 0 10px;
-  margin-bottom: 6px;
-  border-radius: var(--pin-label-radius, var(--pin-radius-sm));
-  background: var(--pin-ink);
+  align-items: flex-end;
+  /* No gap, and square where the two meet — this is the top edge of the card. */
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
   color: var(--pin-paper);
-  box-shadow: var(--pin-shadow);
-  animation: pin-label-in 110ms ease-out;
 }
 
-@keyframes pin-label-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Sans and a touch heavier — this is the name of a thing, not a measurement. */
-.pin-object__name {
-  font-size: 11px;
-  font-weight: 500;
+.pin-object__tab {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--pin-label-radius, var(--pin-radius-sm))
+    var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
+  background: var(--pin-ink);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 62%;
   flex: 0 1 auto;
 }
 
-/* The path stays mono and quiet, and gives up its space first — the name is
-   what identifies the card, the file is where you would go next. */
+.pin-object__strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 3px 0 9px;
+  border-radius: 0 var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
+  background: var(--pin-ink);
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+}
+
+/*
+ * The concave corner where the tab steps down to the strip. A square notch is
+ * legible but mechanical; a folder's tab flares into its body. Drawn as a
+ * radial gradient rather than a border-radius because the curve has to be cut
+ * *out* of the corner, which no border property can do.
+ */
+.pin-object__strip::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  background: radial-gradient(circle at 100% 100%, transparent 0 7px, var(--pin-ink) 7px);
+}
+
+/* The path stays mono and quiet, and gives up its space first — the name is what
+   identifies the card, the file is where you would go next. */
 .pin-object__src {
   font-family: var(--pin-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: inherit;
   opacity: 0.55;
   white-space: nowrap;
@@ -697,8 +731,8 @@
   min-width: 0;
 }
 
-/* The icon button's own neutrals are built for a light ground and vanish on
-   this one, so inside the bar it works in the bar's own colour. */
+/* The icon button's own neutrals are built for a light ground and vanish on this
+   one, so inside the label it works in the label's own colour. */
 .pin-object__label .pin-icon-btn {
   color: inherit;
   opacity: 0.6;
