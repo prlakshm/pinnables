@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
+    "build": "npm run check-tokens && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
     "dev:extension": "npm run dev --workspace @pinnables/extension",
     "dev:service": "npm run start --workspace @pinnables/service",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
@@ -15,7 +15,8 @@
     "trace-wordmark": "node scripts/trace-wordmark.mjs",
     "typecheck": "npm run typecheck --workspace @pinnables/extension",
     "demo": "node scripts/serve-demo.mjs",
-    "make-icons": "node scripts/make-icons.mjs"
+    "make-icons": "node scripts/make-icons.mjs",
+    "check-tokens": "node scripts/check-tokens.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

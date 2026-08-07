@@ -14,46 +14,84 @@
 
 :where(.pin-root) {
   /*
-   * The named tokens out of the Paper file. Read from the file, not sampled off
-   * a render — a JPEG of a design is not the design, and sampling one was
-   * producing values that were close and wrong.
+   * Two layers, on purpose.
+   *
+   * Primitives are named for what they are and are the only place a hex appears.
+   * Semantics are named for what they do and are the only thing components are
+   * allowed to reference. A flat list mixes the two, and the cost is not
+   * theoretical — before this split, #6b6f78 was written out three times (as a
+   * grey, as muted ink, and again inside an rgba) with nothing recording that
+   * they were one decision, so changing it would have silently split it in two.
+   *
+   * Provenance matters as much as the value. Nine of these are named tokens read
+   * out of the Paper file and are authoritative. Two were sampled from renders
+   * because no token exists for them. Four are steps derived here to fill the
+   * ramp. Anything marked "derived" is ours to change; anything marked "Paper"
+   * has to be changed in Paper first.
    */
-  --pin-paper: #ffffff;
-  --pin-paper-soft: #f6f5f3;
-  --pin-paper-sunk: #efeeec;
-  --pin-rule: #e4e2de;
-  --pin-rule-strong: #d3d2ce;
-  --pin-ink-faint: #a1a4ab;
-  --pin-ink-muted: #6b6f78;
-  --pin-ink: #292c33;
+
+  /* ---- primitives ------------------------------------------------------- */
+  --pin-white: #ffffff;              /* Paper: surface */
+  --pin-grey-50: #f6f5f3;            /* Paper: paper */
+  --pin-grey-100: #efeeec;           /* derived */
+  --pin-grey-150: #e4e2de;           /* Paper: line */
+  --pin-grey-200: #d3d2ce;           /* derived */
+  --pin-grey-400: #a1a4ab;           /* derived */
+  --pin-grey-500: #6b6f78;           /* Paper: ink-muted */
+  --pin-grey-700: #3d434d;           /* derived */
+  --pin-grey-900: #292c33;           /* Paper: ink */
+
+  --pin-blue-100: #e4f1fd;           /* Paper: sky-tint */
+  --pin-blue-200: #d1e1f8;           /* sampled: the active-tool disc in the nav reference */
+  --pin-blue-300: #9bd3f9;           /* Paper: sky */
+  --pin-blue-700: #1e3fd8;           /* Paper: cobalt */
+
+  --pin-red-400: #f4564b;            /* sampled: the lit shoulder of the flat mark */
+  --pin-red-500: #ed1c24;            /* Paper: red */
+
+  /* ---- semantics -------------------------------------------------------- */
+
+  /* Surfaces and text. */
+  --pin-paper: var(--pin-white);
+  --pin-paper-soft: var(--pin-grey-50);
+  --pin-paper-sunk: var(--pin-grey-100);
+  --pin-rule: var(--pin-grey-150);
+  --pin-rule-strong: var(--pin-grey-200);
+  --pin-ink-faint: var(--pin-grey-400);
+  --pin-ink-muted: var(--pin-grey-500);
+  --pin-ink: var(--pin-grey-900);
   /* Hover for anything filled with ink. Lifting is the only direction available
      to something that is already the strongest thing on screen. */
-  --pin-ink-lift: #3d434d;
+  --pin-ink-lift: var(--pin-grey-700);
 
-  /* State, and only in the overlay's own chrome — the active tool, the count
-     badge. `--pin-sky-fill` is the disc measured off the nav reference, a step
-     deeper than the tint token, which is what makes "on" read as on. */
-  --pin-sky: #9bd3f9;
-  --pin-sky-tint: #e4f1fd;
-  --pin-sky-fill: #d1e1f8;
-  --pin-cobalt: #1e3fd8;
+  /* State — the tool you are holding, the pin that is selected, the count. Only
+     ever in the overlay's own chrome. `--pin-sky-fill` is a step deeper than the
+     tint, and that step is what makes "on" read as on rather than as tinted. */
+  --pin-sky: var(--pin-blue-300);
+  --pin-sky-tint: var(--pin-blue-100);
+  --pin-sky-fill: var(--pin-blue-200);
+  --pin-cobalt: var(--pin-blue-700);
 
   /*
-   * Measurement. The same grey the reference draws its toolbar icons in, reused
-   * for the outline around what you are about to pin and the hairline around
-   * what you already pinned — so "pending" and "pinned" read as one system.
+   * Measurement — the outline around what you are about to pin, the hairline
+   * around what you already pinned. Deliberately the same primitive as muted
+   * ink, because it is the same grey the reference draws its toolbar icons in;
+   * the alias is what records that they are one decision rather than two that
+   * happen to match.
    */
-  --pin-grey: #6b6f78;
-  --pin-grey-wash: rgba(107, 111, 120, 0.08);
+  --pin-measure: var(--pin-grey-500);
+  --pin-measure-wash: color-mix(in srgb, var(--pin-grey-500) 8%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-500) 22%, transparent);
 
-  /* The mark. */
-  --pin-red: #ed1c24;
-  --pin-red-soft: #f4564b;
-  --pin-red-tint: rgba(244, 86, 75, 0.16);
+  /* The mark — the logo's tittle, reused for edge anchors and for delete. */
+  --pin-red: var(--pin-red-500);
+  --pin-red-soft: var(--pin-red-400);
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, transparent);
 
+  /* The one status colour left, for the offline banner. Not part of the brand
+     ramp — a warning has to be recognisable before it is on-palette. */
   --pin-amber: #b45309;
   --pin-amber-soft: #fffbeb;
-  --pin-green: #15803d;
 
   --pin-radius-sm: 6px;
   --pin-radius: 10px;
@@ -77,8 +115,11 @@
  * Dark is chosen from the host page's own background luminance, not from
  * prefers-color-scheme — the OS setting says nothing about the app you are
  * annotating, and a dark app on a light OS is exactly where the chrome would
- * break. Sky and cobalt swap roles here: on dark, the light blue is the
- * legible one, so it carries the glyph and cobalt carries the fill.
+ * break.
+ *
+ * Only semantics are reassigned. The primitive ramp above is untouched, which is
+ * what stops dark mode from becoming a second parallel token system that has to
+ * be kept in step by hand.
  */
 :where(.pin-root[data-scheme="dark"]) {
   --pin-paper: #23262b;
@@ -88,22 +129,30 @@
   --pin-rule-strong: #4d525a;
   --pin-ink-faint: #71757c;
   --pin-ink-muted: #9ba0a8;
-  --pin-ink: #f6f5f3;
-  /* Inverted here: ink is the light one, so its hover settles rather than lifts. */
-  --pin-ink-lift: #ffffff;
+  --pin-ink: var(--pin-grey-50);
+  /* Inverted: ink is the light one here, so its hover goes up to white. */
+  --pin-ink-lift: var(--pin-white);
 
-  /* Cobalt is unreadable on a dark ground, so sky takes the glyph and the fill
-     drops to a wash of it. The pair swaps roles rather than gaining a token. */
-  --pin-sky-tint: rgba(155, 211, 249, 0.14);
-  --pin-sky-fill: rgba(155, 211, 249, 0.2);
-  --pin-cobalt: #9bd3f9;
+  /*
+   * Cobalt is unreadable on a dark ground, so sky takes the glyph and the fill
+   * drops to a wash of it. Sky itself moves up a step rather than staying put —
+   * otherwise it and cobalt resolve to the same value and the focus ring becomes
+   * invisible against the glyph it is meant to frame.
+   */
+  --pin-sky: var(--pin-blue-200);
+  --pin-sky-tint: color-mix(in srgb, var(--pin-blue-300) 14%, transparent);
+  --pin-sky-fill: color-mix(in srgb, var(--pin-blue-300) 22%, transparent);
+  --pin-cobalt: var(--pin-blue-300);
 
-  --pin-grey: #9ba0a8;
-  --pin-grey-wash: rgba(155, 160, 168, 0.12);
+  --pin-measure: #9ba0a8;
+  --pin-measure-wash: color-mix(in srgb, #9ba0a8 12%, transparent);
+  --pin-measure-glow: color-mix(in srgb, #9ba0a8 30%, transparent);
+
+  /* Red holds against both grounds, so only its wash needs opening up. */
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 24%, transparent);
 
   --pin-amber: #fbbf24;
   --pin-amber-soft: #2a2317;
-  --pin-green: #4ade80;
 
   --pin-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
   --pin-shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 30px rgba(0, 0, 0, 0.55);
@@ -333,24 +382,6 @@
   color: var(--pin-ink-faint);
 }
 
-.pin-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
-}
-.pin-status[data-status="todo"] { color: var(--pin-ink-muted); }
-.pin-status[data-status="done"] { color: var(--pin-green); }
-.pin-status[data-status="blocked"] { color: var(--pin-amber); }
-.pin-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: currentColor;
-  flex: 0 0 auto;
-}
-
 /* ------------------------------------------------------------------ overlay */
 
 .pin-overlay {
@@ -372,8 +403,8 @@
   /* A border rather than an outline: `outline` ignores border-radius on some
      engines and always draws the same shape, which is the one thing this must
      not do. The radius comes from the element itself, set inline. */
-  border: 2px solid var(--pin-grey);
-  background: var(--pin-grey-wash);
+  border: 2px solid var(--pin-measure);
+  background: var(--pin-measure-wash);
   box-sizing: border-box;
   pointer-events: none;
   transition: all 60ms linear;
@@ -391,7 +422,7 @@
   align-items: center;
   height: 18px;
   padding: 0 5px;
-  background: var(--pin-grey);
+  background: var(--pin-measure);
   color: #fff;
   font-family: var(--pin-mono);
   font-size: 10px;
@@ -425,7 +456,7 @@
   display: flex;
   align-items: center;
   padding: 0 4px;
-  color: var(--pin-grey);
+  color: var(--pin-measure);
   cursor: grab;
 }
 .pin-toolbar__grip:active { cursor: grabbing; }
@@ -550,19 +581,23 @@
    the click, thinned. Same colour, less weight: pinned, no longer pending. */
 .pin-object__card {
   position: relative;
-  border: 1px solid var(--pin-grey);
+  border: 1px solid var(--pin-measure);
   border-radius: var(--pin-radius);
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   overflow: visible;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-/* Outline and glow are both the disc fill, so a selected card and the active
-   tool in the nav are visibly the same "this one is on" — the tint was a step
-   too pale to hold an edge against a light page. */
+/*
+ * Selection stays in the measurement grey rather than turning blue. The card
+ * already wears that grey as a hairline, so selecting it deepens what is there
+ * instead of recolouring it — and blue keeps meaning "the tool you are holding"
+ * rather than splitting across two unrelated ideas. The glow is a heavier alpha
+ * of the same grey, so the whole state is one colour at two weights.
+ */
 .pin-object[data-selected="true"] .pin-object__card {
-  border-color: var(--pin-sky-fill);
-  box-shadow: 0 0 0 3px var(--pin-sky-fill), var(--pin-shadow);
+  border-color: var(--pin-measure);
+  box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
 }
 
 .pin-object__inner {
@@ -588,7 +623,7 @@
 }
 
 @keyframes pin-pulse {
-  0% { box-shadow: 0 0 0 0 var(--pin-sky-fill), var(--pin-shadow); }
+  0% { box-shadow: 0 0 0 0 var(--pin-measure-glow), var(--pin-shadow); }
   100% { box-shadow: 0 0 0 18px transparent, var(--pin-shadow); }
 }
 
@@ -823,10 +858,15 @@
 
 /* --------------------------------------------------------------- side panel */
 
+/*
+ * `100%` rather than `100vh`. The side panel is not the visual viewport, and on
+ * a resized pane `100vh` reports the window and the footer walks off the bottom.
+ */
 .pin-panel {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--pin-paper);
 }
 
@@ -863,13 +903,33 @@
   border-bottom-color: var(--pin-cobalt);
 }
 
+/*
+ * `min-height: 0` is the whole reason this scrolls.
+ *
+ * A column flex item defaults to `min-height: auto`, which means it refuses to
+ * shrink below its content — so `overflow-y: auto` never engages, the shelf
+ * grows past the panel instead of scrolling, and the footer is pushed out of
+ * sight. The overflow property was never the problem; the floor under it was.
+ */
 .pin-panel__body {
   flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+/*
+ * And the second half of the same bug, one level down. The shelf is a column
+ * flex container, so its cards are flex items that shrink by default — an
+ * expanded card carrying the inspector was being squeezed to fit and then
+ * clipped by its own `overflow: hidden`, with no way to reach the rest. Cards
+ * keep their natural height; the shelf scrolls.
+ */
+.pin-panel__body > * {
+  flex: 0 0 auto;
 }
 
 .pin-panel__footer {
@@ -990,20 +1050,6 @@
   border-radius: var(--pin-radius-sm);
   background: var(--pin-paper);
   display: block;
-}
-
-.pin-meta-grid {
-  display: grid;
-  grid-template-columns: 62px 1fr;
-  gap: 4px 8px;
-  font-size: 11px;
-}
-.pin-meta-grid dt { color: var(--pin-ink-muted); }
-.pin-meta-grid dd {
-  margin: 0;
-  font-family: var(--pin-mono);
-  font-size: 10px;
-  overflow-wrap: anywhere;
 }
 
 /* The style diff. Neutral chrome, so the values carry the emphasis. */

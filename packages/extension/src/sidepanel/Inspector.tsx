@@ -105,6 +105,11 @@ export function Inspector({ pin, onEdit }: InspectorProps) {
    */
   const facts: Array<[string, string]> = [
     ["component", pin.componentName ?? "unresolved"],
+    // Status lives here rather than as a dot on the shelf row. The row shows
+    // "done" by striking its title through, which leaves "blocked" with no
+    // indicator at all — a word in the fact list says it without spending a
+    // colour, and this is where the rest of the pin's facts already are.
+    ["status", pin.status],
     ["route", pin.route],
     ["viewport", `${pin.viewport.width}×${pin.viewport.height}`],
     ["source", pin.sourceFile ?? "unresolved"],
