@@ -68,7 +68,7 @@ function RelationshipCard({
     <div className="pin-card">
       <div style={{ padding: "10px 11px", display: "flex", flexDirection: "column", gap: 9 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ color: "var(--pin-cobalt)", display: "inline-flex" }}>
+          <span style={{ color: "var(--pin-ink-muted)", display: "inline-flex" }}>
             <LinkIcon size={14} />
           </span>
           <span style={{ fontSize: 12, fontWeight: 500 }}>

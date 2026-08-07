@@ -4,12 +4,15 @@
  * identical whether it is floating over someone's app or sitting in the panel.
  * Everything is namespaced --pin-* so nothing collides with the host page.
  *
- * Three colours carry meaning and nothing else does. Blue is state — the tool
- * you are holding, the button that will fire. Grey is measurement — the outline
- * around what you are about to pin and the hairline around what you already
- * pinned. Red is the mark — the logo's tittle, reused for the anchors you drag
- * between pins and for deleting. Chrome stays neutral, because it has to sit on
- * top of a product it has never seen.
+ * The chrome has no accent, on purpose. Black is state — the tool you are
+ * holding, the button that will fire, the row you picked. Grey is measurement —
+ * the outline around what you are about to pin and the hairline around what you
+ * already pinned. Red is the mark — the logo's tittle, reused for the anchors
+ * you drag between pins and for deleting. That is the whole vocabulary, and none
+ * of it is a hue, because this sits on top of products that already have one.
+ *
+ * Colour appears in exactly one place: the pens in the draw toolbar. There it is
+ * content rather than chrome — a mark you made, not a control you are using.
  */
 
 :where(.pin-root) {
@@ -41,8 +44,9 @@
   --pin-grey-600: #454b55;           /* derived */
   --pin-grey-900: #292c33;           /* Paper: ink */
 
-  --pin-blue-100: #e4f1fd;           /* Paper: sky-tint */
-  --pin-blue-200: #d1e1f8;           /* sampled: the active-tool disc in the nav reference */
+  /* Blue has one job now: it is a colour you draw *with*, never a colour the
+     tool wears. Its only consumer is DRAW_COLORS in @pinnables/shared, which
+     check-tokens holds to these values so the two palettes cannot fork. */
   --pin-blue-300: #9bd3f9;           /* Paper: sky */
   --pin-blue-700: #1e3fd8;           /* Paper: cobalt */
 
@@ -74,13 +78,18 @@
   --pin-off: var(--pin-grey-100);
   --pin-off-hover: var(--pin-grey-150);
 
-  /* State — the tool you are holding, the pin that is selected, the count. Only
-     ever in the overlay's own chrome. `--pin-sky-fill` is a step deeper than the
-     tint, and that step is what makes "on" read as on rather than as tinted. */
-  --pin-sky: var(--pin-blue-300);
-  --pin-sky-tint: var(--pin-blue-100);
-  --pin-sky-fill: var(--pin-blue-200);
-  --pin-cobalt: var(--pin-blue-700);
+  /*
+   * On. The tool you are holding, the pin that is selected, the option you
+   * picked — all of it black, the same black the commit buttons wear.
+   *
+   * This used to be blue, and blue was the problem: an overlay lands on a
+   * product that already has an accent, and a second one competing with it made
+   * the chrome look like part of the page. Black belongs to no one's brand, so
+   * it can sit on any of them.
+   */
+  --pin-on-fill: var(--pin-ink);
+  --pin-on-fill-hover: var(--pin-ink-lift);
+  --pin-on-ink: var(--pin-paper);
 
   /*
    * Measurement — the outline around what you are about to pin, the hairline
@@ -149,17 +158,6 @@
   --pin-ink: var(--pin-grey-50);
   /* Inverted: ink is the light one here, so its hover goes up to white. */
   --pin-ink-lift: var(--pin-white);
-
-  /*
-   * Cobalt is unreadable on a dark ground, so sky takes the glyph and the fill
-   * drops to a wash of it. Sky itself moves up a step rather than staying put —
-   * otherwise it and cobalt resolve to the same value and the focus ring becomes
-   * invisible against the glyph it is meant to frame.
-   */
-  --pin-sky: var(--pin-blue-200);
-  --pin-sky-tint: color-mix(in srgb, var(--pin-blue-300) 14%, transparent);
-  --pin-sky-fill: color-mix(in srgb, var(--pin-blue-300) 22%, transparent);
-  --pin-cobalt: var(--pin-blue-300);
 
   --pin-measure: #9ba0a8;
   --pin-measure-wash: color-mix(in srgb, #9ba0a8 12%, transparent);
@@ -309,13 +307,13 @@
  * alone on an 18px outline glyph is nearly invisible.
  */
 .pin-icon-btn[data-active="true"] {
-  background: var(--pin-sky-fill);
-  color: var(--pin-cobalt);
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
 }
-/* The tool you are already holding still answers the pointer — it deepens
-   rather than switching to the neutral hover, which would read as turning off. */
+/* The tool you are already holding still answers the pointer — it lifts rather
+   than switching to the neutral hover, which would read as turning off. */
 .pin-icon-btn[data-active="true"]:hover {
-  background: var(--pin-sky);
+  background: var(--pin-on-fill-hover);
 }
 
 /*
@@ -345,9 +343,9 @@
   white-space: nowrap;
 }
 .pin-chip[data-on="true"] {
-  background: var(--pin-sky-tint);
+  background: var(--pin-on-fill);
   border-color: transparent;
-  color: var(--pin-cobalt);
+  color: var(--pin-on-ink);
 }
 .pin-chip--mono {
   font-family: var(--pin-mono);
@@ -366,8 +364,10 @@
   height: 20px;
   padding: 0;
   border-radius: 999px;
-  background: var(--pin-sky-fill);
-  color: var(--pin-cobalt);
+  /* A count, not a state — so it stays quiet rather than borrowing the black
+     that means "this one is on" from the tool sitting next to it. */
+  background: var(--pin-off);
+  color: var(--pin-ink);
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -402,8 +402,8 @@
   outline: none;
 }
 .pin-field:focus {
-  border-color: var(--pin-sky);
-  box-shadow: 0 0 0 3px var(--pin-sky-tint);
+  border-color: var(--pin-ink);
+  box-shadow: 0 0 0 3px var(--pin-measure-glow);
 }
 .pin-field::placeholder {
   color: var(--pin-ink-faint);
@@ -975,7 +975,7 @@
   border: 2px solid transparent;
   box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12);
 }
-.pin-draw__swatch[data-active="true"] { border-color: var(--pin-cobalt); }
+.pin-draw__swatch[data-active="true"] { border-color: var(--pin-ink); }
 
 /* --------------------------------------------------------------- side panel */
 
@@ -1020,8 +1020,8 @@
   margin-bottom: -1px;
 }
 .pin-tab[data-active="true"] {
-  color: var(--pin-cobalt);
-  border-bottom-color: var(--pin-cobalt);
+  color: var(--pin-ink);
+  border-bottom-color: var(--pin-ink);
 }
 
 /*
@@ -1069,8 +1069,8 @@
   overflow: hidden;
 }
 .pin-card[data-selected="true"] {
-  border-color: var(--pin-sky-fill);
-  box-shadow: 0 0 0 3px var(--pin-sky-fill);
+  border-color: var(--pin-ink);
+  box-shadow: 0 0 0 3px var(--pin-measure-glow);
 }
 
 /*
@@ -1302,10 +1302,12 @@
 .pin-metric__value:hover { background: var(--pin-paper-sunk); }
 .pin-metric__value:focus {
   background: var(--pin-paper);
-  box-shadow: 0 0 0 1.5px var(--pin-sky);
+  box-shadow: 0 0 0 1.5px var(--pin-ink);
 }
+/* A requested value stands out by weight, not hue: what was measured recedes to
+   muted, what you asked for comes forward to full ink. */
 .pin-metric__value[data-edited="true"] {
-  color: var(--pin-cobalt);
+  color: var(--pin-ink);
   font-weight: 600;
 }
 
@@ -1406,14 +1408,14 @@
 .pin-boxmodel__edge:hover { background: var(--pin-paper-sunk); }
 .pin-boxmodel__edge:focus {
   background: var(--pin-paper);
-  box-shadow: 0 0 0 1.5px var(--pin-sky);
+  box-shadow: 0 0 0 1.5px var(--pin-ink);
 }
 .pin-boxmodel__edge[data-side="top"] { top: 0; left: 50%; margin-left: -14px; }
 .pin-boxmodel__edge[data-side="bottom"] { bottom: 0; left: 50%; margin-left: -14px; }
 .pin-boxmodel__edge[data-side="left"] { left: 1px; top: 50%; margin-top: -7.5px; }
 .pin-boxmodel__edge[data-side="right"] { right: 1px; top: 50%; margin-top: -7.5px; }
 .pin-boxmodel__edge[data-edited="true"] {
-  color: var(--pin-cobalt);
+  color: var(--pin-ink);
   font-weight: 600;
 }
 

@@ -43,8 +43,8 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
         <div
           className="pin-banner"
           style={{
-            background: "var(--pin-sky-tint)",
-            color: "var(--pin-cobalt)",
+            background: "var(--pin-off)",
+            color: "var(--pin-ink)",
             borderColor: "transparent",
           }}
         >
@@ -176,7 +176,7 @@ function PinRow({
               <span className="pin-row__route">{pin.route}</span>
               {linked && (
                 <span
-                  style={{ color: "var(--pin-cobalt)", display: "inline-flex" }}
+                  style={{ color: "var(--pin-ink-muted)", display: "inline-flex" }}
                   title="In a relationship"
                 >
                   <LinkIcon size={13} />

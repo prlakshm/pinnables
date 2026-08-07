@@ -9,9 +9,12 @@
  *
  * What this checks:
  *   1. Every primitive in tokens.json is defined in ui.css with the same value.
- *   2. Every semantic in tokens.json resolves to the primitive it claims.
+ *   2. Every semantic in tokens.json resolves to the primitive it claims —
+ *      directly, or through the one other semantic it says it aliases.
  *   3. No semantic in ui.css hardcodes a hex where an alias belongs.
  *   4. Nothing references a --pin-* token that is never defined.
+ *   5. DRAW_COLORS in @pinnables/shared is exactly the primitives tokens.json
+ *      names, in order — the pens are the one brand colour written out twice.
  *
  * What it deliberately does not check: whether Paper still agrees. That needs
  * the MCP server and a running app, so it stays a human step — but the
@@ -65,9 +68,24 @@ for (const [name, spec] of Object.entries(tokens.semantic)) {
     problems.push(`semantic ${key} is in tokens.json but not in ui.css`);
     continue;
   }
-  const wantedRef = `--pin-${spec.ref}`;
+  /*
+   * A semantic may point at another semantic rather than straight at a
+   * primitive — `on-fill` is `ink`, and saying so is what makes it invert on a
+   * dark host page without a second override. `ref` still records where the
+   * chain ends, and the two have to agree.
+   */
+  const wantedRef = `--pin-${spec.aliasOf ?? spec.ref}`;
   if (!actual.includes(wantedRef)) {
     problems.push(`semantic ${key}: should reference ${wantedRef}, but is "${actual}"`);
+  }
+  if (spec.aliasOf) {
+    const target = tokens.semantic[spec.aliasOf];
+    if (!target) problems.push(`semantic ${key} aliases ${spec.aliasOf}, which is not a semantic`);
+    else if (target.ref !== spec.ref) {
+      problems.push(
+        `semantic ${key} claims ref ${spec.ref} but aliases ${spec.aliasOf}, which resolves to ${target.ref}`,
+      );
+    }
   }
   // A semantic that spells out a hex has cut its own reference — the exact
   // failure the two-layer split exists to prevent.
@@ -76,6 +94,26 @@ for (const [name, spec] of Object.entries(tokens.semantic)) {
   }
   if (spec.alpha !== undefined && !actual.includes("color-mix")) {
     problems.push(`semantic ${key} declares alpha ${spec.alpha} but does not color-mix a primitive`);
+  }
+}
+
+/**
+ * The pens are a literal array of hex strings in a package the stylesheet cannot
+ * reach, so they are the one place a brand colour is written out twice. Checking
+ * them here is what stops the draw palette quietly becoming a second palette.
+ */
+const drawSource = readFileSync("packages/shared/src/drawings.ts", "utf8");
+const drawMatch = /export const DRAW_COLORS = \[([^\]]+)\]/.exec(drawSource);
+if (!drawMatch) {
+  problems.push("could not find DRAW_COLORS in packages/shared/src/drawings.ts");
+} else {
+  const actual = [...drawMatch[1].matchAll(/"(#[0-9a-fA-F]{6})"/g)].map((m) => m[1].toLowerCase());
+  const wanted = tokens.drawPalette.order.map((ref) => tokens.primitive[ref].value.toLowerCase());
+  if (actual.join() !== wanted.join()) {
+    problems.push(
+      `DRAW_COLORS is [${actual.join(", ")}] but tokens.json asks for ` +
+        `[${tokens.drawPalette.order.join(", ")}] = [${wanted.join(", ")}]`,
+    );
   }
 }
 
@@ -106,8 +144,13 @@ for (const [name, why] of SET_AT_RUNTIME) {
 }
 
 /** Tokens nothing uses. Not an error — dead weight worth seeing. */
+const DRAW_ONLY = new Set(tokens.drawPalette.order.map((ref) => `--pin-${ref}`));
 const unused = [...definedAnywhere].filter(
-  (name) => !used.has(name) && !name.startsWith("--pin-font") && !name.startsWith("--pin-mono"),
+  (name) =>
+    !used.has(name) &&
+    !DRAW_ONLY.has(name) &&
+    !name.startsWith("--pin-font") &&
+    !name.startsWith("--pin-mono"),
 );
 
 if (problems.length > 0) {

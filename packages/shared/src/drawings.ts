@@ -12,7 +12,13 @@ import type { DrawShape } from "./schema.js";
  * `height` are whatever size that frame is being drawn at.
  */
 
-export const DRAW_COLORS = ["#ED1C24", "#1E3FD8", "#0F6E56", "#292C33"] as const;
+/**
+ * The pens. The one place in the product where colour is content rather than
+ * chrome — a mark you made, not a control you are using, which is why blue lives
+ * here and nowhere else. Values are the shared primitives; `check-tokens` holds
+ * this list to them so the two palettes cannot fork.
+ */
+export const DRAW_COLORS = ["#ED1C24", "#9BD3F9", "#1E3FD8", "#292C33"] as const;
 export const DEFAULT_DRAW_COLOR = DRAW_COLORS[0];
 
 /** Stroke width scales with the frame so a mark reads the same at any size. */
