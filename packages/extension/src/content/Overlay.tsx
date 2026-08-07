@@ -15,6 +15,14 @@ interface HighlightBox {
   width: number;
   height: number;
   label: string;
+  /**
+   * The element's own border-radius, so the outline traces the thing rather
+   * than imposing a shape on it. A fixed radius is wrong twice: square corners
+   * on a rounded card leave four visible gaps, and rounded corners on a table
+   * cut the corners off. Tracing is never wrong, and it removes the question of
+   * what radius the picker "should" have.
+   */
+  radius: string;
 }
 
 export interface FloatPosition {
@@ -295,6 +303,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         width: rect.width,
         height: rect.height,
         label: `${name} · ${Math.round(rect.width)}×${Math.round(rect.height)}`,
+        radius: getComputedStyle(el).borderRadius,
       });
     };
 
@@ -427,6 +436,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       width: rect.width,
       height: rect.height,
       label: found.confidence === 1 ? "exact match" : `${Math.round(found.confidence * 100)}% match`,
+      radius: getComputedStyle(found.element).borderRadius,
     });
     const timer = window.setTimeout(() => setHighlight(null), 2400);
     return () => window.clearTimeout(timer);
@@ -534,6 +544,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             top: highlight.y,
             width: highlight.width,
             height: highlight.height,
+            borderRadius: highlight.radius,
           }}
         >
           <span className="pin-highlight__label">{highlight.label}</span>

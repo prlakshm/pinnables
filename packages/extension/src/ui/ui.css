@@ -13,39 +13,48 @@
  */
 
 :where(.pin-root) {
-  /* Paper palette. Sampled from the artboard, not eyeballed. */
+  /*
+   * The named tokens out of the Paper file. Read from the file, not sampled off
+   * a render — a JPEG of a design is not the design, and sampling one was
+   * producing values that were close and wrong.
+   */
   --pin-paper: #ffffff;
-  --pin-paper-soft: #fbf9f7;
-  --pin-paper-sunk: #f2f1ef;
-  --pin-rule: #e4e3e0;
+  --pin-paper-soft: #f6f5f3;
+  --pin-paper-sunk: #efeeec;
+  --pin-rule: #e4e2de;
   --pin-rule-strong: #d3d2ce;
-  --pin-ink-faint: #a2a5aa;
-  --pin-ink-muted: #6d7076;
-  --pin-ink: #2b2e34;
+  --pin-ink-faint: #a1a4ab;
+  --pin-ink-muted: #6b6f78;
+  --pin-ink: #292c33;
 
-  /* State. Light fill, dark glyph — the nav's active-tool treatment, reused
-     anywhere something is switched on. */
-  --pin-sky: #76cafd;
-  --pin-sky-tint: rgba(118, 202, 253, 0.24);
-  --pin-cobalt: #0953dd;
+  /* State, and only in the overlay's own chrome — the active tool, the count
+     badge. `--pin-sky-fill` is the disc measured off the nav reference, a step
+     deeper than the tint token, which is what makes "on" read as on. */
+  --pin-sky: #9bd3f9;
+  --pin-sky-tint: #e4f1fd;
+  --pin-sky-fill: #d1e1f8;
+  --pin-cobalt: #1e3fd8;
 
-  /* Measurement. One grey for the hover outline and the pinned hairline, so
-     "about to pin" and "already pinned" read as the same system. */
-  --pin-grey: #8a8d93;
-  --pin-grey-wash: rgba(138, 141, 147, 0.1);
+  /*
+   * Measurement. The same grey the reference draws its toolbar icons in, reused
+   * for the outline around what you are about to pin and the hairline around
+   * what you already pinned — so "pending" and "pinned" read as one system.
+   */
+  --pin-grey: #6b6f78;
+  --pin-grey-wash: rgba(107, 111, 120, 0.08);
 
   /* The mark. */
-  --pin-red: #f41616;
+  --pin-red: #ed1c24;
   --pin-red-soft: #f4564b;
-  --pin-red-tint: rgba(244, 86, 75, 0.18);
+  --pin-red-tint: rgba(244, 86, 75, 0.16);
 
   --pin-amber: #b45309;
   --pin-amber-soft: #fffbeb;
   --pin-green: #15803d;
 
   --pin-radius-sm: 6px;
-  --pin-radius: 8px;
-  --pin-radius-lg: 12px;
+  --pin-radius: 10px;
+  --pin-radius-lg: 16px;
 
   --pin-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
@@ -71,18 +80,21 @@
 :where(.pin-root[data-scheme="dark"]) {
   --pin-paper: #23262b;
   --pin-paper-soft: #1c1f23;
-  --pin-paper-sunk: #2c2f35;
+  --pin-paper-sunk: #2e3238;
   --pin-rule: #3a3e45;
   --pin-rule-strong: #4d525a;
   --pin-ink-faint: #71757c;
   --pin-ink-muted: #9ba0a8;
-  --pin-ink: #fbf9f7;
+  --pin-ink: #f6f5f3;
 
-  --pin-sky-tint: rgba(118, 202, 253, 0.18);
-  --pin-cobalt: #76cafd;
+  /* Cobalt is unreadable on a dark ground, so sky takes the glyph and the fill
+     drops to a wash of it. The pair swaps roles rather than gaining a token. */
+  --pin-sky-tint: rgba(155, 211, 249, 0.14);
+  --pin-sky-fill: rgba(155, 211, 249, 0.2);
+  --pin-cobalt: #9bd3f9;
 
-  --pin-grey: #9ea1a7;
-  --pin-grey-wash: rgba(158, 161, 167, 0.14);
+  --pin-grey: #9ba0a8;
+  --pin-grey-wash: rgba(155, 160, 168, 0.12);
 
   --pin-amber: #fbbf24;
   --pin-amber-soft: #2a2317;
@@ -90,13 +102,6 @@
 
   --pin-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
   --pin-shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 30px rgba(0, 0, 0, 0.55);
-}
-
-/* Cobalt on dark is doing the light blue's job, so a solid cobalt button would
-   need dark text. One rule rather than a fourth colour token. */
-:where(.pin-root[data-scheme="dark"]) .pin-btn--primary,
-:where(.pin-root[data-scheme="dark"]) .pin-note__send:not(:disabled) {
-  color: #12151a;
 }
 
 .pin-root *,
@@ -147,13 +152,34 @@
 .pin-btn:hover {
   background: var(--pin-paper-sunk);
 }
+/*
+ * The three buttons that commit something — Capture, Ready for agent, and the
+ * composer's send — share one two-state treatment, and it is neutral.
+ *
+ * They are deliberately not blue. Blue in this product means "the tool you are
+ * holding," and it is spent on the toolbar. A commit button that also wore blue
+ * would make the two look like the same kind of control, when one arms a mode
+ * and the other writes to the board. So: black when it will act, light grey
+ * when it will not.
+ */
 .pin-btn--primary {
-  background: var(--pin-cobalt);
-  border-color: var(--pin-cobalt);
-  color: #fff;
+  background: var(--pin-ink);
+  border-color: var(--pin-ink);
+  color: var(--pin-paper);
 }
-.pin-btn--primary:hover {
-  filter: brightness(1.08);
+.pin-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.25);
+}
+.pin-btn--quiet,
+.pin-btn--primary:disabled {
+  background: var(--pin-paper-sunk);
+  border-color: transparent;
+  color: var(--pin-ink-muted);
+  filter: none;
+}
+.pin-btn--quiet:hover {
+  background: var(--pin-rule);
+  color: var(--pin-ink);
 }
 .pin-btn--ghost {
   border-color: transparent;
@@ -163,16 +189,20 @@
   background: var(--pin-paper-sunk);
 }
 .pin-btn:disabled {
-  opacity: 0.5;
   cursor: default;
+}
+/* Buttons with their own disabled colours say it with colour; everything else
+   still fades. */
+.pin-btn:disabled:not(.pin-btn--primary):not(.pin-btn--quiet) {
+  opacity: 0.5;
 }
 
 .pin-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   border-radius: 999px;
   color: var(--pin-ink-muted);
@@ -183,26 +213,25 @@
   color: var(--pin-ink);
 }
 /*
- * The active tool: light blue disc, dark blue glyph. The disc is what makes the
- * state readable at toolbar size — a colour change alone on a 17px outline icon
- * is nearly invisible, and this is the one treatment reused everywhere something
- * is switched on, down to the delete button on the pin shelf.
+ * The active tool: light blue disc, dark blue glyph, filling the whole button.
+ * The disc is what makes the state readable at toolbar size — a colour change
+ * alone on an 18px outline glyph is nearly invisible.
  */
 .pin-icon-btn[data-active="true"] {
-  background: var(--pin-sky-tint);
+  background: var(--pin-sky-fill);
   color: var(--pin-cobalt);
 }
 
-/* Same disc, red — for the one action that destroys something. It wears the
-   soft red at rest rather than only on hover, because a delete you have to
-   hover to find is one you delete by accident. */
-.pin-icon-btn--danger {
+/*
+ * Delete follows the same two states, in red. At rest it is a plain grey glyph
+ * like any other tool — a permanently red button on every row would make a
+ * shelf of pins look like a list of errors. The soft-red disc and the true red
+ * arrive on hover and focus, at which point it is unmistakable.
+ */
+.pin-icon-btn--danger:hover,
+.pin-icon-btn--danger:focus-visible {
   background: var(--pin-red-tint);
   color: var(--pin-red);
-}
-.pin-icon-btn--danger:hover {
-  background: var(--pin-red-soft);
-  color: var(--pin-paper);
 }
 
 .pin-chip {
@@ -230,19 +259,28 @@
   font-size: 10px;
 }
 
+/* A circle, not a pill — a fixed square footprint, so one pin and nine pins put
+   the same shape next to the word. Past 99 it has to stretch, and at that point
+   a board is not something you are counting anyway. */
 .pin-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border-radius: 999px;
-  background: var(--pin-sky-tint);
+  background: var(--pin-sky-fill);
   color: var(--pin-cobalt);
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.pin-badge--wide {
+  width: auto;
+  min-width: 20px;
+  padding: 0 6px;
 }
 
 .pin-kbd {
@@ -311,10 +349,12 @@
  */
 .pin-highlight {
   position: fixed;
-  outline: 2px solid var(--pin-grey);
-  outline-offset: -2px;
-  border-radius: 0;
+  /* A border rather than an outline: `outline` ignores border-radius on some
+     engines and always draws the same shape, which is the one thing this must
+     not do. The radius comes from the element itself, set inline. */
+  border: 2px solid var(--pin-grey);
   background: var(--pin-grey-wash);
+  box-sizing: border-box;
   pointer-events: none;
   transition: all 60ms linear;
 }
@@ -324,8 +364,9 @@
    names. It flips inside when the element is at the top of the viewport. */
 .pin-highlight__label {
   position: absolute;
-  top: -19px;
+  top: -21px;
   left: -2px;
+  border-radius: 3px 3px 0 0;
   display: inline-flex;
   align-items: center;
   height: 18px;
@@ -444,10 +485,14 @@
  */
 .pin-anchor {
   position: absolute;
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   border-radius: 999px;
   background: var(--pin-red);
+  /* A hairline of paper around the dot, thin enough to read as a highlight
+     rather than a ring. It exists so the dot stays legible when it lands on a
+     dark or busy part of the page underneath. */
+  border: 1.5px solid var(--pin-paper);
   pointer-events: auto;
   cursor: crosshair;
   transition: transform 100ms ease;
@@ -463,10 +508,10 @@
   from { opacity: 0; transform: scale(0.4); }
   to { opacity: 1; transform: scale(1); }
 }
-.pin-anchor[data-edge="left"] { left: -5px; top: 50%; margin-top: -4.5px; }
-.pin-anchor[data-edge="right"] { right: -5px; top: 50%; margin-top: -4.5px; }
-.pin-anchor[data-edge="top"] { top: -5px; left: 50%; margin-left: -4.5px; }
-.pin-anchor[data-edge="bottom"] { bottom: -5px; left: 50%; margin-left: -4.5px; }
+.pin-anchor[data-edge="left"] { left: -6px; top: 50%; margin-top: -5.5px; }
+.pin-anchor[data-edge="right"] { right: -6px; top: 50%; margin-top: -5.5px; }
+.pin-anchor[data-edge="top"] { top: -6px; left: 50%; margin-left: -5.5px; }
+.pin-anchor[data-edge="bottom"] { bottom: -6px; left: 50%; margin-left: -5.5px; }
 
 /* ---------------------------------------------------------------- pin object */
 
@@ -649,17 +694,16 @@
   height: 26px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: var(--pin-cobalt);
-  color: #fff;
+  background: var(--pin-ink);
+  color: var(--pin-paper);
   transition: background 120ms ease, color 120ms ease;
 }
-.pin-note__send:hover { filter: brightness(1.1); }
-/* Disabled wears the same light-blue disc as an inactive-but-available tool in
-   the nav, so an empty composer reads as waiting rather than broken. */
+.pin-note__send:hover { filter: brightness(1.25); }
+/* Light grey on grey — the same "will not act" state as a disabled Capture or
+   Ready for agent, so the three read as one control in three places. */
 .pin-note__send:disabled {
-  background: var(--pin-sky-tint);
-  color: var(--pin-cobalt);
-  opacity: 0.55;
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-faint);
   cursor: default;
   filter: none;
 }
@@ -977,110 +1021,20 @@
 /* ---------------------------------------------------------------- inspector */
 
 /*
- * Box model and metrics, laid out the way DevTools lays them out — because
- * every developer who will use this already knows that diagram, and inventing a
- * second vocabulary for the same numbers is a cost with no payoff.
+ * The element panel, borrowed wholesale from Chrome DevTools — because every
+ * developer who opens this already knows that diagram, and inventing a second
+ * vocabulary for the same measurements would cost something and buy nothing.
  *
- * The difference is what a typed value means. DevTools edits the live page and
- * the change dies on refresh. Here a typed value is recorded as the *wanted*
- * one, kept beside the captured one, and handed to the agent as a before/after
- * pair — the edit outlives the tab because it was never really an edit to the
- * page, it was a specification.
+ * What differs is what a typed value means. In DevTools an edit mutates the live
+ * page and dies on refresh. Here it is recorded next to the captured value and
+ * handed to the agent as a before → after pair. Nothing is mutated, which is why
+ * the edit survives the tab closing: it was never an edit to the page, it was a
+ * specification of what the page should be.
  */
 .pin-inspector {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.pin-boxmodel {
-  display: flex;
-  justify-content: center;
-  padding: 4px 0 2px;
-  font-family: var(--pin-mono);
-  font-size: 9px;
-  letter-spacing: -0.01em;
-}
-
-/*
- * Four nested rings: margin, border, padding, content. The colours are
- * DevTools' own semantics — warm outside for margin, cool inside for padding —
- * translated into this palette so the diagram is readable at a glance to
- * anybody who has opened an element panel before.
- *
- * The horizontal padding on each ring is sized to hold an edge input, not
- * chosen for looks: the numbers sit *inside* their ring rather than straddling
- * its border, so a three-digit value can never overlap the ring within it.
- */
-.pin-boxmodel__ring {
-  position: relative;
-  border: 1px solid var(--pin-rule);
-  border-radius: 3px;
-  padding: 15px 30px;
-  text-align: center;
-}
-.pin-boxmodel__ring[data-ring="margin"] { background: var(--pin-red-tint); }
-.pin-boxmodel__ring[data-ring="border"] {
-  background: var(--pin-paper-sunk);
-  padding: 13px 20px;
-}
-.pin-boxmodel__ring[data-ring="padding"] { background: var(--pin-sky-tint); }
-.pin-boxmodel__ring[data-ring="content"] {
-  background: var(--pin-paper);
-  padding: 9px 10px;
-  min-width: 76px;
-}
-
-.pin-boxmodel__tag {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  color: var(--pin-ink-muted);
-  text-transform: lowercase;
-}
-
-/*
- * The four edge values sit on the four edges of their ring, which is the whole
- * reason the diagram beats a list: you read "which side" from position rather
- * than from a label. Each is an input, so the diagram is the editor.
- */
-.pin-boxmodel__edge {
-  position: absolute;
-  width: 28px;
-  height: 15px;
-  border: none;
-  background: transparent;
-  text-align: center;
-  font-family: var(--pin-mono);
-  font-size: 10px;
-  line-height: 15px;
-  color: var(--pin-ink);
-  padding: 0;
-  border-radius: 3px;
-  outline: none;
-}
-.pin-boxmodel__edge:hover { background: var(--pin-paper); }
-.pin-boxmodel__edge:focus {
-  background: var(--pin-paper);
-  box-shadow: 0 0 0 1.5px var(--pin-sky);
-}
-.pin-boxmodel__edge[data-side="top"] { top: 0; left: 50%; margin-left: -14px; }
-.pin-boxmodel__edge[data-side="bottom"] { bottom: 0; left: 50%; margin-left: -14px; }
-.pin-boxmodel__edge[data-side="left"] { left: 1px; top: 50%; margin-top: -7.5px; }
-.pin-boxmodel__edge[data-side="right"] { right: 1px; top: 50%; margin-top: -7.5px; }
-/* Edited values carry the blue, in the diagram and in the rows, so you can see
-   what you have specified without reading every number. */
-.pin-boxmodel__edge[data-edited="true"],
-.pin-metric__value[data-edited="true"] {
-  color: var(--pin-cobalt);
-  font-weight: 600;
-}
-
-.pin-boxmodel__size {
-  font-family: var(--pin-mono);
-  font-size: 10px;
-  color: var(--pin-ink-muted);
-  white-space: nowrap;
+  gap: 12px;
 }
 
 .pin-metrics {
@@ -1094,15 +1048,24 @@
 
 .pin-metric {
   display: grid;
-  grid-template-columns: 104px 1fr auto;
+  grid-template-columns: 92px 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 0 4px 0 9px;
-  height: 26px;
+  min-height: 26px;
   border-bottom: 1px solid var(--pin-rule);
 }
 .pin-metric:last-child { border-bottom: none; }
 .pin-metric:hover { background: var(--pin-paper-soft); }
+
+/* Identity rows — component, route, source — sit above the measurements and
+   read rather than edit. Same grid, so the value column stays one lane. */
+.pin-metric--fact { background: var(--pin-paper-soft); }
+.pin-metric--fact .pin-metric__value {
+  color: var(--pin-ink);
+  cursor: text;
+  user-select: text;
+}
 
 .pin-metric__name {
   font-family: var(--pin-mono);
@@ -1120,18 +1083,23 @@
   font-family: var(--pin-mono);
   font-size: 10px;
   color: var(--pin-ink);
-  padding: 2px 4px;
+  padding: 4px;
   border-radius: 3px;
   outline: none;
+  overflow-wrap: anywhere;
 }
 .pin-metric__value:hover { background: var(--pin-paper-sunk); }
 .pin-metric__value:focus {
   background: var(--pin-paper);
   box-shadow: 0 0 0 1.5px var(--pin-sky);
 }
+.pin-metric__value[data-edited="true"] {
+  color: var(--pin-cobalt);
+  font-weight: 600;
+}
 
-/* The captured value, shown struck through once something else is asked for —
-   the before half of the pair the agent will receive. */
+/* The captured value, struck through once something else is asked for — the
+   before half of the pair the agent will receive. */
 .pin-metric__was {
   font-family: var(--pin-mono);
   font-size: 9px;
@@ -1153,4 +1121,94 @@
 .pin-metric__revert:hover {
   background: var(--pin-red-tint);
   color: var(--pin-red);
+}
+
+/*
+ * The box model, last and uncoloured.
+ *
+ * DevTools tints its rings because it is painting the same tints onto the page
+ * as a hover overlay — the colour is a key to something happening elsewhere.
+ * Nothing here highlights a live element, so the tint would be decoration, and
+ * four stacked washes in a 300px panel is a lot of decoration. The rings are
+ * told apart the way a spec drawing tells layers apart instead: dashed for the
+ * space around the box, solid for the box itself.
+ */
+.pin-boxmodel {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+  font-family: var(--pin-mono);
+  font-size: 9px;
+}
+
+.pin-boxmodel__ring {
+  position: relative;
+  border-radius: 2px;
+  padding: 15px 30px;
+  text-align: center;
+  background: transparent;
+}
+/* Dashed = the space the element reserves but does not occupy. */
+.pin-boxmodel__ring[data-ring="margin"] { border: 1px dashed var(--pin-rule-strong); }
+/* Solid = the element itself. */
+.pin-boxmodel__ring[data-ring="border"] {
+  border: 1px solid var(--pin-ink-muted);
+  padding: 13px 20px;
+}
+.pin-boxmodel__ring[data-ring="padding"] { border: 1px dashed var(--pin-rule-strong); }
+.pin-boxmodel__ring[data-ring="content"] {
+  border: 1px solid var(--pin-rule-strong);
+  background: var(--pin-paper-soft);
+  padding: 9px 10px;
+  min-width: 76px;
+}
+
+.pin-boxmodel__tag {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  color: var(--pin-ink-muted);
+}
+
+/*
+ * The four edge values sit on the four edges of their ring, which is the whole
+ * reason the diagram beats a list: you read "which side" from position rather
+ * than from a label. Each is an input, so the diagram is also the editor. Ring
+ * padding is sized to hold one, so a three-digit value can never overlap the
+ * ring inside it.
+ */
+.pin-boxmodel__edge {
+  position: absolute;
+  width: 28px;
+  height: 15px;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--pin-ink);
+  padding: 0;
+  border-radius: 3px;
+  outline: none;
+}
+.pin-boxmodel__edge:hover { background: var(--pin-paper-sunk); }
+.pin-boxmodel__edge:focus {
+  background: var(--pin-paper);
+  box-shadow: 0 0 0 1.5px var(--pin-sky);
+}
+.pin-boxmodel__edge[data-side="top"] { top: 0; left: 50%; margin-left: -14px; }
+.pin-boxmodel__edge[data-side="bottom"] { bottom: 0; left: 50%; margin-left: -14px; }
+.pin-boxmodel__edge[data-side="left"] { left: 1px; top: 50%; margin-top: -7.5px; }
+.pin-boxmodel__edge[data-side="right"] { right: 1px; top: 50%; margin-top: -7.5px; }
+.pin-boxmodel__edge[data-edited="true"] {
+  color: var(--pin-cobalt);
+  font-weight: 600;
+}
+
+.pin-boxmodel__size {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+  white-space: nowrap;
 }

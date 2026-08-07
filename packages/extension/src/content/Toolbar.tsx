@@ -95,7 +95,7 @@ export function Toolbar({ mode, onMode, pinCount, onOpenBoard, onExit }: Toolbar
 
       <button className="pin-toolbar__board" onClick={onOpenBoard} title="Open the annotation board">
         Board
-        <span className="pin-badge">{pinCount}</span>
+        <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
       </button>
 
       <span className="pin-toolbar__divider" />

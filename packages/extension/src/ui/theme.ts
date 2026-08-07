@@ -12,22 +12,36 @@
 export type Scheme = "light" | "dark";
 
 export const PALETTE = {
-  /** Active tool fill, badge fill. */
-  skyBlue: "#76cafd",
-  /** Active tool glyph, badge text, primary action. */
-  cobalt: "#0953dd",
-  /** Brand mark, edge anchors, delete. Never chrome. */
-  red: "#f41616",
-  /** The lighter red off the flat mark. Anchor halo, destructive hover fill. */
-  redSoft: "#f4564b",
-  charcoal: "#2b2e34",
-  offWhite: "#fbf9f7",
   /**
-   * Estimated from the toolbar reference rather than sampled — that image was
-   * pasted, not saved. Carries the selection outline and the pinned-card
-   * hairline, so it has to be visible without reading as a colour.
+   * The named tokens out of the Paper file, not values read off a screenshot.
+   * Sampling a rendered artboard was giving me colours that were close and
+   * wrong — `#76cafd` for sky, `#0953dd` for cobalt — because a JPEG of a
+   * design is not the design.
    */
-  grey: "#8a8d93",
+  paper: "#f6f5f3",
+  surface: "#ffffff",
+  line: "#e4e2de",
+  ink: "#292c33",
+  /** Also the grey the toolbar icons are drawn in — measured at #636264–#6e6c6d
+   *  in the reference render, which is this token under JPEG. */
+  inkMuted: "#6b6f78",
+  cobalt: "#1e3fd8",
+  sky: "#9bd3f9",
+  skyTint: "#e4f1fd",
+  red: "#ed1c24",
+
+  /**
+   * Sampled rather than tokenised, each for a reason.
+   *
+   * `skyFill` is the disc behind the active tool and the badge fill, measured
+   * off the nav reference — a step deeper than `skyTint`, which is what makes
+   * the active tool read as switched on rather than merely tinted.
+   *
+   * `redSoft` is the lit shoulder of the flat mark, the one red that can sit
+   * behind the true red without either disappearing.
+   */
+  skyFill: "#d1e1f8",
+  redSoft: "#f4564b",
 } as const;
 
 /** WCAG relative luminance, for deciding which side of the fence a colour is on. */

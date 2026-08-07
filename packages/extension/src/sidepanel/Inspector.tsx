@@ -94,11 +94,34 @@ export function Inspector({ pin, onEdit }: InspectorProps) {
     onEdit(next);
   };
 
+  /**
+   * What the pin *is* leads, then what it measures, then the diagram.
+   *
+   * The identity rows are the same grid as the metrics rather than a separate
+   * treatment, because "component: StatCard" and "width: 640px" are both a
+   * labelled fact about this element — the only difference is that one of them
+   * can be argued with. Without the label the component name was a bare title
+   * with nothing saying what it named.
+   */
+  const facts: Array<[string, string]> = [
+    ["component", pin.componentName ?? "unresolved"],
+    ["route", pin.route],
+    ["viewport", `${pin.viewport.width}×${pin.viewport.height}`],
+    ["source", pin.sourceFile ?? "unresolved"],
+    ["selector", pin.selector],
+  ];
+
   return (
     <div className="pin-inspector">
-      <BoxModel pin={pin} onCommit={commit} />
-
       <div className="pin-metrics">
+        {facts.map(([name, value]) => (
+          <div className="pin-metric pin-metric--fact" key={name}>
+            <span className="pin-metric__name">{name}</span>
+            <span className="pin-metric__value">{value}</span>
+            <span />
+          </div>
+        ))}
+
         {METRICS.map(({ property, label }) => (
           <MetricRow
             key={property}
@@ -110,14 +133,16 @@ export function Inspector({ pin, onEdit }: InspectorProps) {
           />
         ))}
       </div>
+
+      <BoxModel pin={pin} onCommit={commit} />
     </div>
   );
 }
 
 /**
- * Four nested rings. The colours are DevTools' own semantics — warm outside for
- * margin, cool inside for padding — remapped onto this palette, so the diagram
- * is legible at a glance to anyone who has opened an element panel before.
+ * Four nested rings, told apart by line style rather than fill: dashed for the
+ * space the element reserves but does not occupy, solid for the element itself.
+ * See the note in ui.css for why the DevTools tints did not come with it.
  */
 function BoxModel({
   pin,
@@ -156,8 +181,8 @@ function BoxModel({
             <span className="pin-boxmodel__tag">padding</span>
             {(["top", "right", "bottom", "left"] as const).map((side) => edge("padding", side))}
 
-            {/* The content box carries the dimensions, which is where DevTools
-                puts them and the only place in the diagram they mean anything. */}
+            {/* The content box carries the dimensions — where DevTools puts
+                them, and the only place in the diagram they mean anything. */}
             <div className="pin-boxmodel__ring" data-ring="content">
               <span className="pin-boxmodel__size">
                 {bare(width)} × {bare(height)}

@@ -73,10 +73,13 @@ export function App() {
     <div className="pin-panel">
       <header className="pin-panel__header">
         <img src={wordmarkUrl} alt="Pinnables" style={{ height: 17, display: "block" }} />
+        {/* Black when armed, light grey when not — the same pair as Ready for
+            agent and the composer's send. */}
         <button
-          className={state?.captureMode ? "pin-btn pin-btn--primary" : "pin-btn"}
+          className={`pin-btn ${state?.captureMode ? "pin-btn--primary" : "pin-btn--quiet"}`}
           style={{ marginLeft: "auto" }}
           onClick={() => void toggleCapture()}
+          aria-pressed={state?.captureMode ?? false}
         >
           <PinIcon size={14} />
           {state?.captureMode ? "Capturing" : "Capture"}

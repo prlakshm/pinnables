@@ -218,6 +218,49 @@ const handlers: Handlers = {
     const shot = await chrome.tabs.captureVisibleTab(sender.tab!.windowId!, { format: "png" });
     const { full, thumb } = await crop(shot, element.rect, element.devicePixelRatio);
 
+    /**
+     * Clicking the same element twice updates the pin you already have.
+     *
+     * The alternative — a second pin for the same component on the same route —
+     * splits one conversation into two, and the agent then has to guess whether
+     * two notes on the same selector are one instruction or two. Identity is
+     * selector plus route, because the same component on /dashboard and
+     * /settings is genuinely two things worth saying different things about.
+     *
+     * The screenshot and styles are refreshed (the page may have changed since);
+     * the annotation, status, order and requested values are the user's and are
+     * left alone.
+     */
+    const existing = board.pins.find(
+      (p) =>
+        p.kind === "element" &&
+        p.route === element.route &&
+        p.selector === element.selector &&
+        p.selector !== "",
+    );
+    if (existing) {
+      await store.putScreenshot(existing.id, full, thumb);
+      const merged: Pin = {
+        ...existing,
+        url: element.url,
+        viewport: element.viewport,
+        domPath: element.domPath,
+        outerHtml: element.outerHtml,
+        classList: element.classList,
+        elementText: element.elementText,
+        componentName: element.componentName ?? existing.componentName,
+        sourceFile: element.sourceFile ?? existing.sourceFile,
+        computedStyles: element.computedStyles,
+        updatedAt: new Date().toISOString(),
+      };
+      await store.writeBoard({
+        ...board,
+        pins: board.pins.map((p) => (p.id === existing.id ? merged : p)),
+      });
+      await notifyBoardChanged(board.id);
+      return { pin: merged };
+    }
+
     const pinId = store.nextId("pin");
     const now = new Date().toISOString();
     const highest = store.sortedPins(board).at(-1)?.order ?? 0;

@@ -227,33 +227,25 @@ function PinRow({
         <div className="pin-expand">
           {shot && <img className="pin-expand__shot" src={shot} alt={pin.elementText} />}
 
-          {/* The tags the composer deliberately doesn't carry. On the page they
-              would repeat what the outline already says; here they are the only
-              place the pin's identity is written down. */}
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {pin.componentName && <span className="pin-chip">{pin.componentName}</span>}
-            <span className="pin-chip pin-chip--mono">{pin.route}</span>
-            <span className="pin-chip pin-chip--mono">
-              {pin.viewport.width}×{pin.viewport.height}
-              {pin.captureState !== "default" ? ` · ${pin.captureState}` : ""}
-            </span>
-            <span className="pin-chip pin-chip--mono">{pin.sourceFile ?? "source unresolved"}</span>
-          </div>
-
           {pin.kind === "region" ? (
-            <dl className="pin-meta-grid">
-              <dt>Marks</dt>
-              <dd>{describeDrawings(pin.drawings) || "none"}</dd>
-            </dl>
+            <div className="pin-metrics">
+              <div className="pin-metric pin-metric--fact">
+                <span className="pin-metric__name">route</span>
+                <span className="pin-metric__value">{pin.route}</span>
+                <span />
+              </div>
+              <div className="pin-metric pin-metric--fact">
+                <span className="pin-metric__name">marks</span>
+                <span className="pin-metric__value">
+                  {describeDrawings(pin.drawings) || "none"}
+                </span>
+                <span />
+              </div>
+            </div>
           ) : (
-            <>
-              <span className="pin-section-label">Computed — type over any value</span>
-              <Inspector pin={pin} onEdit={(styleEdits) => void update({ styleEdits })} />
-              <dl className="pin-meta-grid">
-                <dt>Selector</dt>
-                <dd>{pin.selector}</dd>
-              </dl>
-            </>
+            /* Identity and measurements are one list now — the component name is
+               a labelled row like every other fact, rather than a bare chip. */
+            <Inspector pin={pin} onEdit={(styleEdits) => void update({ styleEdits })} />
           )}
 
           <textarea
