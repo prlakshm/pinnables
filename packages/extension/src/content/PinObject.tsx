@@ -100,6 +100,8 @@ export function PinObject({
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
+  /** The component name where the build provides one, else the text it wraps. */
+  const label = pin.componentName ?? pin.elementText.slice(0, 28).trim() ?? "";
 
   /**
    * One anchor, on one edge.
@@ -138,13 +140,24 @@ export function PinObject({
     >
       <div className="pin-object__card" data-pulse={pulse} ref={card}>
         <div className="pin-object__inner">
+          {/*
+            * What it is, then where it lives. A floating card used to be
+            * labelled `/dashboard 1440` — true, and useless while looking at
+            * three of them, because the route is the same for all three and the
+            * width never changes. The component name is the thing you are
+            * actually holding, and the file is what you would go open. Route
+            * stands in only when the build has no source mapping, so the card
+            * always says where it came from.
+            */}
           <div className="pin-object__meta">
-            <span>{pin.route}</span>
-            <span style={{ opacity: 0.7 }}>{pin.viewport.width}</span>
+            <span className="pin-object__name">{label}</span>
+            <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
+              {pin.sourceFile ?? pin.route}
+            </span>
             <button
               className="pin-icon-btn"
               data-no-drag
-              style={{ width: 20, height: 20, marginLeft: "auto", color: "inherit" }}
+              style={{ width: 20, height: 20, flex: "0 0 auto" }}
               onClick={onDismiss}
               title="Hide from this page — the pin stays on the board"
               aria-label="Hide pin from page"

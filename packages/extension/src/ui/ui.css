@@ -537,9 +537,12 @@
   overflow: visible;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+/* Outline and glow are both the disc fill, so a selected card and the active
+   tool in the nav are visibly the same "this one is on" — the tint was a step
+   too pale to hold an edge against a light page. */
 .pin-object[data-selected="true"] .pin-object__card {
-  border-color: var(--pin-sky);
-  box-shadow: 0 0 0 3px var(--pin-sky-tint), var(--pin-shadow);
+  border-color: var(--pin-sky-fill);
+  box-shadow: 0 0 0 3px var(--pin-sky-fill), var(--pin-shadow);
 }
 
 .pin-object__inner {
@@ -565,7 +568,7 @@
 }
 
 @keyframes pin-pulse {
-  0% { box-shadow: 0 0 0 0 var(--pin-sky-tint), var(--pin-shadow); }
+  0% { box-shadow: 0 0 0 0 var(--pin-sky-fill), var(--pin-shadow); }
   100% { box-shadow: 0 0 0 18px transparent, var(--pin-shadow); }
 }
 
@@ -573,12 +576,33 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 7px 6px 9px;
+  padding: 6px 7px 6px 10px;
   border-bottom: 1px solid var(--pin-rule);
   background: var(--pin-paper-soft);
+}
+
+/* Sans and a touch heavier — this is the name of a thing, not a measurement. */
+.pin-object__name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pin-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+/* The path stays mono and quiet, and gives up its space first — the name is
+   what identifies the card, the file is where you would go next. */
+.pin-object__src {
   font-family: var(--pin-mono);
   font-size: 10px;
-  color: var(--pin-ink-muted);
+  color: var(--pin-ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* --------------------------------------------------------- annotation panel */
@@ -844,8 +868,8 @@
   overflow: hidden;
 }
 .pin-card[data-selected="true"] {
-  border-color: var(--pin-sky);
-  box-shadow: 0 0 0 3px var(--pin-sky-tint);
+  border-color: var(--pin-sky-fill);
+  box-shadow: 0 0 0 3px var(--pin-sky-fill);
 }
 
 /*
