@@ -86,6 +86,7 @@ for (const [name, spec] of Object.entries(tokens.semantic)) {
  */
 const SET_AT_RUNTIME = new Map([
   ["--pin-card-radius", "PinObject.tsx — the pinned card takes its element's captured border-radius"],
+  ["--pin-label-radius", "PinObject.tsx — the floating name bar follows the card's corners, capped at 8px"],
 ]);
 
 /** Anything used across the whole stylesheet but never defined anywhere in it. */

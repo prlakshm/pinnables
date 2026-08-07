@@ -113,13 +113,23 @@ export function PinObject({
    * would turn its card into a lozenge, and region pins fall back since they
    * have no element to borrow from.
    */
-  const cardRadius = (() => {
-    if (pin.kind !== "element") return undefined;
+  const radiusPx = (() => {
+    if (pin.kind !== "element") return null;
     const captured = pin.computedStyles["border-radius"];
-    if (captured === undefined) return "0px";
+    if (captured === undefined) return 0;
     const px = Number.parseFloat(captured);
-    return Number.isFinite(px) ? `${Math.min(px, 18)}px` : undefined;
+    return Number.isFinite(px) ? Math.min(px, 18) : null;
   })();
+  const shape =
+    radiusPx === null
+      ? undefined
+      : ({
+          "--pin-card-radius": `${radiusPx}px`,
+          // The label follows the card's corners so the two read as one object,
+          // but capped well short of it — past about 8px on a 24px bar the
+          // curves eat the ends and crowd the text against them.
+          "--pin-label-radius": `${Math.min(radiusPx, 8)}px`,
+        } as React.CSSProperties);
 
   /**
    * One anchor, on one edge.
@@ -146,7 +156,7 @@ export function PinObject({
       className="pin-object"
       data-selected={selected}
       data-pin-id={pin.id}
-      style={{ left: position.x, top: position.y }}
+      style={{ left: position.x, top: position.y, ...shape }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={() => (dragging.current = null)}
@@ -156,38 +166,36 @@ export function PinObject({
         setNearEdge(null);
       }}
     >
-      <div
-        className="pin-object__card"
-        data-pulse={pulse}
-        ref={card}
-        style={cardRadius ? ({ "--pin-card-radius": cardRadius } as React.CSSProperties) : undefined}
-      >
+      {/*
+        * The name floats above the card rather than sitting on it, and only
+        * while the pin is selected.
+        *
+        * It is the picker's own label, kept after the click — one language for
+        * "what is this", inverted to black so the two are not mistaken for each
+        * other. Keeping it off the card matters more here than in most UI: the
+        * card is a picture of the component, and a bar drawn across its top is a
+        * lie about what that component looks like.
+        */}
+      {selected && (
+        <div className="pin-object__label" data-no-drag>
+          <span className="pin-object__name">{label}</span>
+          <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
+            {pin.sourceFile ?? pin.route}
+          </span>
+          <button
+            className="pin-icon-btn"
+            style={{ width: 18, height: 18, flex: "0 0 auto" }}
+            onClick={onDismiss}
+            title="Hide from this page — the pin stays on the board"
+            aria-label="Hide pin from page"
+          >
+            <CloseIcon size={12} />
+          </button>
+        </div>
+      )}
+
+      <div className="pin-object__card" data-pulse={pulse} ref={card}>
         <div className="pin-object__inner">
-          {/*
-            * What it is, then where it lives. A floating card used to be
-            * labelled `/dashboard 1440` — true, and useless while looking at
-            * three of them, because the route is the same for all three and the
-            * width never changes. The component name is the thing you are
-            * actually holding, and the file is what you would go open. Route
-            * stands in only when the build has no source mapping, so the card
-            * always says where it came from.
-            */}
-          <div className="pin-object__meta">
-            <span className="pin-object__name">{label}</span>
-            <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
-              {pin.sourceFile ?? pin.route}
-            </span>
-            <button
-              className="pin-icon-btn"
-              data-no-drag
-              style={{ width: 20, height: 20, flex: "0 0 auto" }}
-              onClick={onDismiss}
-              title="Hide from this page — the pin stays on the board"
-              aria-label="Hide pin from page"
-            >
-              <CloseIcon size={13} />
-            </button>
-          </div>
           {shot ? (
             <img className="pin-object__shot" src={shot} alt={pin.elementText || "Pinned element"} />
           ) : (
