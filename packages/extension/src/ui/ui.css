@@ -106,6 +106,10 @@
   --pin-amber: #b45309;
   --pin-amber-soft: #fffbeb;
 
+  /* The distance a label sits above the thing it names. One value, because the
+     picker's label and a pin's label are the same object at two moments. */
+  --pin-label-gap: 3px;
+
   --pin-radius-sm: 6px;
   --pin-radius: 10px;
   --pin-radius-lg: 16px;
@@ -438,7 +442,7 @@
    names. It flips inside when the element is at the top of the viewport. */
 .pin-highlight__label {
   position: absolute;
-  top: -21px;
+  top: calc(-18px - var(--pin-label-gap));
   left: -2px;
   border-radius: 3px 3px 0 0;
   display: inline-flex;
@@ -666,17 +670,19 @@
  * hovering and having-pinned are never confused. What changed is the silhouette:
  * the name sits in a tab sized to itself and standing taller than the strip
  * beside it, which is how a folder reads as a folder before you have read
- * anything written on it. The label attaches to the card rather than floating
- * clear of it, because a tab that is not attached to something is just a shape.
+ * anything written on it.
+ *
+ * It floats clear of the card by the same gap the picker's label leaves above
+ * its outline. The two are one object at two moments — grey while you decide,
+ * black once it is yours — and any difference in how they sit reads as a
+ * mistake rather than a distinction.
  */
 .pin-object__label {
   display: flex;
   align-items: flex-end;
-  /* No gap, and square where the two meet — this is the top edge of the card. */
-  margin-bottom: -1px;
-  position: relative;
-  z-index: 1;
+  margin-bottom: var(--pin-label-gap);
   color: var(--pin-paper);
+  filter: drop-shadow(0 1px 2px rgba(9, 9, 11, 0.14));
 }
 
 .pin-object__tab {
