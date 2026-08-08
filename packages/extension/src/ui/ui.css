@@ -513,7 +513,8 @@
   font-size: 13px;
   font-weight: 500;
 }
-.pin-toolbar__board:hover { background: var(--pin-paper-sunk); }
+/* Not interactive — no hover, and the cursor stays an arrow. */
+.pin-toolbar__board { cursor: default; user-select: none; }
 
 .pin-stale {
   position: fixed;

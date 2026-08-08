@@ -358,20 +358,6 @@ const handlers: Handlers = {
     return { pin };
   },
 
-  async "panel/open"(_req, sender) {
-    const windowId = sender.tab?.windowId;
-    if (windowId === undefined) return { ok: false };
-    try {
-      await chrome.sidePanel.open({ windowId });
-      return { ok: true };
-    } catch {
-      // Chrome wants a user gesture, and a message relayed from a content script
-      // does not always carry one. The board is still one click away on the
-      // extension icon, so this fails quietly rather than nagging.
-      return { ok: false };
-    }
-  },
-
   async "board/get"({ boardId }) {
     const board = boardId ? await store.readBoard(boardId) : await store.ensureActiveBoard();
     return { board };

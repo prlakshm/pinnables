@@ -10,7 +10,6 @@ interface ToolbarProps {
   mode: ToolMode;
   onMode: (mode: ToolMode) => void;
   pinCount: number;
-  onOpenBoard: () => void;
   onExit: () => void;
   /** Draw mode swaps the bar's contents; these drive that half of it. */
   drawTool: DrawTool;
@@ -30,7 +29,6 @@ export function Toolbar({
   mode,
   onMode,
   pinCount,
-  onOpenBoard,
   onExit,
   drawTool,
   onDrawTool,
@@ -164,10 +162,14 @@ export function Toolbar({
 
       <span className="pin-toolbar__divider" />
 
-      <button className="pin-toolbar__board" onClick={onOpenBoard} title="Open the annotation board">
+      {/* A readout, not a control. Opening the panel from here needed a user
+          gesture the worker could not always be handed, so the affordance was
+          promising something it could not reliably do — and the extension icon
+          opens the panel anyway. */}
+      <span className="pin-toolbar__board" title={`${pinCount} pinned`}>
         Board
         <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
-      </button>
+      </span>
 
       <span className="pin-toolbar__divider" />
 

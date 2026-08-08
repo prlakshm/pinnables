@@ -742,7 +742,6 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         mode={mode}
         onMode={setMode}
         pinCount={pins.length}
-        onOpenBoard={() => void send("panel/open", {}).catch(guard)}
         onExit={() => void send("capture/setMode", { enabled: false }).catch(guard)}
         drawTool={drawTool}
         onDrawTool={setDrawTool}
