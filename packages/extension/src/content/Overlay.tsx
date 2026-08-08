@@ -119,6 +119,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [connecting, setConnecting] = useState<Connecting | null>(null);
   const [cardRects, setCardRects] = useState<Record<string, DOMRect>>({});
+  /** Current border-boxes of pinned elements on this route, after live previews. */
+  const [liveSizes, setLiveSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [scheme, setScheme] = useState<Scheme>(() => detectScheme());
   /**
    * Which page we are on, watched rather than read once.
@@ -210,6 +212,54 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       setPositions((prev) => ({ ...next, ...prev }));
     });
   }, [board?.pins.length]);
+
+  /**
+   * Keep each floating pin the same size as its live page element.
+   *
+   * This observes the result of layout instead of trying to replay layout math.
+   * It therefore covers all of the cases that can decide a box — relationship
+   * width and height, padding under either box-sizing mode, flex/grid parents,
+   * responsive rules, and page-side resizes. Pins on other routes fall back to
+   * their captured size until that route is visible again.
+   */
+  useEffect(() => {
+    if (!board) {
+      setLiveSizes({});
+      return;
+    }
+
+    const ids = new Map<Element, string>();
+    const initial: Record<string, { width: number; height: number }> = {};
+    for (const pin of board.pins) {
+      if (pin.kind !== "element" || pin.route !== route) continue;
+      const found = refindElement(pin);
+      if (!found) continue;
+      ids.set(found.element, pin.id);
+      const rect = found.element.getBoundingClientRect();
+      initial[pin.id] = { width: rect.width, height: rect.height };
+    }
+    setLiveSizes(initial);
+
+    const observer = new ResizeObserver((entries) => {
+      setLiveSizes((previous) => {
+        let changed = false;
+        const next = { ...previous };
+        for (const entry of entries) {
+          const pinId = ids.get(entry.target);
+          if (!pinId) continue;
+          const rect = entry.target.getBoundingClientRect();
+          const size = { width: rect.width, height: rect.height };
+          const before = next[pinId];
+          if (before?.width === size.width && before.height === size.height) continue;
+          next[pinId] = size;
+          changed = true;
+        }
+        return changed ? next : previous;
+      });
+    });
+    for (const element of ids.keys()) observer.observe(element);
+    return () => observer.disconnect();
+  }, [board?.pins, route]);
 
   /** Live position, per frame. State only — dragging must not touch storage. */
   const moveTo = useCallback((pinId: string, position: FloatPosition) => {
@@ -470,7 +520,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [positions, board, selected.length, dismissed]);
+  }, [positions, board, selected.length, dismissed, liveSizes]);
 
   const onAnchorDown = useCallback((pinId: string, edge: AnchorEdge, event: React.PointerEvent) => {
     setConnecting({ fromPinId: pinId, fromEdge: edge, cursor: { x: event.clientX, y: event.clientY } });
@@ -855,6 +905,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           onMove={(next) => moveTo(pin.id, next)}
           onMoveEnd={(next) => persistPosition(pin.id, next)}
           preview={previews.get(pin.id)}
+          renderedSize={liveSizes[pin.id]}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}
           onCommit={commitNote}
           onRelate={relateSelected}

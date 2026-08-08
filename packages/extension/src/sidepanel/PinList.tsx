@@ -156,6 +156,17 @@ function PinRow({
     (r) => r.sourcePinId === pin.id || r.targetPinIds.includes(pin.id),
   );
   const selectable = pin.kind === "element";
+  const pickable = relating && !isSource && selectable;
+  /*
+   * While relating, the card is the control.
+   *
+   * Outside that mode the content area is the expand button and the trailing
+   * action is a separate delete button. In target-picking mode there is only
+   * one possible action, so the content switches to a span and the card owns
+   * the click. That makes the thumbnail, title, empty space, and the visible
+   * "pick" affordance one target without nesting buttons.
+   */
+  const Hit = relating ? "span" : "button";
 
   const update = async (patch: Contract["pin/update"]["req"]["patch"]) => {
     await send("pin/update", { pinId: pin.id, patch });
@@ -163,12 +174,29 @@ function PinRow({
   };
 
   return (
-    <div className="pin-card" data-selected={isSource || isTarget}>
+    <div
+      className="pin-card"
+      onClick={pickable ? onToggleTarget : undefined}
+      onKeyDown={
+        pickable
+          ? (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onToggleTarget();
+            }
+          : undefined
+      }
+      role={pickable ? "button" : undefined}
+      tabIndex={pickable ? 0 : undefined}
+      aria-label={pickable ? `Select ${title || "pin"} as relationship target` : undefined}
+      data-pickable={pickable}
+      data-selected={isSource || isTarget}
+    >
       <div className="pin-row">
-        <button
+        <Hit
           className="pin-row__hit"
           data-done={pin.status === "done"}
-          onClick={relating ? (isSource || !selectable ? undefined : onToggleTarget) : onExpand}
+          onClick={relating ? undefined : onExpand}
           style={relating && !selectable ? { opacity: 0.45 } : undefined}
         >
           {thumb ? (
@@ -199,7 +227,7 @@ function PinRow({
             </span>
             <span className="pin-row__note">{pin.annotation || "No annotation yet"}</span>
           </span>
-        </button>
+        </Hit>
 
         {/* While relating, the trailing slot says what picking this row would do
             — swapping in a delete button mid-flow would put the one destructive

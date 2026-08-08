@@ -194,6 +194,7 @@ const handlers: Handlers = {
         ...existing,
         url: element.url,
         viewport: element.viewport,
+        elementSize: { width: element.rect.width, height: element.rect.height },
         domPath: element.domPath,
         outerHtml: element.outerHtml,
         classList: element.classList,
@@ -607,9 +608,17 @@ chrome.action.onClicked.addListener(async (tab) => {
     // Must happen inside the gesture, before any await.
     chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
   }
-  const state = await store.getState();
-  await setCaptureMode(!state.captureMode);
-  if (!state.captureMode) await store.ensureActiveBoard();
+  /*
+   * Opening the panel starts a fresh, unarmed capture session.
+   *
+   * The action used to double as the capture toggle. That made the label depend
+   * on whatever state the last panel session left behind: opening Pinnables
+   * could immediately say "Capturing" and put an invisible picker over every
+   * page. The button in the panel and the keyboard command are the two explicit
+   * ways to arm capture; opening the tool only opens it.
+   */
+  await setCaptureMode(false);
+  await store.ensureActiveBoard();
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
