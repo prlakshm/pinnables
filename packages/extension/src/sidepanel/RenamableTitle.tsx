@@ -3,6 +3,16 @@ import type { Pin } from "@pinnables/shared";
 import { pinLabel } from "@pinnables/shared";
 import { send } from "../lib/messages";
 
+/** Resolve an edited label without mistaking an unchanged custom name for reset. */
+export function nameForDraft(value: string, pin: Pin, siblings: readonly Pin[]): string | null {
+  const next = value.trim();
+  if (!next) return null;
+  const current = pin.name?.trim() ?? "";
+  if (current && next === current) return pin.name;
+  const derived = pinLabel({ ...pin, name: null }, siblings);
+  return next === derived ? null : next;
+}
+
 /**
  * A pin's name, editable in place.
  *
@@ -52,10 +62,9 @@ export function RenamableTitle({
 
   const commit = async (value: string) => {
     setEditing(false);
-    const next = value.trim();
     // Clearing the field hands the name back to the derived one rather than
     // storing an empty string, so there is always a way back to the default.
-    const name = next.length > 0 && next !== shown ? next : null;
+    const name = nameForDraft(value, pin, siblings);
     if (name === (pin.name ?? null)) return;
     await send("pin/update", { pinId: pin.id, patch: { name } });
     onChanged();

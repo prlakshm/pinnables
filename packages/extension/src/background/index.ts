@@ -394,35 +394,36 @@ const handlers: Handlers = {
   },
 
   async "board/markReady"({ boardId }) {
-    const board = await store.mutateBoard(boardId, (b) => ({
-      ...b,
-      status: "ready",
-      generatedAt: new Date().toISOString(),
-    }));
-
-    let materialized = false;
-    if (await isServiceOnline()) {
+    const board = await store.mutateBoard(boardId, async (current) => {
+      if (!(await isServiceOnline())) {
+        throw new Error("Local service is offline; the board was not submitted");
+      }
+      const ready: Board = {
+        ...current,
+        status: "ready",
+        generatedAt: new Date().toISOString(),
+      };
       const screenshots: Record<string, string> = {};
-      for (const pin of board.pins) {
+      for (const pin of ready.pins) {
         const full = await store.getScreenshot(pin.id);
         if (full) screenshots[pin.id] = full;
       }
       try {
-        await materializeBoard(board, screenshots);
-        materialized = true;
-      } catch {
-        materialized = false;
+        await materializeBoard(ready, screenshots);
+      } catch (error) {
+        throw new Error(
+          `Could not write the board for the agent: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-    }
+      return ready;
+    });
 
     // MCP cannot push. The pointer is the entire interface between this
     // product and the agent, so it has to be short and typeable from memory.
-    const pointer = materialized
-      ? `Load Pinnables board "${board.id}" and implement it.`
-      : `Read ~/.pinnables/boards/${board.id}/brief.md and implement it.`;
+    const pointer = `Load Pinnables board "${board.id}" and implement it.`;
 
     await notifyBoardChanged(boardId);
-    return { board, pointer, materialized };
+    return { board, pointer, materialized: true };
   },
 
   async "pin/update"({ pinId, patch }) {

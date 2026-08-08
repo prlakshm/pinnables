@@ -1484,9 +1484,11 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
   text-overflow: ellipsis;
 }
 .pin-change[data-on="false"] .pin-change__summary { color: var(--pin-ink-muted); }
-/* Lighter, not struck through. The arrow already says which way this goes,
-   and the strike made the value it names look deleted rather than previous. */
+/* Lighter, not struck through — until you tick the row. Unticked, the strike
+   made a value you had not chosen to replace look already deleted; ticked, it
+   is exactly right, because that is the moment you decide it goes. */
 .pin-change__from { color: var(--pin-ink-faint); overflow: hidden; text-overflow: ellipsis; }
+.pin-change[data-on="true"] .pin-change__from { text-decoration: line-through; }
 .pin-change__arrow { color: var(--pin-ink-faint); }
 
 /*

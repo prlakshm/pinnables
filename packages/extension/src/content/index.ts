@@ -34,6 +34,8 @@ type Overlay = Awaited<ReturnType<typeof import("./mount").mountOverlay>>;
 
 let overlay: Overlay | null = null;
 let loading: Promise<Overlay> | null = null;
+let desiredEnabled = false;
+let receivedCaptureMessage = false;
 
 async function ensureOverlay(): Promise<Overlay> {
   if (overlay) return overlay;
@@ -44,6 +46,17 @@ async function ensureOverlay(): Promise<Overlay> {
     });
   }
   return loading;
+}
+
+/** Apply the latest requested state even when the overlay chunk is still loading. */
+async function syncOverlayEnabled(): Promise<void> {
+  if (!desiredEnabled) {
+    overlay?.setEnabled(false);
+    return;
+  }
+  const current = await ensureOverlay();
+  // `desiredEnabled` may have changed while the dynamic import was in flight.
+  current.setEnabled(desiredEnabled);
 }
 
 /*
@@ -63,7 +76,12 @@ chrome.runtime.onMessage.addListener(listen);
 void chrome.runtime
   .sendMessage({ type: "state/get" })
   .then((res: { ok: boolean; data?: { captureMode: boolean } } | undefined) => {
-    if (res?.ok && res.data?.captureMode) void ensureOverlay().then((o) => o.setEnabled(true));
+    // A live capture-mode message is newer than this startup read. Do not let a
+    // delayed response turn the overlay back on after the user has switched it
+    // off.
+    if (receivedCaptureMessage || !res?.ok) return;
+    desiredEnabled = Boolean(res.data?.captureMode);
+    void syncOverlayEnabled();
   })
   .catch(() => {});
 
@@ -82,11 +100,9 @@ function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond
   }
 
   if (message.kind === "capture-mode") {
-    if (message.enabled) {
-      void ensureOverlay().then((o) => o.setEnabled(true));
-    } else {
-      overlay?.setEnabled(false);
-    }
+    receivedCaptureMessage = true;
+    desiredEnabled = message.enabled;
+    void syncOverlayEnabled();
     return;
   }
 

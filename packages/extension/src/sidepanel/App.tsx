@@ -56,6 +56,7 @@ export function App() {
   const [state, setState] = useState<ExtensionState | null>(null);
   const [tab, setTab] = useState<Tab>("pins");
   const [phase, setPhase] = useState<Phase>("idle");
+  const [submitError, setSubmitError] = useState<string | null>(null);
   /**
    * Only ever set when the clipboard write failed. The pointer is the whole
    * interface to the agent and the panel has no board list to recover an id
@@ -131,6 +132,7 @@ export function App() {
     if (!board || phase !== "idle") return;
     setPhase("submitting");
     setUncopied(null);
+    setSubmitError(null);
     try {
       const result = await send("board/markReady", { boardId: board.id });
       setBoard(result.board);
@@ -148,6 +150,7 @@ export function App() {
     } catch {
       // The board is untouched and still on screen, so the press can simply be
       // made again — which is the whole recovery.
+      setSubmitError("Couldn’t write the board. Start the local service, then try again.");
       setPhase("idle");
     }
   }, [board, phase]);
@@ -261,6 +264,12 @@ export function App() {
             <div className="pin-banner">
               Local service is offline. Pins are safe in the browser, but the board can&apos;t be
               written to disk for your agent until it&apos;s running.
+            </div>
+          )}
+
+          {submitError && (
+            <div className="pin-banner" role="alert">
+              {submitError}
             </div>
           )}
 
