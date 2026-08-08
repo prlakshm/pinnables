@@ -5,6 +5,7 @@ import {
   type Contract,
   type Message,
   type RequestType,
+  type TabArmState,
 } from "../lib/messages";
 import * as store from "../lib/store";
 import { isServiceOnline, materializeBoard } from "../lib/service";
@@ -92,35 +93,55 @@ async function notifyBoardChanged(boardId: string): Promise<void> {
  * duplicate-injection case is covered by the content script itself, which keeps
  * one overlay per page.
  */
-async function armTab(tabId: number, enabled: boolean): Promise<void> {
+async function armTab(tabId: number, enabled: boolean): Promise<TabArmState> {
   const message = { kind: "capture-mode" as const, enabled };
   try {
     await chrome.tabs.sendMessage(tabId, message);
-    return;
+    return "armed";
   } catch {
     // Nothing listening — fall through and inject.
   }
   // Only worth injecting to turn capture *on*; there is nothing to switch off
   // in a tab that never had an overlay.
-  if (!enabled) return;
+  if (!enabled) return "armed";
   // Read the built filename out of the manifest rather than hardcoding it —
   // the bundler content-hashes the content script, so a literal path here would
   // break on the next build without failing anything at compile time.
   const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
-  if (files.length === 0) return;
+  if (files.length === 0) return "blocked";
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files });
-    await chrome.tabs.sendMessage(tabId, message);
+    /*
+     * The injected file is a loader that dynamically imports the real script, so
+     * `executeScript` resolves before any listener exists. This message will
+     * usually miss — that is fine. The script self-arms from `state/get` once it
+     * loads, and capture mode is already written to storage by then.
+     */
+    chrome.tabs.sendMessage(tabId, message).catch(() => {});
+    return "injected";
   } catch {
     // chrome:// pages, the Web Store, PDFs, and any host we hold no permission
-    // for. Not an error — those tabs simply cannot be annotated.
+    // for. Which of those it is depends on the URL, and the caller knows that.
+    return "blocked";
   }
 }
 
-async function setCaptureMode(enabled: boolean): Promise<void> {
+/** Arms every tab, and reports what happened to the one in front. */
+async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
   await store.patchState({ captureMode: enabled });
   const tabs = await chrome.tabs.query({});
-  await Promise.all(tabs.map((tab) => (tab.id ? armTab(tab.id, enabled) : Promise.resolve())));
+  const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  let activeState: TabArmState = "unsupported";
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (tab.id === undefined) return;
+      const annotatable = /^https?:/.test(tab.url ?? "");
+      const result = annotatable ? await armTab(tab.id, enabled) : "unsupported";
+      if (tab.id === active?.id) activeState = result;
+    }),
+  );
+  return activeState;
 }
 
 const handlers: Handlers = {
@@ -130,9 +151,13 @@ const handlers: Handlers = {
   },
 
   async "capture/setMode"({ enabled }) {
-    await setCaptureMode(enabled);
+    const activeTab = await setCaptureMode(enabled);
     if (enabled) await store.ensureActiveBoard();
-    return { ...(await store.getState()), serviceOnline: await isServiceOnline() };
+    return {
+      ...(await store.getState()),
+      serviceOnline: await isServiceOnline(),
+      activeTab,
+    };
   },
 
   async "capture/element"({ element }, sender) {

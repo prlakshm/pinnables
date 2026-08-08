@@ -1,23 +1,44 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Board } from "@pinnables/shared";
-import { send, type Broadcast, type ExtensionState } from "../lib/messages";
+import { send, type Broadcast, type ExtensionState, type TabArmState } from "../lib/messages";
 import { useSiteAccess } from "./useSiteAccess";
 // Flat variant: same highlight, no gradient. The header renders at 17px, where
 // radial shading has nothing to resolve into but the highlight still reads.
 import wordmarkUrl from "../ui/wordmark-flat.svg";
-import { PinIcon } from "../ui/icons";
+import { CheckIcon, PinIcon } from "../ui/icons";
 import { PinList } from "./PinList";
 import { Relationships } from "./Relationships";
 
 type Tab = "pins" | "relationships";
 
+/**
+ * Submitting is one press, and the button is the only thing that reports it.
+ *
+ * It used to end on a panel holding the pointer and a "Keep editing" button,
+ * which made a two-step gesture out of a one-step intention — the pointer was
+ * already on the clipboard by then, so that screen existed to be dismissed.
+ */
+type Phase = "idle" | "submitting" | "submitted";
+
+/**
+ * How long "Submitted" holds before the board clears. Long enough to register
+ * as an answer to the press, short enough that nobody waits on it.
+ */
+const SUBMITTED_MS = 1200;
+
 export function App() {
   const [board, setBoard] = useState<Board | null>(null);
   const [state, setState] = useState<ExtensionState | null>(null);
   const [tab, setTab] = useState<Tab>("pins");
-  const [pointer, setPointer] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  /**
+   * Only ever set when the clipboard write failed. The pointer is the whole
+   * interface to the agent and the panel has no board list to recover an id
+   * from, so clearing the board after a failed copy would strand the work.
+   */
+  const [uncopied, setUncopied] = useState<string | null>(null);
   const site = useSiteAccess();
+  const [armState, setArmState] = useState<TabArmState | null>(null);
 
   const reload = useCallback(async () => {
     const [{ board: next }, extState] = await Promise.all([
@@ -41,21 +62,54 @@ export function App() {
     if (!state) return;
     const next = await send("capture/setMode", { enabled: !state.captureMode });
     setState(next);
+    setArmState(next.captureMode ? next.activeTab : null);
     void reload();
   }, [state, reload]);
 
-  const markReady = useCallback(async () => {
-    if (!board) return;
-    setBusy(true);
+  const submit = useCallback(async () => {
+    if (!board || phase !== "idle") return;
+    setPhase("submitting");
+    setUncopied(null);
     try {
       const result = await send("board/markReady", { boardId: board.id });
       setBoard(result.board);
-      setPointer(result.pointer);
-      await navigator.clipboard.writeText(result.pointer).catch(() => {});
-    } finally {
-      setBusy(false);
+      try {
+        await navigator.clipboard.writeText(result.pointer);
+      } catch {
+        setUncopied(result.pointer);
+      }
+      setPhase("submitted");
+    } catch {
+      // The board is untouched and still on screen, so the press can simply be
+      // made again — which is the whole recovery.
+      setPhase("idle");
     }
-  }, [board]);
+  }, [board, phase]);
+
+  /**
+   * The board clears itself once "Submitted" has been read.
+   *
+   * A new board rather than a wipe: the pointer names the submitted board by
+   * id, so that board has to keep existing on disk for the agent to load. What
+   * the user means by "clear" is a fresh sheet to pin onto, not an erasure of
+   * the thing they just sent.
+   */
+  useEffect(() => {
+    if (phase !== "submitted") return;
+    const timer = setTimeout(() => {
+      void (async () => {
+        // A pointer that never reached the clipboard is only recoverable from
+        // this screen, so that board keeps its pins — but the button still has
+        // to come back, or the panel ends on a control nobody can press.
+        if (!uncopied) {
+          await send("board/create", { title: "Untitled board" });
+          await reload();
+        }
+        setPhase("idle");
+      })();
+    }, SUBMITTED_MS);
+    return () => clearTimeout(timer);
+  }, [phase, uncopied, reload]);
 
   const setInstruction = useCallback(
     async (instruction: string) => {
@@ -86,6 +140,46 @@ export function App() {
         </button>
       </header>
 
+      {/*
+        * Why nothing appeared, said where it cannot be scrolled away from.
+        *
+        * Every way of failing to arm a tab used to be silent: the button read
+        * "Capturing" and the page did nothing. Worse, the one notice that did
+        * exist lived at the top of the scrolling list, so it was invisible the
+        * moment you had a few pins.
+        */}
+      {state?.captureMode && armState !== null && armState !== "armed" && (
+        <div className="pin-notice" data-tone={armState === "unsupported" ? "flat" : "act"}>
+          {armState === "unsupported" ? (
+            <span>This page can&apos;t be annotated — browser pages are off limits to extensions.</span>
+          ) : armState === "injected" ? (
+            <span>
+              Started on this tab. If nothing appeared, reload the page — a tab open from before
+              the extension loaded needs one.
+            </span>
+          ) : (
+            <>
+              <span style={{ flex: 1 }}>
+                Pinnables can&apos;t reach <strong>{site.origin ?? "this site"}</strong>. A tab whose
+                script died with an extension reload needs permission to be revived.
+              </span>
+              <button
+                className="pin-btn pin-btn--primary"
+                style={{ height: 26, flex: "0 0 auto" }}
+                onClick={async () => {
+                  await site.request();
+                  const next = await send("capture/setMode", { enabled: true });
+                  setState(next);
+                  setArmState(next.activeTab);
+                }}
+              >
+                Allow
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <nav className="pin-panel__tabs">
         <button className="pin-tab" data-active={tab === "pins"} onClick={() => setTab("pins")}>
           Pins {pinCount > 0 && <span className="pin-badge">{pinCount}</span>}
@@ -100,38 +194,6 @@ export function App() {
       </nav>
 
       <div className="pin-panel__body">
-        {/* Capture mode is global, but the overlay can only exist on a site we
-            hold permission for. Without this the state says "Capturing" and
-            nothing appears on the page, which reads as the tool being broken. */}
-        {state?.captureMode && !site.granted && (
-          <div className="pin-banner">
-            <span style={{ flex: 1 }}>
-              {site.annotatable ? (
-                <>
-                  Pinnables can&apos;t reach <strong>{site.origin}</strong> yet. Grant access to pin
-                  on this site.
-                </>
-              ) : (
-                <>This page can&apos;t be annotated — browser pages are off limits to extensions.</>
-              )}
-            </span>
-            {site.annotatable && (
-              <button
-                className="pin-btn"
-                style={{ height: 26, flex: "0 0 auto" }}
-                onClick={async () => {
-                  await site.request();
-                  // Re-broadcast so the newly reachable tab gets its overlay
-                  // without the user toggling capture mode off and on.
-                  await send("capture/setMode", { enabled: true });
-                }}
-              >
-                Allow
-              </button>
-            )}
-          </div>
-        )}
-
         {!board || pinCount === 0 ? (
           <div className="pin-empty">
             <PinIcon size={22} />
@@ -165,9 +227,11 @@ export function App() {
             onBlur={(e) => void setInstruction(e.target.value)}
           />
 
-          {pointer ? (
+          {/* The one case that keeps a screen: the clipboard refused, so the
+              pointer is here and the board stays until it has been taken. */}
+          {uncopied && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span className="pin-section-label">Copied — paste into your agent</span>
+              <span className="pin-section-label">Couldn&apos;t copy — paste this into your agent</span>
               <code
                 style={{
                   fontFamily: "var(--pin-mono)",
@@ -177,30 +241,33 @@ export function App() {
                   padding: "8px 9px",
                   borderRadius: "var(--pin-radius-sm)",
                   overflowWrap: "anywhere",
+                  userSelect: "all",
                 }}
               >
-                {pointer}
+                {uncopied}
               </code>
-              <button className="pin-btn" onClick={() => setPointer(null)}>
-                Keep editing
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--pin-ink-muted)" }}>
-                {pinCount} pin{pinCount === 1 ? "" : "s"} · {relCount} relationship
-                {relCount === 1 ? "" : "s"}
-              </span>
-              <button
-                className="pin-btn pin-btn--primary"
-                style={{ marginLeft: "auto" }}
-                disabled={busy}
-                onClick={() => void markReady()}
-              >
-                {busy ? "Preparing…" : "Ready for agent"}
-              </button>
             </div>
           )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, color: "var(--pin-ink-muted)" }}>
+              {pinCount} pin{pinCount === 1 ? "" : "s"} · {relCount} relationship
+              {relCount === 1 ? "" : "s"}
+            </span>
+            {/* One control, reporting its own progress. Disabled while it works
+                and while it says so, which is also what greys it — the panel's
+                black-when-it-will-act rule, spent here on the only press that
+                sends anything. */}
+            <button
+              className="pin-btn pin-btn--primary"
+              style={{ marginLeft: "auto" }}
+              disabled={phase !== "idle"}
+              onClick={() => void submit()}
+            >
+              {phase === "submitted" && <CheckIcon size={14} />}
+              {phase === "idle" ? "Send to agent" : phase === "submitting" ? "Submitting…" : "Submitted"}
+            </button>
+          </div>
         </footer>
       )}
     </div>

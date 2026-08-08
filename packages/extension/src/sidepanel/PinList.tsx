@@ -276,10 +276,15 @@ function PinRow({
             </button>
             {/* Relationships resolve into a style diff, and a region pin has no
                 computed styles to diff — it marks an area, not a component. */}
+            {/* The noun matches the tab this ends up on, so the button and the
+                place its result lands are called the same thing. "New" rather
+                than "Create" because pressing this makes nothing yet — it opens
+                the picker, and the relationship is written two clicks later at
+                Match. */}
             {pin.kind === "element" && (
               <button className="pin-btn" onClick={onCreateRelationship}>
                 <LinkIcon size={14} />
-                Create relationship
+                New relationship
               </button>
             )}
           </div>

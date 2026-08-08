@@ -29,10 +29,35 @@ export interface ExtensionState {
   serviceOnline: boolean;
 }
 
+/**
+ * Why the overlay is or is not on the tab in front of you.
+ *
+ * Arming a tab fails in several ordinary ways and every one of them used to
+ * fail silently — the button said "Capturing" and the page did nothing, with no
+ * way to tell which of them had happened. Naming them is the difference between
+ * a broken product and one that says what it needs.
+ */
+export type TabArmState =
+  /** The overlay is up. */
+  | "armed"
+  /** Nothing was listening, so the script was injected and armed. */
+  | "injected"
+  /**
+   * Nothing was listening and injecting was refused. Almost always a missing
+   * host permission: `content_scripts` matches do not grant one, so a tab whose
+   * script died with an extension reload cannot be revived without it.
+   */
+  | "blocked"
+  /** chrome://, the Web Store, a PDF. No permission will help. */
+  | "unsupported";
+
 /** Requests, keyed by type, each paired with its response shape. */
 export interface Contract {
   "state/get": { req: Record<string, never>; res: ExtensionState };
-  "capture/setMode": { req: { enabled: boolean }; res: ExtensionState };
+  "capture/setMode": {
+    req: { enabled: boolean };
+    res: ExtensionState & { activeTab: TabArmState };
+  };
   "capture/element": { req: { element: CapturedElement }; res: { pin: Pin } };
 
   /**

@@ -18,8 +18,8 @@ export function Relationships({ board, onChanged }: { board: Board; onChanged: (
         <LinkIcon size={22} />
         <strong style={{ fontWeight: 500, color: "var(--pin-ink)" }}>No relationships yet</strong>
         <span>
-          Open a pin, choose <em>Create relationship</em>, then pick the targets that should match
-          it. Pinnables works out the exact style differences for you.
+          Open a pin, choose <em>New relationship</em>, then pick the targets that should match it.
+          Pinnables works out the exact style differences for you.
         </span>
       </div>
     );
