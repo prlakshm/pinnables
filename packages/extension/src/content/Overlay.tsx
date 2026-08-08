@@ -490,7 +490,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * is exactly the one-source-many-targets shape the schema already holds.
    */
   const relateSelected = useCallback(async () => {
-    const [source, ...targets] = selected;
+    const elementIds = selected.filter(
+      (pinId) => board?.pins.find((pin) => pin.id === pinId)?.kind === "element",
+    );
+    const [source, ...targets] = elementIds;
     if (!source || targets.length === 0) return;
     try {
       await send("relationship/create", { sourcePinId: source, targetPinIds: targets });
@@ -498,7 +501,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     } catch (err) {
       if (!guard(err)) console.error("[pinnables] could not relate pins", err);
     }
-  }, [selected, api, guard]);
+  }, [selected, board, api, guard]);
 
   /* ------------------------------------------------------- connector layout */
 
@@ -834,6 +837,9 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       y: Math.min(bottom + 12, window.innerHeight - 120),
     };
   })();
+  const canRelateSelection =
+    selected.length > 1 &&
+    selected.every((pinId) => pins.find((pin) => pin.id === pinId)?.kind === "element");
 
   const draft =
     connecting && cardRects[connecting.fromPinId]
@@ -936,7 +942,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           <Composer
             count={selected.length}
             onCommit={commitNote}
-            onRelate={relateSelected}
+            onRelate={canRelateSelection ? relateSelected : undefined}
             autoFocus
           />
         </div>

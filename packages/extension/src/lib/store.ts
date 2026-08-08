@@ -90,13 +90,39 @@ export async function ensureActiveBoard(): Promise<Board> {
   return board;
 }
 
+/**
+ * One read-modify-write chain per board.
+ *
+ * Chrome can deliver several extension messages while earlier handlers are
+ * awaiting storage. Without a queue, two handlers read the same board and the
+ * last whole-board write silently erases the other change — an annotation can
+ * resurrect a deleted pin, or a blur-save can disappear from the submitted
+ * brief. The service worker remains alive while the message promises are
+ * pending, so an in-memory chain is sufficient to serialize overlapping work
+ * in this worker instance.
+ */
+const boardMutationQueues = new Map<string, Promise<void>>();
+
 export async function mutateBoard(
   boardId: string,
-  mutate: (board: Board) => Board,
+  mutate: (board: Board) => Board | Promise<Board>,
 ): Promise<Board> {
-  const board = await readBoard(boardId);
-  if (!board) throw new Error(`No board "${boardId}"`);
-  return writeBoard(mutate(board));
+  const previous = boardMutationQueues.get(boardId) ?? Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    const board = await readBoard(boardId);
+    if (!board) throw new Error(`No board "${boardId}"`);
+    return writeBoard(await mutate(board));
+  });
+  const tail = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  boardMutationQueues.set(boardId, tail);
+  try {
+    return await operation;
+  } finally {
+    if (boardMutationQueues.get(boardId) === tail) boardMutationQueues.delete(boardId);
+  }
 }
 
 /** Find whichever board holds a pin — the panel only ever sends pin ids. */

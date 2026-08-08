@@ -284,7 +284,8 @@ export function PinObject({
    * toward any other edge midpoint offers that one instead. All four stay
    * reachable without four dots sitting on every card.
    */
-  const canConnect = board.pins.length >= 2;
+  const canConnect =
+    pin.kind === "element" && board.pins.some((candidate) => candidate.id !== pin.id && candidate.kind === "element");
   const showAnchor = canConnect && (hovered || selected || connecting);
   const rect = card.current?.getBoundingClientRect();
   const fallbackEdge: AnchorEdge = rect

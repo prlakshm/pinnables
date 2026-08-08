@@ -28,7 +28,7 @@ export const STYLE_GROUPS = {
    * carry `flex-grow: 1 → 0` and `flex-basis: 0% → auto` alongside the width,
    * which is the change that works — in the preview and in the source file.
    */
-  size: ["width", "height"],
+  size: ["width", "height", "flex-grow", "flex-shrink", "flex-basis"],
   spacing: [
     "padding-top",
     "padding-right",
@@ -57,6 +57,47 @@ export const STYLE_GROUPS = {
 export type StyleGroup = keyof typeof STYLE_GROUPS;
 
 export const STYLE_ALLOWLIST: readonly string[] = Object.values(STYLE_GROUPS).flat();
+
+/**
+ * Computed values intentionally omitted from a capture when they equal CSS's
+ * initial value.
+ *
+ * Keeping the compact capture is useful, but absence must still be a value when
+ * two pins are compared. Without this shared table, `0px → 16px` padding,
+ * `none → shadow`, and `0px → 12px` radius all vanished from the diff because
+ * one side had no key. Capture and comparison use the same table so omission is
+ * lossless rather than ambiguous.
+ */
+export const STYLE_INITIAL_VALUES: Readonly<Record<string, string>> = {
+  "margin-top": "0px",
+  "margin-right": "0px",
+  "margin-bottom": "0px",
+  "margin-left": "0px",
+  "padding-top": "0px",
+  "padding-right": "0px",
+  "padding-bottom": "0px",
+  "padding-left": "0px",
+  gap: "normal",
+  "border-radius": "0px",
+  "border-width": "0px",
+  "border-style": "none",
+  "box-shadow": "none",
+  "background-color": "rgba(0, 0, 0, 0)",
+  "letter-spacing": "normal",
+  "text-align": "start",
+  position: "static",
+  "grid-template-columns": "none",
+  "flex-direction": "row",
+  "justify-content": "normal",
+  "align-items": "normal",
+  "flex-grow": "0",
+  "flex-shrink": "1",
+  "flex-basis": "auto",
+};
+
+function capturedValue(styles: Record<string, string>, property: string): string | undefined {
+  return styles[property] ?? STYLE_INITIAL_VALUES[property];
+}
 
 /**
  * Expand a relationship's `properties` — which may hold friendly group names
@@ -159,8 +200,8 @@ export function computeStyleDiff(
   for (const property of expandProperties(properties)) {
     // A change that cannot manifest is not a change. See `applicabilityGuard`.
     if (!applicable(property).applicable) continue;
-    const to = source.computedStyles[property];
-    const from = target.computedStyles[property];
+    const to = capturedValue(source.computedStyles, property);
+    const from = capturedValue(target.computedStyles, property);
     if (to === undefined || from === undefined) continue;
     if (to === from) continue;
     diff.push({ property, from, to });
@@ -202,8 +243,8 @@ export function computeBlockedChanges(
   for (const property of expandProperties(properties)) {
     const applicability = applicable(property);
     if (applicability.applicable) continue;
-    const to = source.computedStyles[property];
-    const from = target.computedStyles[property];
+    const to = capturedValue(source.computedStyles, property);
+    const from = capturedValue(target.computedStyles, property);
     if (to === undefined || from === undefined) continue;
     if (to === from) continue;
     blocked.push({ property, from, to, applicability });
@@ -228,11 +269,12 @@ export function computeBlockedChanges(
  * a non-zero width and a style that draws.
  */
 function hasVisibleBorder(styles: Record<string, string>): boolean {
-  const widths = styles["border-width"]?.split(/\s+/) ?? [];
-  const styleNames = styles["border-style"]?.split(/\s+/) ?? [];
-  if (widths.length > 0 && !widths.some((w) => parseFloat(w) > 0)) return false;
-  if (styleNames.length > 0 && !styleNames.some((n) => n !== "none" && n !== "hidden")) return false;
-  return true;
+  const widths = (capturedValue(styles, "border-width") ?? "0px").split(/\s+/);
+  const styleNames = (capturedValue(styles, "border-style") ?? "none").split(/\s+/);
+  return (
+    widths.some((width) => parseFloat(width) > 0) &&
+    styleNames.some((name) => name !== "none" && name !== "hidden")
+  );
 }
 
 /**

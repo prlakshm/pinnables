@@ -137,17 +137,26 @@ function PinRow({
   const [draft, setDraft] = useState(pin.annotation);
 
   useEffect(() => {
+    let cancelled = false;
     void chrome.storage.local.get(`thumb:${pin.id}`).then((bag) => {
-      setThumb((bag[`thumb:${pin.id}`] as string | undefined) ?? null);
+      if (!cancelled) setThumb((bag[`thumb:${pin.id}`] as string | undefined) ?? null);
     });
-  }, [pin.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [pin.id, pin.updatedAt]);
 
   useEffect(() => {
-    if (!expanded || shot) return;
+    setShot(null);
+    if (!expanded) return;
+    let cancelled = false;
     void chrome.storage.local.get(`shot:${pin.id}`).then((bag) => {
-      setShot((bag[`shot:${pin.id}`] as string | undefined) ?? null);
+      if (!cancelled) setShot((bag[`shot:${pin.id}`] as string | undefined) ?? null);
     });
-  }, [expanded, shot, pin.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, pin.id, pin.updatedAt]);
 
   useEffect(() => setDraft(pin.annotation), [pin.annotation]);
 

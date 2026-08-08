@@ -129,6 +129,12 @@ async function armTab(tabId: number, enabled: boolean): Promise<TabArmState> {
 /** Arms every tab, and reports what happened to the one in front. */
 async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
   await store.patchState({ captureMode: enabled });
+  const message: Broadcast = { kind: "capture-mode", enabled };
+  // `tabs.sendMessage` below updates page overlays. Extension pages such as the
+  // side panel do not belong to a tab, so they need the runtime broadcast too.
+  // Without it, Escape, the floating toolbar's close button, and the keyboard
+  // shortcut changed the page while the panel kept saying "Capturing".
+  chrome.runtime.sendMessage(message).catch(() => {});
   const tabs = await chrome.tabs.query({});
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -162,10 +168,15 @@ const handlers: Handlers = {
 
   async "capture/element"({ element }, sender) {
     const tabId = sender.tab?.id;
-    if (tabId === undefined) throw new Error("Capture must come from a tab");
+    const windowId = sender.tab?.windowId;
+    if (tabId === undefined || windowId === undefined) throw new Error("Capture must come from a tab");
 
     const board = await store.ensureActiveBoard();
-    const shot = await chrome.tabs.captureVisibleTab(sender.tab!.windowId!, { format: "png" });
+    const activeBefore = await chrome.tabs.query({ active: true, windowId });
+    if (activeBefore[0]?.id !== tabId) throw new Error("Capture cancelled because the active tab changed");
+    const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+    const activeAfter = await chrome.tabs.query({ active: true, windowId });
+    if (activeAfter[0]?.id !== tabId) throw new Error("Capture cancelled because the active tab changed");
     const { full, thumb } = await crop(shot, element.rect, element.devicePixelRatio);
 
     /**
@@ -181,76 +192,75 @@ const handlers: Handlers = {
      * the annotation, status, order and requested values are the user's and are
      * left alone.
      */
-    const existing = board.pins.find(
-      (p) =>
-        p.kind === "element" &&
-        p.route === element.route &&
-        p.selector === element.selector &&
-        p.selector !== "",
-    );
-    if (existing) {
-      await store.putScreenshot(existing.id, full, thumb);
-      const merged: Pin = {
-        ...existing,
+    let savedPin!: Pin;
+    await store.mutateBoard(board.id, async (current) => {
+      const existing = current.pins.find(
+        (candidate) =>
+          candidate.kind === "element" &&
+          candidate.route === element.route &&
+          candidate.selector === element.selector &&
+          candidate.selector !== "",
+      );
+      if (existing) {
+        savedPin = {
+          ...existing,
+          url: element.url,
+          viewport: element.viewport,
+          elementSize: { width: element.rect.width, height: element.rect.height },
+          domPath: element.domPath,
+          outerHtml: element.outerHtml,
+          classList: element.classList,
+          elementText: element.elementText,
+          componentName: element.componentName ?? existing.componentName,
+          sourceFile: element.sourceFile ?? existing.sourceFile,
+          computedStyles: element.computedStyles,
+          updatedAt: new Date().toISOString(),
+        };
+        await store.putScreenshot(existing.id, full, thumb);
+        return {
+          ...current,
+          pins: current.pins.map((pin) => (pin.id === existing.id ? savedPin : pin)),
+        };
+      }
+
+      const pinId = store.nextId("pin");
+      const now = new Date().toISOString();
+      const highest = store.sortedPins(current).at(-1)?.order ?? 0;
+      savedPin = {
+        id: pinId,
+        schemaVersion: SCHEMA_VERSION,
+        boardId: current.id,
+        kind: "element",
+        drawings: [],
+        order: highest + 1,
+        groupId: null,
         url: element.url,
+        route: element.route,
         viewport: element.viewport,
         elementSize: { width: element.rect.width, height: element.rect.height },
+        screenshotPath: `pins/${pinId}.png`,
+        thumbnailPath: `pins/${pinId}.thumb.webp`,
+        selector: element.selector,
         domPath: element.domPath,
         outerHtml: element.outerHtml,
         classList: element.classList,
         elementText: element.elementText,
-        componentName: element.componentName ?? existing.componentName,
-        sourceFile: element.sourceFile ?? existing.sourceFile,
+        componentName: element.componentName,
+        name: null,
+        sourceFile: element.sourceFile,
         computedStyles: element.computedStyles,
-        updatedAt: new Date().toISOString(),
+        styleEdits: {},
+        annotation: "",
+        captureState: element.viewport.width < 640 ? "mobile" : "default",
+        status: "todo",
+        createdAt: now,
+        updatedAt: now,
       };
-      await store.writeBoard({
-        ...board,
-        pins: board.pins.map((p) => (p.id === existing.id ? merged : p)),
-      });
-      await notifyBoardChanged(board.id);
-      return { pin: merged };
-    }
-
-    const pinId = store.nextId("pin");
-    const now = new Date().toISOString();
-    const highest = store.sortedPins(board).at(-1)?.order ?? 0;
-
-    const pin: Pin = {
-      id: pinId,
-      schemaVersion: SCHEMA_VERSION,
-      boardId: board.id,
-      kind: "element",
-      drawings: [],
-      order: highest + 1,
-      groupId: null,
-      url: element.url,
-      route: element.route,
-      viewport: element.viewport,
-      elementSize: { width: element.rect.width, height: element.rect.height },
-      screenshotPath: `pins/${pinId}.png`,
-      thumbnailPath: `pins/${pinId}.thumb.webp`,
-      selector: element.selector,
-      domPath: element.domPath,
-      outerHtml: element.outerHtml,
-      classList: element.classList,
-      elementText: element.elementText,
-      componentName: element.componentName,
-      name: null,
-      sourceFile: element.sourceFile,
-      computedStyles: element.computedStyles,
-      styleEdits: {},
-      annotation: "",
-      captureState: element.viewport.width < 640 ? "mobile" : "default",
-      status: "todo",
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await store.putScreenshot(pinId, full, thumb);
-    await store.writeBoard({ ...board, pins: [...board.pins, pin] });
+      await store.putScreenshot(pinId, full, thumb);
+      return { ...current, pins: [...current.pins, savedPin] };
+    });
     await notifyBoardChanged(board.id);
-    return { pin };
+    return { pin: savedPin };
   },
 
   async "drawing/save"({ shapes, url, route, viewport, shotRect }, sender) {
@@ -483,12 +493,24 @@ const handlers: Handlers = {
 
   async "relationship/create"({ sourcePinId, targetPinIds }) {
     const found = await store.boardForPin(sourcePinId);
+    const source = found.pins.find((pin) => pin.id === sourcePinId);
+    if (!source || source.kind !== "element") {
+      throw new Error("Relationships require an element pin as the source");
+    }
+    const uniqueTargetIds = [...new Set(targetPinIds)].filter((id) => id !== sourcePinId);
+    if (uniqueTargetIds.length === 0) throw new Error("A relationship needs a target");
+    for (const targetId of uniqueTargetIds) {
+      const target = found.pins.find((pin) => pin.id === targetId);
+      if (!target || target.kind !== "element") {
+        throw new Error("Relationships require element pins as targets");
+      }
+    }
     const relationship = {
       id: store.nextId("rel"),
       boardId: found.id,
       type: "match" as const,
       sourcePinId,
-      targetPinIds,
+      targetPinIds: uniqueTargetIds,
       properties: [],
       exception: "",
       instruction: "",

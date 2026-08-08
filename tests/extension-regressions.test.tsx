@@ -7,6 +7,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { Board, Pin } from "@pinnables/shared";
 import { PinObject } from "../packages/extension/src/content/PinObject.tsx";
 import { routeForLocation } from "../packages/extension/src/lib/capture.ts";
+import { nameForDraft } from "../packages/extension/src/sidepanel/RenamableTitle.tsx";
+import {
+  computeStyleDiff,
+  STYLE_GROUPS,
+} from "../packages/shared/src/styles.ts";
 
 const root = new URL("../", import.meta.url);
 const source = (path: string) => readFileSync(new URL(path, root), "utf8");
@@ -174,4 +179,140 @@ test("hash-router screens get distinct route identities", () => {
     routeForLocation({ pathname: "/docs", search: "?mode=edit", hash: "#section-2" }),
     "/docs?mode=edit",
   );
+});
+
+test("style diffs preserve default-to-styled changes in both directions", () => {
+  const defaults = elementPin({ computedStyles: {} });
+  const styled = elementPin({
+    id: "pin-styled",
+    computedStyles: {
+      "padding-top": "16px",
+      "padding-right": "16px",
+      "padding-bottom": "16px",
+      "padding-left": "16px",
+      "border-radius": "12px",
+      "box-shadow": "rgba(0, 0, 0, 0.08) 0px 4px 12px 0px",
+      "background-color": "rgb(255, 255, 255)",
+    },
+  });
+
+  const toDefaults = computeStyleDiff(defaults, styled, ["spacing", "radius", "shadow", "color"]);
+  const toStyled = computeStyleDiff(styled, defaults, ["spacing", "radius", "shadow", "color"]);
+
+  assert.deepEqual(
+    new Map(toDefaults.map((entry) => [entry.property, [entry.from, entry.to]])),
+    new Map([
+      ["padding", ["16px", "0px"]],
+      ["border-radius", ["12px", "0px"]],
+      ["box-shadow", ["rgba(0, 0, 0, 0.08) 0px 4px 12px 0px", "none"]],
+      ["background-color", ["rgb(255, 255, 255)", "rgba(0, 0, 0, 0)"]],
+    ]),
+  );
+  assert.deepEqual(
+    new Map(toStyled.map((entry) => [entry.property, [entry.from, entry.to]])),
+    new Map([
+      ["padding", ["0px", "16px"]],
+      ["border-radius", ["0px", "12px"]],
+      ["box-shadow", ["none", "rgba(0, 0, 0, 0.08) 0px 4px 12px 0px"]],
+      ["background-color", ["rgba(0, 0, 0, 0)", "rgb(255, 255, 255)"]],
+    ]),
+  );
+});
+
+test("matching a borderless source removes the border without inventing a black one", () => {
+  const sourcePin = elementPin({
+    computedStyles: { "border-color": "rgb(28, 30, 34)" },
+  });
+  const targetPin = elementPin({
+    id: "pin-bordered",
+    computedStyles: {
+      "border-width": "1px",
+      "border-style": "solid",
+      "border-color": "rgb(230, 228, 224)",
+    },
+  });
+
+  assert.deepEqual(computeStyleDiff(sourcePin, targetPin, ["border"]), [
+    { property: "border-width", from: "1px", to: "0px" },
+    { property: "border-style", from: "solid", to: "none" },
+  ]);
+});
+
+test("size relationships capture the flex properties that actually control dimensions", () => {
+  assert.ok(STYLE_GROUPS.size.includes("flex-grow"));
+  assert.ok(STYLE_GROUPS.size.includes("flex-shrink"));
+  assert.ok(STYLE_GROUPS.size.includes("flex-basis"));
+});
+
+test("selecting a floating pin does not move its component card", () => {
+  const css = source("packages/extension/src/ui/ui.css");
+  const labelRule = css.slice(
+    css.indexOf(".pin-object__label {"),
+    css.indexOf(".pin-object__name {"),
+  );
+
+  assert.match(labelRule, /position:\s*absolute/);
+  assert.match(labelRule, /transform:\s*translateY/);
+});
+
+test("capture-mode changes are broadcast back to the side panel", () => {
+  const background = source("packages/extension/src/background/index.ts");
+  const setMode = background.slice(
+    background.indexOf("async function setCaptureMode"),
+    background.indexOf("const handlers"),
+  );
+
+  assert.match(setMode, /chrome\.runtime\.sendMessage\(message\)/);
+});
+
+test("re-capturing the same pin invalidates both cached panel images", () => {
+  const pinList = source("packages/extension/src/sidepanel/PinList.tsx");
+
+  assert.match(pinList, /chrome\.storage\.local\.get\(`thumb:\$\{pin\.id\}`\)[\s\S]{0,180}\[pin\.id, pin\.updatedAt\]/);
+  assert.match(pinList, /setShot\(null\)[\s\S]{0,520}\[expanded, pin\.id, pin\.updatedAt\]/);
+});
+
+test("region pins cannot be persisted in style relationships", () => {
+  const background = source("packages/extension/src/background/index.ts");
+  const create = background.slice(
+    background.indexOf('async "relationship/create"'),
+    background.indexOf('async "relationship/update"'),
+  );
+
+  assert.match(create, /source\.kind !== "element"/);
+  assert.match(create, /target\.kind !== "element"/);
+});
+
+test("leaving a custom pin name unchanged preserves it", () => {
+  const pin = elementPin({ name: "Revenue card" });
+
+  assert.equal(nameForDraft("Revenue card", pin, [pin]), "Revenue card");
+  assert.equal(nameForDraft("", pin, [pin]), null);
+});
+
+test("failed board materialization cannot return a pointer to a missing brief", () => {
+  const background = source("packages/extension/src/background/index.ts");
+  const markReady = background.slice(
+    background.indexOf('async "board/markReady"'),
+    background.indexOf('async "pin/update"'),
+  );
+  const app = source("packages/extension/src/sidepanel/App.tsx");
+
+  assert.doesNotMatch(markReady, /Read ~\/\.pinnables/);
+  assert.match(markReady, /throw new Error\("Local service is offline/);
+  assert.match(app, /setSubmitError/);
+});
+
+test("a late overlay import obeys the latest capture-mode request", () => {
+  const content = source("packages/extension/src/content/index.ts");
+
+  assert.match(content, /desiredEnabled/);
+  assert.match(content, /current\.setEnabled\(desiredEnabled\)/);
+});
+
+test("preview cleanup restores both inline value and important priority", () => {
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+
+  assert.match(overlay, /getPropertyPriority\(property\)/);
+  assert.match(overlay, /setProperty\(property, had, priority\)/);
 });

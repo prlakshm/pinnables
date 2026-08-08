@@ -1484,7 +1484,9 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
   text-overflow: ellipsis;
 }
 .pin-change[data-on="false"] .pin-change__summary { color: var(--pin-ink-muted); }
-.pin-change__from { color: var(--pin-ink-faint); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; }
+/* Lighter, not struck through. The arrow already says which way this goes,
+   and the strike made the value it names look deleted rather than previous. */
+.pin-change__from { color: var(--pin-ink-faint); overflow: hidden; text-overflow: ellipsis; }
 .pin-change__arrow { color: var(--pin-ink-faint); }
 
 /*

@@ -1,4 +1,4 @@
-import { STYLE_ALLOWLIST } from "@pinnables/shared";
+import { STYLE_ALLOWLIST, STYLE_INITIAL_VALUES } from "@pinnables/shared";
 import type { CapturedElement } from "./messages";
 
 import { OVERLAY_HOST_ID } from "./overlay-host";
@@ -10,37 +10,13 @@ export { OVERLAY_HOST_ID };
  * defaults for thirty properties buries the handful that actually differ, so
  * anything still sitting at its initial value is dropped.
  */
-const INITIAL: Record<string, string> = {
-  "margin-top": "0px",
-  "margin-right": "0px",
-  "margin-bottom": "0px",
-  "margin-left": "0px",
-  "padding-top": "0px",
-  "padding-right": "0px",
-  "padding-bottom": "0px",
-  "padding-left": "0px",
-  gap: "normal",
-  "border-radius": "0px",
-  "border-width": "0px",
-  "border-style": "none",
-  "box-shadow": "none",
-  "background-color": "rgba(0, 0, 0, 0)",
-  "letter-spacing": "normal",
-  "text-align": "start",
-  position: "static",
-  "grid-template-columns": "none",
-  "flex-direction": "row",
-  "justify-content": "normal",
-  "align-items": "normal",
-};
-
 export function readComputedStyles(el: Element): Record<string, string> {
   const computed = getComputedStyle(el);
   const out: Record<string, string> = {};
   for (const property of STYLE_ALLOWLIST) {
     const value = computed.getPropertyValue(property).trim();
     if (!value) continue;
-    if (INITIAL[property] === value) continue;
+    if (STYLE_INITIAL_VALUES[property] === value) continue;
     out[property] = value;
   }
   return out;
