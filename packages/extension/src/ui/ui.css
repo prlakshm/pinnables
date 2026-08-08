@@ -933,11 +933,16 @@
 
 /* The surface you draw into. Document-sized, so a stroke can start anywhere on
    the page rather than only in the fold you happen to be looking at. */
+/*
+ * Sized in pixels by the component, never in percentages. The shadow host is
+ * deliberately zero-sized so the ink can be positioned in document coordinates,
+ * and `width: 100%` against a zero-width parent is zero — a surface that exists,
+ * reports `pointer-events: auto`, and can never be hit by anything.
+ */
 .pin-draw__surface {
   position: absolute;
   left: 0;
   top: 0;
-  width: 100%;
   cursor: crosshair;
   touch-action: none;
   user-select: none;
@@ -953,23 +958,57 @@
   cursor: default;
 }
 
-/* A pen colour, sitting among the icon buttons in the one toolbar. */
-.pin-draw__swatch {
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
+/*
+ * The pen colours, stacked.
+ *
+ * Collapsed, the one in use is in front with the others peeking out behind it —
+ * enough to say "there are more" without spending the width. Hover fans them
+ * into a row; picking one brings it to the front and the stack closes.
+ *
+ * Colour is the loudest thing available in a bar that is otherwise greyscale, so
+ * four circles sitting open permanently made the least important control the
+ * most eye-catching one.
+ */
+.pin-pens {
+  --pin-pen-size: 20px;
+  --pin-pen-peek: 7px;
+  --pin-pen-gap: 6.85px;
+  --pin-pen-step: calc(var(--pin-pen-size) + var(--pin-pen-gap));
+
+  position: relative;
   flex: 0 0 auto;
-  margin: 0 2px;
-  border: 2px solid transparent;
-  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12);
-  transition: transform 100ms ease;
+  height: var(--pin-pen-size);
+  margin: 0 5px;
+  width: calc(var(--pin-pen-size) + 3 * var(--pin-pen-peek));
+  transition: width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.pin-draw__swatch:hover { transform: scale(1.12); }
-/* A ring outside the swatch rather than a border inside it — a border eats into
-   the colour, and the colour is the only thing the control is showing. */
-.pin-draw__swatch[data-active="true"] {
-  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12), 0 0 0 2px var(--pin-paper),
-    0 0 0 4px var(--pin-ink);
+.pin-pens:hover,
+.pin-pens:focus-within {
+  width: calc(var(--pin-pen-size) + 3 * var(--pin-pen-step));
+}
+
+.pin-pen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--pin-pen-size);
+  height: var(--pin-pen-size);
+  border-radius: 999px;
+  /* The front one is the selected one, so the stack reads front-to-back. */
+  z-index: calc(10 - var(--i));
+  transform: translateX(calc(var(--i) * var(--pin-pen-peek)));
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 120ms ease;
+  /* A rim of paper so one circle reads as in front of the next rather than
+     merged into it. */
+  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12), 0 0 0 1.5px var(--pin-paper);
+}
+.pin-pens:hover .pin-pen,
+.pin-pens:focus-within .pin-pen {
+  transform: translateX(calc(var(--i) * var(--pin-pen-step)));
+}
+.pin-pen[data-active="true"] {
+  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12), 0 0 0 1.5px var(--pin-paper),
+    0 0 0 3.5px var(--pin-ink);
 }
 
 /* --------------------------------------------------------------- side panel */

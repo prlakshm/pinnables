@@ -137,7 +137,10 @@ export function DrawLayer({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        style={{ height: document.documentElement.scrollHeight }}
+        style={{
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+        }}
       />
 
       <InkLayer placed={placed} onErase={tool === "erase" ? erase : undefined} />

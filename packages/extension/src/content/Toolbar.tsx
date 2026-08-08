@@ -9,8 +9,6 @@ export type ToolMode = "browse" | "pin" | "draw";
 interface ToolbarProps {
   mode: ToolMode;
   onMode: (mode: ToolMode) => void;
-  pinCount: number;
-  onOpenBoard: () => void;
   onExit: () => void;
   /** Draw mode swaps the bar's contents; these drive that half of it. */
   drawTool: DrawTool;
@@ -29,8 +27,6 @@ const POSITION_KEY = "toolbarPosition";
 export function Toolbar({
   mode,
   onMode,
-  pinCount,
-  onOpenBoard,
   onExit,
   drawTool,
   onDrawTool,
@@ -96,96 +92,82 @@ export function Toolbar({
       </span>
 
       {/*
-        * Draw mode changes what this bar holds rather than putting a second bar
-        * on top of it. Two pills at the same place is two borders and two
-        * shadows pretending to be one control.
+        * One bar, everything on it. Draw used to swap the bar's contents, which
+        * meant the tools you were not holding vanished — and a mode you cannot
+        * see the exit from is a mode people get stuck in. Pencil and eraser sit
+        * with the other tools; picking a pen colour is itself a way to start
+        * drawing.
         */}
-      {mode === "draw" ? (
-        <>
+      {tools.map((tool) => (
+        <button
+          key={tool.id}
+          className="pin-icon-btn"
+          data-active={mode === tool.id && (tool.id !== "draw" || drawTool === "draw")}
+          onClick={() => {
+            onMode(tool.id);
+            if (tool.id === "draw") onDrawTool("draw");
+          }}
+          title={tool.label}
+          aria-label={tool.label}
+          aria-pressed={mode === tool.id}
+        >
+          {tool.icon}
+        </button>
+      ))}
+
+      <button
+        className="pin-icon-btn"
+        data-active={mode === "draw" && drawTool === "erase"}
+        onClick={() => {
+          onMode("draw");
+          onDrawTool("erase");
+        }}
+        title="Erase a whole stroke · E"
+        aria-label="Erase"
+        aria-pressed={mode === "draw" && drawTool === "erase"}
+      >
+        <EraserIcon />
+      </button>
+
+      <span className="pin-toolbar__divider" />
+
+      {/*
+        * A stack, not a row. The one you are using sits in front and the rest
+        * peek out behind it; hovering fans them out to pick from, and choosing
+        * one brings it to the front and closes the stack again.
+        *
+        * Four permanent circles is a lot of colour to leave sitting in a bar
+        * that is otherwise entirely greyscale — and colour is the loudest thing
+        * on it, so it was pulling attention to the least important control.
+        */}
+      <span className="pin-pens" role="group" aria-label="Pen colour">
+        {[drawColor, ...DRAW_COLORS.filter((c) => c !== drawColor)].map((swatch, i) => (
           <button
-            className="pin-icon-btn"
-            data-active={drawTool === "draw"}
-            onClick={() => onDrawTool("draw")}
-            title="Draw · B"
-            aria-label="Draw"
-            aria-pressed={drawTool === "draw"}
-          >
-            <PencilIcon />
-          </button>
-          <button
-            className="pin-icon-btn"
-            data-active={drawTool === "erase"}
-            onClick={() => onDrawTool("erase")}
-            title="Erase a whole stroke · E"
-            aria-label="Erase"
-            aria-pressed={drawTool === "erase"}
-          >
-            <EraserIcon />
-          </button>
+            key={swatch}
+            className="pin-pen"
+            data-active={drawColor === swatch}
+            style={{ background: swatch, "--i": i } as React.CSSProperties}
+            onClick={() => {
+              onDrawColor(swatch);
+              onMode("draw");
+              onDrawTool("draw");
+            }}
+            title={`Draw in ${swatch}`}
+            aria-label={`Draw in ${swatch}`}
+          />
+        ))}
+      </span>
 
-          <span className="pin-toolbar__divider" />
+      <span className="pin-toolbar__divider" />
 
-          {DRAW_COLORS.map((swatch) => (
-            <button
-              key={swatch}
-              className="pin-draw__swatch"
-              data-active={drawColor === swatch}
-              style={{ background: swatch }}
-              onClick={() => {
-                onDrawColor(swatch);
-                onDrawTool("draw");
-              }}
-              title={`Draw in ${swatch}`}
-              aria-label={`Draw in ${swatch}`}
-            />
-          ))}
-
-          <span className="pin-toolbar__divider" />
-
-          <button
-            className="pin-icon-btn"
-            onClick={() => onMode("pin")}
-            title="Done drawing · Esc"
-            aria-label="Done drawing"
-          >
-            <CloseIcon size={17} />
-          </button>
-        </>
-      ) : (
-        <>
-          {tools.map((tool) => (
-            <button
-              key={tool.id}
-              className="pin-icon-btn"
-              data-active={mode === tool.id}
-              onClick={() => onMode(tool.id)}
-              title={tool.label}
-              aria-label={tool.label}
-              aria-pressed={mode === tool.id}
-            >
-              {tool.icon}
-            </button>
-          ))}
-
-          <span className="pin-toolbar__divider" />
-
-          <button className="pin-toolbar__board" onClick={onOpenBoard} title="Open the annotation board">
-            Board
-            <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
-          </button>
-
-          <span className="pin-toolbar__divider" />
-
-          <button
-            className="pin-icon-btn"
-            onClick={onExit}
-            title="Exit capture mode · Esc"
-            aria-label="Exit capture mode"
-          >
-            <CloseIcon size={17} />
-          </button>
-        </>
-      )}
+      <button
+        className="pin-icon-btn"
+        onClick={onExit}
+        title="Exit capture mode · Esc"
+        aria-label="Exit capture mode"
+      >
+        <CloseIcon size={17} />
+      </button>
     </div>
   );
 }
