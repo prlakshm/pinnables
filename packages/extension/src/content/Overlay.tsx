@@ -747,6 +747,16 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       return;
     }
     found.element.scrollIntoView({ behavior: "smooth", block: "center" });
+    /*
+     * Selected, not just pointed at.
+     *
+     * The highlight flashed for two seconds and left nothing behind, so
+     * arriving from the shelf meant finding the pin and then still having to
+     * click it before anything could be done with it. Pressing "Go to pin" is
+     * already a statement about which pin you mean — the selection is what
+     * makes that survive the scroll.
+     */
+    setSelected([state.reveal.pinId]);
     const rect = found.element.getBoundingClientRect();
     setHighlight({
       x: rect.left,

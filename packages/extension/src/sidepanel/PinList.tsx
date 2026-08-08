@@ -305,7 +305,7 @@ function PinRow({
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button className="pin-btn" onClick={() => void send("pin/revealSource", { pinId: pin.id })}>
               <ArrowUpRightIcon />
-              Go to source
+              Go to pin
             </button>
             {/* Relationships resolve into a style diff, and a region pin has no
                 computed styles to diff — it marks an area, not a component. */}
