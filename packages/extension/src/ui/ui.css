@@ -159,6 +159,18 @@
   /* Inverted: ink is the light one here, so its hover goes up to white. */
   --pin-ink-lift: var(--pin-white);
 
+  /*
+   * The off states have to invert too. They alias the light end of the grey
+   * ramp, which on a dark panel is a near-white fill — an unarmed Capture button
+   * glowing brighter than the armed one.
+   *
+   * `--pin-on-*` need no override: they alias ink and paper, which have already
+   * swapped, so "black button, white label" becomes "light button, dark label"
+   * on its own. That is the two-layer split paying for itself.
+   */
+  --pin-off: var(--pin-paper-sunk);
+  --pin-off-hover: var(--pin-rule);
+
   --pin-measure: #9ba0a8;
   --pin-measure-wash: color-mix(in srgb, #9ba0a8 12%, transparent);
   --pin-measure-glow: color-mix(in srgb, #9ba0a8 30%, transparent);
@@ -457,7 +469,9 @@
   height: 18px;
   padding: 0 5px;
   background: var(--pin-measure);
-  color: #fff;
+  /* Paper, not white — the grey under it lightens on a dark page, and white on
+     light grey is the one pairing this label cannot afford. */
+  color: var(--pin-paper);
   font-family: var(--pin-mono);
   font-size: 10px;
   letter-spacing: -0.01em;
@@ -662,6 +676,18 @@
      along, so nothing of the page behind it survives at the corners. */
   border-radius: inherit;
   overflow: hidden;
+  position: relative;
+}
+
+/* A wide element is shown at life size and clipped, so the edge has to say so.
+   Without this the crop reads as the component simply ending there. */
+.pin-object__inner[data-cropped="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 56px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--pin-paper));
 }
 
 /*

@@ -14,9 +14,10 @@
     "smoke": "tsx scripts/smoke.mts",
     "trace-wordmark": "node scripts/trace-wordmark.mjs",
     "typecheck": "npm run typecheck --workspace @pinnables/extension",
-    "demo": "node scripts/serve-demo.mjs",
+    "demo": "node scripts/serve-demo.mjs demo",
     "make-icons": "node scripts/make-icons.mjs",
-    "check-tokens": "node scripts/check-tokens.mjs"
+    "check-tokens": "node scripts/check-tokens.mjs",
+    "film": "node scripts/serve-demo.mjs film"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

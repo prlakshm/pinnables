@@ -162,16 +162,33 @@ export function PinObject({
    * and scale the radius by exactly the same factor. Then the clip and the
    * bitmap agree at every size.
    */
-  const MAX_SHOT = { width: 336, height: 260 };
+  /*
+   * Height decides the scale. Width crops.
+   *
+   * Scaling to satisfy both caps sounds even-handed and is not: a page heading
+   * is 1240 wide and 40 tall, so a 336px width cap shrank it to 27% — text at
+   * four pixels — to solve a height problem it never had. Anything wide and
+   * short was destroyed to fit a limit it was nowhere near.
+   *
+   * So the shot is drawn at whatever scale the height cap demands, which for
+   * most elements is none at all, and the frame around it clips the overflow.
+   * A wide element arrives at life size showing its left-hand portion; a tall
+   * one is scaled down whole, which is what it needed anyway.
+   */
+  const MAX_SHOT = { width: 420, height: 260 };
   const captured = pin.elementSize;
   const fit =
     captured && captured.width > 0 && captured.height > 0
-      ? Math.min(1, MAX_SHOT.width / captured.width, MAX_SHOT.height / captured.height)
+      ? Math.min(1, MAX_SHOT.height / captured.height)
       : null;
   const shotStyle =
     fit !== null && captured
       ? { width: Math.round(captured.width * fit), height: Math.round(captured.height * fit) }
       : undefined;
+  const cropped = shotStyle !== undefined && shotStyle.width > MAX_SHOT.width;
+  const frameStyle = shotStyle
+    ? { width: Math.min(shotStyle.width, MAX_SHOT.width), height: shotStyle.height }
+    : undefined;
 
   const radiusPx = (() => {
     if (pin.kind !== "element") return null;
@@ -257,7 +274,7 @@ export function PinObject({
       )}
 
       <div className="pin-object__card" data-pulse={pulse} ref={card}>
-        <div className="pin-object__inner">
+        <div className="pin-object__inner" style={frameStyle} data-cropped={cropped}>
           {shot ? (
             <img
               className="pin-object__shot"

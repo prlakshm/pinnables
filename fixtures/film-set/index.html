@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Accession — a seed bank register</title>
+<style>
+/*
+ * A film set, not a demo.
+ *
+ * This exists to be recorded with Pinnables running on top of it, which sets
+ * every constraint here. It has to look like a real product a designer would be
+ * reviewing, or the recording reads as a toy. It has to be visually unlike the
+ * tool — the overlay is black, grey and red, so the set is warm paper and
+ * specimen green, and the chrome never disappears into the page. And its cards
+ * have to genuinely disagree with each other, because a tool whose whole claim
+ * is "make these match" needs something that does not.
+ *
+ * Mood is herbarium: pressed sheets, iron-gall ink, accession stamps, the
+ * living green of the thing that was pressed. Chosen over the obvious
+ * agricultural-SaaS green because that is the answer everyone reaches for.
+ */
+
+:root {
+  --paper: #ffffff;
+  --sheet: #f6f3ea;          /* the specimen mount */
+  --sheet-deep: #efeadb;
+  --rule: #e2ddcd;
+  --ink: #1b1a15;            /* iron gall, warm rather than neutral */
+  --ink-soft: #6d6857;
+  --ink-faint: #a49d88;
+  --green: #1d4a3a;          /* the specimen itself */
+  --green-wash: #e9efe9;
+  --stamp: #a33726;          /* the accession stamp — used twice on the site */
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 40px; }
+
+/* ---------------------------------------------------------------- masthead */
+
+.masthead {
+  border-bottom: 1px solid var(--rule);
+  padding: 26px 0 22px;
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+}
+.mark {
+  font-family: var(--serif);
+  font-size: 23px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--green);
+  white-space: nowrap;
+}
+.mark span { color: var(--stamp); }
+.tagline {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+nav { margin-left: auto; display: flex; gap: 26px; }
+nav a {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding-bottom: 3px;
+  border-bottom: 1.5px solid transparent;
+}
+nav a:hover { color: var(--ink); }
+nav a[aria-current="page"] { color: var(--green); border-bottom-color: var(--green); }
+
+/* --------------------------------------------------------------- headings */
+
+.lede { padding: 64px 0 44px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 56px; align-items: end; }
+h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 62px;
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  margin: 0;
+}
+h1 em { font-style: italic; color: var(--green); }
+.lede p { margin: 0 0 6px; color: var(--ink-soft); max-width: 42ch; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
+}
+
+h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 27px;
+  letter-spacing: -0.012em;
+  margin: 0;
+}
+
+.section { padding: 34px 0 12px; border-top: 1px solid var(--rule); margin-top: 40px; }
+.section-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 26px; }
+.section-head .count { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+
+/* ------------------------------------------------------------------ plate */
+
+/* The pressed specimen. Drawn rather than photographed, which keeps the set
+   self-contained and reads more like a register than a shop. */
+.plate {
+  background: var(--sheet);
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 4;
+  position: relative;
+  overflow: hidden;
+}
+.plate svg { width: 62%; height: 62%; }
+.plate .acc {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------ cards */
+
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; align-items: start; }
+
+.card-name { font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; margin: 14px 0 1px; }
+.card-latin { font-style: italic; color: var(--ink-soft); font-size: 13px; margin: 0 0 12px; }
+.traits { display: flex; gap: 14px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.traits b { display: block; font-family: var(--sans); font-size: 15px; font-weight: 500; color: var(--ink); letter-spacing: 0; text-transform: none; margin-top: 2px; }
+
+/*
+ * Four card treatments that do not agree, which is the point of the set.
+ * Radius, padding, border weight and shadow all differ — four properties, so
+ * relating any two produces a diff long enough to read on video.
+ */
+.variety { background: var(--paper); border-radius: 14px; padding: 20px; border: 1px solid var(--rule); }
+.variety--legacy { border-radius: 2px; padding: 28px 20px; border: 2px solid var(--sheet-deep); }
+.variety--compact { border-radius: 6px; padding: 14px; border: 1px solid var(--rule); box-shadow: 0 1px 2px rgba(27, 26, 21, 0.06); }
+.variety--feature { border-radius: 20px; padding: 24px; border: none; box-shadow: 0 10px 30px rgba(27, 26, 21, 0.09); }
+
+.variety .plate { border-radius: 8px; }
+.variety--legacy .plate { border-radius: 0; }
+.variety--compact .plate { border-radius: 3px; }
+.variety--feature .plate { border-radius: 13px; }
+
+/* ------------------------------------------------------------------ notes */
+
+/*
+ * The same idea styled two ways on two routes. Pinning one, navigating, and
+ * pinning the other is the cross-page demo — and the diff is real.
+ */
+.note {
+  background: var(--green-wash);
+  border-left: 3px solid var(--green);
+  border-radius: 0 10px 10px 0;
+  padding: 20px 24px;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+.note--almanac {
+  background: var(--sheet);
+  border-left: none;
+  border: 1px dashed var(--ink-faint);
+  border-radius: 4px;
+  padding: 28px 22px;
+}
+.note h3 { font-family: var(--serif); font-weight: 400; font-size: 18px; margin: 0 0 6px; }
+.note p { margin: 0; color: var(--ink-soft); }
+
+/* ----------------------------------------------------------------- detail */
+
+.detail { display: grid; grid-template-columns: 0.85fr 1fr; gap: 0; border-top: 1px solid var(--rule); }
+.detail__plate { padding: 44px 44px 44px 0; border-right: 1px solid var(--rule); }
+.detail__plate .plate { border-radius: 12px; aspect-ratio: 4 / 5; }
+.detail__body { padding: 44px 0 44px 44px; }
+
+.traitlist { border-top: 1px solid var(--rule); margin-top: 26px; }
+.traitlist div { display: grid; grid-template-columns: 150px 1fr; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.traitlist dt { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+.traitlist dd { margin: 0; }
+
+/* ---------------------------------------------------------------- almanac */
+
+.sowing { border-top: 1px solid var(--rule); }
+.sowing__row { display: grid; grid-template-columns: 210px repeat(12, 1fr); align-items: center; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.sowing__name { font-family: var(--serif); font-size: 17px; }
+.sowing__name em { display: block; font-size: 12px; font-family: var(--sans); font-style: normal; color: var(--ink-faint); }
+.dot { height: 9px; border-radius: 999px; background: var(--sheet-deep); }
+.dot[data-on="sow"] { background: var(--green); }
+.dot[data-on="plant"] { background: #7ba98d; }
+.dot[data-on="harvest"] { background: var(--stamp); }
+.months { display: grid; grid-template-columns: 210px repeat(12, 1fr); gap: 4px; padding-bottom: 10px; font-family: var(--mono); font-size: 9.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.key { display: flex; gap: 22px; margin-top: 20px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; }
+.key i { display: inline-block; width: 9px; height: 9px; border-radius: 999px; margin-right: 7px; vertical-align: 0; }
+
+/* ------------------------------------------------------------------ vault */
+
+.ledger { width: 100%; border-collapse: collapse; }
+.ledger th { text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 400; padding: 0 0 12px; border-bottom: 1px solid var(--rule); }
+.ledger td { padding: 15px 0; border-bottom: 1px solid var(--rule); vertical-align: baseline; }
+.ledger .acc-no { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.ledger .name { font-family: var(--serif); font-size: 18px; }
+.chip { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--green-wash); color: var(--green); }
+.chip[data-state="low"] { background: #f7ece6; color: var(--stamp); }
+.chip[data-state="out"] { background: var(--sheet-deep); color: var(--ink-faint); }
+
+.request { margin-top: 44px; background: var(--sheet); border-radius: 12px; padding: 28px 30px; max-width: 520px; }
+.request h3 { font-family: var(--serif); font-weight: 400; font-size: 20px; margin: 0 0 4px; }
+.request p { margin: 0 0 18px; color: var(--ink-soft); font-size: 14px; }
+.field { display: block; margin-bottom: 12px; }
+.field span { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 5px; }
+.field input { width: 100%; font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px; background: var(--paper); color: var(--ink); }
+.field input:focus { outline: none; border-color: var(--green); }
+.btn { font: inherit; font-size: 14px; font-weight: 500; padding: 9px 18px; border-radius: 7px; border: none; background: var(--green); color: #fff; cursor: pointer; }
+.btn:hover { background: #163b2e; }
+
+/* ----------------------------------------------------------------- footer */
+
+footer { margin-top: 76px; border-top: 1px solid var(--rule); padding: 30px 0 70px; display: flex; gap: 28px; align-items: baseline; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.06em; text-transform: uppercase; }
+footer .stamp { color: var(--stamp); }
+
+.route { display: none; }
+.route[data-active="true"] { display: block; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="masthead" data-pin-component="Masthead" data-pin-source="src/components/Masthead.tsx:8">
+    <div class="mark">Access<span>i</span>on</div>
+    <div class="tagline">Seed bank register · est. 1974</div>
+    <nav data-pin-component="SiteNav" data-pin-source="src/components/SiteNav.tsx:5">
+      <a href="#/catalogue">Catalogue</a>
+      <a href="#/variety">Specimen</a>
+      <a href="#/almanac">Almanac</a>
+      <a href="#/vault">Vault</a>
+    </nav>
+  </header>
+
+  <!-- ============================================================ CATALOGUE -->
+  <section class="route" data-route="/catalogue">
+    <div class="lede" data-pin-component="CatalogueLede" data-pin-source="src/routes/Catalogue.tsx:12">
+      <h1>Nine hundred varieties,<br />kept <em>living</em>.</h1>
+      <p>Every accession in the register is grown out on a seven-year cycle, pressed, and returned to cold store. What you see here is what is currently in seed.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>In seed this season</h2>
+        <span class="count">04 of 62 shown</span>
+      </div>
+
+      <div class="grid">
+        <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
+          <div class="plate">
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
+              <path d="M50 70V26" />
+              <path d="M50 40c-10-2-17-9-19-19 11 0 18 6 19 19z" />
+              <path d="M50 48c10-3 16-11 17-21-11 1-17 8-17 21z" />
+              <path d="M50 58c-8-1-14-7-16-15 9 0 15 5 16 15z" />
+              <ellipse cx="50" cy="22" rx="6" ry="8" />
+            </svg>
+            <span class="acc">ACC 0412</span>
+          </div>
+          <h3 class="card-name">Wren's Egg</h3>
+          <p class="card-latin">Phaseolus vulgaris</p>
+          <div class="traits">
+            <div>Days<b>78</b></div>
+            <div>Store<b>4y</b></div>
+            <div>Germ<b>94%</b></div>
+          </div>
+        </article>
+
+        <article class="variety variety--legacy" data-pin-component="VarietyCardLegacy" data-pin-source="src/components/VarietyCardLegacy.tsx:9">
+          <div class="plate">
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
+              <path d="M50 72V30" />
+              <path d="M50 30c0-9 5-16 14-19-1 10-6 17-14 19z" />
+              <path d="M50 44c-9-2-14-8-15-17 9 1 14 7 15 17z" />
+              <path d="M38 58h24" />
+              <circle cx="50" cy="24" r="5" />
+            </svg>
+            <span class="acc">ACC 0871</span>
+          </div>
+          <h3 class="card-name">Cold Harbour</h3>
+          <p class="card-latin">Pisum sativum</p>
+          <div class="traits">
+            <div>Days<b>64</b></div>
+            <div>Store<b>3y</b></div>
+            <div>Germ<b>88%</b></div>
+          </div>
+        </article>
+
+        <article class="variety variety--compact" data-pin-component="VarietyCardCompact" data-pin-source="src/components/VarietyCardCompact.tsx:6">
+          <div class="plate">
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
+              <path d="M50 70V20" />
+              <path d="M44 30h12M42 40h16M44 50h12" />
+              <path d="M50 20c-5 4-8 9-8 14M50 20c5 4 8 9 8 14" />
+            </svg>
+            <span class="acc">ACC 1130</span>
+          </div>
+          <h3 class="card-name">Bere Barley</h3>
+          <p class="card-latin">Hordeum vulgare</p>
+          <div class="traits">
+            <div>Days<b>96</b></div>
+            <div>Store<b>6y</b></div>
+            <div>Germ<b>91%</b></div>
+          </div>
+        </article>
+
+        <article class="variety variety--feature" data-pin-component="VarietyCardFeature" data-pin-source="src/components/VarietyCardFeature.tsx:11">
+          <div class="plate">
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
+              <path d="M50 72V34" />
+              <path d="M50 34c-12 0-20-8-21-20 12 0 20 8 21 20z" />
+              <path d="M50 46c12-1 19-9 20-20-12 0-19 8-20 20z" />
+              <path d="M43 62c4-3 10-3 14 0" />
+            </svg>
+            <span class="acc">ACC 0009</span>
+          </div>
+          <h3 class="card-name">Painted Mountain</h3>
+          <p class="card-latin">Zea mays</p>
+          <div class="traits">
+            <div>Days<b>85</b></div>
+            <div>Store<b>5y</b></div>
+            <div>Germ<b>96%</b></div>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><h2>Recently returned to store</h2><span class="count">03</span></div>
+      <div class="grid" style="grid-template-columns: repeat(3, 1fr)">
+        <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
+          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round"><path d="M50 70V28"/><path d="M50 38c-11-1-18-8-19-18 11 0 18 7 19 18z"/><path d="M50 50c11-2 17-9 18-19-11 0-17 8-18 19z"/></svg><span class="acc">ACC 0553</span></div>
+          <h3 class="card-name">Skirret</h3>
+          <p class="card-latin">Sium sisarum</p>
+          <div class="traits"><div>Days<b>120</b></div><div>Store<b>2y</b></div><div>Germ<b>72%</b></div></div>
+        </article>
+        <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
+          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round"><path d="M50 70V24"/><path d="M36 44c8-4 20-4 28 0"/><path d="M40 56c6-3 14-3 20 0"/><circle cx="50" cy="20" r="4"/></svg><span class="acc">ACC 0288</span></div>
+          <h3 class="card-name">Good King Henry</h3>
+          <p class="card-latin">Blitum bonus-henricus</p>
+          <div class="traits"><div>Days<b>60</b></div><div>Store<b>3y</b></div><div>Germ<b>81%</b></div></div>
+        </article>
+        <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
+          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round"><path d="M50 72V30"/><path d="M50 30c-9-3-14-10-14-19 9 2 14 9 14 19z"/><path d="M50 42c9-3 14-10 14-19-9 2-14 9-14 19z"/><path d="M44 60h12"/></svg><span class="acc">ACC 1402</span></div>
+          <h3 class="card-name">Lazy Housewife</h3>
+          <p class="card-latin">Phaseolus vulgaris</p>
+          <div class="traits"><div>Days<b>70</b></div><div>Store<b>4y</b></div><div>Germ<b>89%</b></div></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== SPECIMEN -->
+  <section class="route" data-route="/variety">
+    <div class="lede" style="grid-template-columns: 1fr; padding-bottom: 30px">
+      <div>
+        <p class="eyebrow">Accession 0412 · collected Orkney, 1974</p>
+        <h1>Wren's <em>Egg</em></h1>
+      </div>
+    </div>
+
+    <div class="detail">
+      <div class="detail__plate" data-pin-component="SpecimenPlate" data-pin-source="src/components/SpecimenPlate.tsx:7">
+        <div class="plate">
+          <svg viewBox="0 0 100 120" fill="none" stroke="#1d4a3a" stroke-width="1.3" stroke-linecap="round">
+            <path d="M50 108V30" />
+            <path d="M50 46c-14-2-23-12-25-26 15 1 24 11 25 26z" />
+            <path d="M50 60c14-3 22-13 23-27-15 1-23 12-23 27z" />
+            <path d="M50 76c-12-2-19-10-21-22 13 1 20 9 21 22z" />
+            <ellipse cx="50" cy="24" rx="8" ry="11" />
+            <path d="M38 96h24" />
+          </svg>
+          <span class="acc">ACC 0412 · sheet 1 of 3</span>
+        </div>
+      </div>
+
+      <div class="detail__body">
+        <h2>Field notes</h2>
+        <p style="color: var(--ink-soft); max-width: 46ch">A climbing bean held in continuous cultivation on one Orkney holding since at least the 1870s. Seed is white with a maroon saddle, the marking that gives it its name. Tolerates wind better than any other pole bean in the register.</p>
+
+        <div class="note" data-pin-component="NotePanel" data-pin-source="src/components/NotePanel.tsx:10">
+          <h3>Grow-out due 2027</h3>
+          <p>Germination has fallen four points since the last cycle. Priority for the spring plot.</p>
+        </div>
+
+        <dl class="traitlist" data-pin-component="TraitList" data-pin-source="src/components/TraitList.tsx:9">
+          <div><dt>Family</dt><dd>Fabaceae</dd></div>
+          <div><dt>Habit</dt><dd>Climbing, 2.4m</dd></div>
+          <div><dt>Days to maturity</dt><dd>78</dd></div>
+          <div><dt>Germination</dt><dd>94% (tested 03/2026)</dd></div>
+          <div><dt>Store life</dt><dd>4 years at −18°C</dd></div>
+          <div><dt>Donor</dt><dd>M. Sinclair, Birsay</dd></div>
+          <div><dt>Duplicated at</dt><dd>Svalbard, box 114</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== ALMANAC -->
+  <section class="route" data-route="/almanac">
+    <div class="lede" style="grid-template-columns: 1.2fr 1fr">
+      <h1>When to put it<br />in the <em>ground</em>.</h1>
+      <p>Sowing windows for the current season, north temperate. Windows shift roughly a fortnight for every degree of latitude.</p>
+    </div>
+
+    <div class="note note--almanac" data-pin-component="NotePanel" data-pin-source="src/components/NotePanel.tsx:10">
+      <h3>Read this before sowing</h3>
+      <p>Windows assume an unheated polytunnel from March. Direct sowing outdoors runs three weeks later throughout.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><h2>Sowing calendar</h2><span class="count">06 varieties</span></div>
+
+      <div class="months"><span></span><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span></div>
+
+      <div class="sowing" data-pin-component="SowingGrid" data-pin-source="src/components/SowingGrid.tsx:15">
+        <div class="sowing__row"><div class="sowing__name">Wren's Egg<em>ACC 0412</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Cold Harbour<em>ACC 0871</em></div><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Bere Barley<em>ACC 1130</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Painted Mountain<em>ACC 0009</em></div><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Skirret<em>ACC 0553</em></div><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Good King Henry<em>ACC 0288</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      </div>
+
+      <div class="key">
+        <span><i style="background:#1d4a3a"></i>Sow under cover</span>
+        <span><i style="background:#7ba98d"></i>Plant out</span>
+        <span><i style="background:#a33726"></i>Harvest seed</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================= VAULT -->
+  <section class="route" data-route="/vault">
+    <div class="lede" style="grid-template-columns: 1.2fr 1fr">
+      <h1>Cold store,<br />box by <em>box</em>.</h1>
+      <p>Current holdings at −18°C. Anything below forty grams is flagged for grow-out before it can be requested.</p>
+    </div>
+
+    <div class="section" style="border-top: none; padding-top: 0">
+      <table class="ledger" data-pin-component="LedgerTable" data-pin-source="src/components/LedgerTable.tsx:12">
+        <thead><tr><th>Accession</th><th>Variety</th><th>Box</th><th>Mass</th><th>Tested</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0412</td><td class="name">Wren's Egg</td><td class="acc-no">114 · A3</td><td>310 g</td><td>03 / 2026</td><td><span class="chip">In seed</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0871</td><td class="name">Cold Harbour</td><td class="acc-no">114 · A7</td><td>96 g</td><td>11 / 2025</td><td><span class="chip">In seed</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 1130</td><td class="name">Bere Barley</td><td class="acc-no">116 · C1</td><td>1.4 kg</td><td>08 / 2025</td><td><span class="chip">In seed</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0009</td><td class="name">Painted Mountain</td><td class="acc-no">109 · B2</td><td>880 g</td><td>01 / 2026</td><td><span class="chip">In seed</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0553</td><td class="name">Skirret</td><td class="acc-no">121 · D4</td><td>28 g</td><td>05 / 2024</td><td><span class="chip" data-state="low">Grow out</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0288</td><td class="name">Good King Henry</td><td class="acc-no">121 · D9</td><td>52 g</td><td>09 / 2025</td><td><span class="chip">In seed</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 1402</td><td class="name">Lazy Housewife</td><td class="acc-no">118 · A1</td><td>0 g</td><td>02 / 2023</td><td><span class="chip" data-state="out">Depleted</span></td></tr>
+        </tbody>
+      </table>
+
+      <!-- A password field, so the redaction pass has something to cover. -->
+      <div class="request" data-pin-component="RequestForm" data-pin-source="src/components/RequestForm.tsx:8">
+        <h3>Request material</h3>
+        <p>Open to registered growers. Requests are filled once a year, in February.</p>
+        <label class="field"><span>Grower number</span><input type="text" value="GR-40118" /></label>
+        <label class="field"><span>Passphrase</span><input type="password" value="hunter-gatherer" /></label>
+        <button class="btn">Submit request</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span class="stamp">Accession</span>
+    <span>Seed bank register</span>
+    <span>Orkney · Svalbard · Wakehurst</span>
+    <span style="margin-left:auto">Sheet 1 of 3</span>
+  </footer>
+</div>
+
+<script>
+  /* Hash routing, so pins have real routes to survive across. */
+  const routes = [...document.querySelectorAll(".route")];
+  const links = [...document.querySelectorAll("nav a")];
+
+  function show() {
+    const path = location.hash.replace(/^#/, "") || "/catalogue";
+    for (const el of routes) el.dataset.active = String(el.dataset.route === path);
+    for (const a of links) {
+      if (a.getAttribute("href") === `#${path}`) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    }
+    document.title = `Accession — ${path.slice(1)}`;
+  }
+
+  window.addEventListener("hashchange", show);
+  show();
+</script>
+</body>
+</html>
