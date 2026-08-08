@@ -282,26 +282,8 @@
  * because brightening the text of something that will not respond is a promise
  * it cannot keep.
  */
-/*
- * An edge on the off state, which the disabled primary beside it does not get.
- *
- * The grey plate alone reads as "not available" — it is the same fill a
- * disabled button wears, and Capture is the most pressable thing in the panel.
- * A hairline is enough to say it is a control: the fill still says off, the
- * border says you can press it, and the two no longer have to be told apart by
- * remembering which is which.
- */
-.pin-btn--quiet {
-  /* A step past the hairline the rest of the panel uses. At 1px against a grey
-     plate the edge was there and did not register; the fill is close enough to
-     the line that it needs the extra half-pixel to read as an edge at all.
-     Safe to thicken: `box-sizing: border-box` holds the button's footprint. */
-  border-width: 1.5px;
-  border-color: var(--pin-rule);
-}
 .pin-btn--quiet:hover {
   background: var(--pin-off-hover);
-  border-color: var(--pin-rule-strong);
   color: var(--pin-ink);
 }
 .pin-btn--primary:disabled:hover {
