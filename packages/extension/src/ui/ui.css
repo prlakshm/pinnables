@@ -328,18 +328,6 @@
   background: var(--pin-on-fill-hover);
 }
 
-/*
- * Delete follows the same two states, in red. At rest it is a plain grey glyph
- * like any other tool — a permanently red button on every row would make a
- * shelf of pins look like a list of errors. The soft-red disc and the true red
- * arrive on hover and focus, at which point it is unmistakable.
- */
-.pin-icon-btn--danger:hover,
-.pin-icon-btn--danger:focus-visible {
-  background: var(--pin-red-tint);
-  color: var(--pin-red);
-}
-
 .pin-chip {
   display: inline-flex;
   align-items: center;
@@ -353,6 +341,10 @@
   font-weight: 500;
   color: var(--pin-ink-muted);
   white-space: nowrap;
+}
+.pin-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .pin-chip[data-on="true"] {
   background: var(--pin-on-fill);
@@ -1111,27 +1103,7 @@
   color: var(--pin-ink-muted);
   padding: 4px 0;
 }
-.pin-tab-action:hover { color: var(--pin-red); }
-
-/*
- * Exactly the delete button on a pin row, in button form: grey at rest, red only
- * once the pointer is on it.
- *
- * Red at rest was wrong twice over. It made this the loudest thing on screen for
- * a step you had already asked for, and it spent the mark on a button that has
- * not been pressed yet. Red is what the control becomes when you reach for it,
- * not what it is while it waits.
- */
-.pin-btn--danger {
-  background: var(--pin-off);
-  border-color: transparent;
-  color: var(--pin-ink-muted);
-}
-.pin-btn--danger:hover {
-  background: var(--pin-red-tint);
-  border-color: transparent;
-  color: var(--pin-red);
-}
+.pin-tab-action:hover { color: var(--pin-ink); }
 
 .pin-panel__body {
   flex: 1 1 auto;
@@ -1308,6 +1280,13 @@
   flex-direction: column;
   gap: 6px;
   align-items: center;
+}
+
+/* A quiet line under a control, saying what it did not have to ask about. */
+.pin-note-line {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--pin-ink-muted);
 }
 
 .pin-section-label {

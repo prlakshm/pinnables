@@ -1,4 +1,12 @@
-import { computeStyleDiff, STYLE_GROUPS, type Board, type Relationship } from "@pinnables/shared";
+import {
+  computeStyleDiff,
+  differingGroups,
+  pinLabel,
+  STYLE_GROUPS,
+  type Board,
+  type Relationship,
+} from "@pinnables/shared";
+import { useState } from "react";
 import { send } from "../lib/messages";
 import { LinkIcon, TrashIcon } from "../ui/icons";
 
@@ -47,8 +55,26 @@ function RelationshipCard({
   const source = byId.get(relationship.sourcePinId);
   const label = (pinId: string) => {
     const pin = byId.get(pinId);
-    return pin?.componentName ?? pin?.elementText.slice(0, 24) ?? pinId;
+    return pin ? pinLabel(pin, board.pins) : pinId;
   };
+
+  /*
+   * Which groups are worth deciding about.
+   *
+   * A group where both pins already agree has nothing to apply, so offering it
+   * as a live choice is offering a change that would do nothing. It stays on
+   * screen, greyed, because silence would read as "never checked" rather than
+   * "checked and fine".
+   */
+  const differing = source
+    ? new Set(
+        relationship.targetPinIds.flatMap((id) => {
+          const target = byId.get(id);
+          return target ? differingGroups(source, target, GROUP_NAMES) : [];
+        }),
+      )
+    : new Set<string>();
+  const matched = GROUP_NAMES.filter((g) => !differing.has(g));
 
   const patch = async (next: Partial<Relationship>) => {
     await send("relationship/update", { relationshipId: relationship.id, patch: next });
@@ -90,19 +116,29 @@ function RelationshipCard({
         </div>
 
         <div>
-          <span className="pin-section-label">Apply</span>
+          <span className="pin-section-label">Apply changes</span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-            {GROUP_NAMES.map((group) => (
-              <button
-                key={group}
-                className="pin-chip"
-                data-on={relationship.properties.includes(group)}
-                onClick={() => toggleProperty(group)}
-              >
-                {group}
-              </button>
-            ))}
+            {GROUP_NAMES.map((group) => {
+              const same = !differing.has(group);
+              return (
+                <button
+                  key={group}
+                  className="pin-chip"
+                  data-on={relationship.properties.includes(group)}
+                  disabled={same}
+                  onClick={() => !same && toggleProperty(group)}
+                  title={same ? "Already the same on both" : `Make the target match on ${group}`}
+                >
+                  {group}
+                </button>
+              );
+            })}
           </div>
+          {matched.length > 0 && (
+            <p className="pin-note-line">
+              {matched.join(", ")} already match{matched.length === 1 ? "es" : ""}.
+            </p>
+          )}
         </div>
 
         {source &&
@@ -112,16 +148,13 @@ function RelationshipCard({
             const diff = computeStyleDiff(source, target, relationship.properties);
             return (
               <div key={targetId} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--pin-ink-muted)" }}>
+                <span style={{ fontSize: 12, fontWeight: 500 }}>
                   {label(targetId)}
-                  <span style={{ fontFamily: "var(--pin-mono)", fontSize: 10 }}>
-                    {" "}
-                    {target.sourceFile ?? target.route}
-                  </span>
+                  <span style={{ color: "var(--pin-ink-muted)", fontWeight: 400 }}> as target</span>
                 </span>
                 {diff.length === 0 ? (
                   <span style={{ fontSize: 11, color: "var(--pin-ink-muted)" }}>
-                    Already matches across the selected properties.
+                    Pick a property above to see what would change.
                   </span>
                 ) : (
                   <div className="pin-diff">
@@ -142,7 +175,7 @@ function RelationshipCard({
         <textarea
           className="pin-field"
           rows={2}
-          placeholder="Exception — what should stay as it is…"
+          placeholder="Add an annotation…"
           defaultValue={relationship.exception}
           onBlur={(e) => e.target.value !== relationship.exception && void patch({ exception: e.target.value })}
         />

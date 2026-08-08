@@ -212,13 +212,11 @@ function PinRow({
               </span>
             )
           ) : (
-            /* Same tinted disc as the active tool in the nav, in red — the one
-               control here that destroys something, so it gets the one colour
-               reserved for the mark. Status lives on the row's own styling
-               (a resolved pin strikes through its title), so a second dot
-               beside this would be a signal nobody reads. */
+            /* Plain icon button. Colouring it would make every row on the shelf
+               carry a warning, and the row is not dangerous — the click is, and
+               the click is one gesture away from being undone by re-pinning. */
             <button
-              className="pin-icon-btn pin-icon-btn--danger"
+              className="pin-icon-btn"
               style={{ width: 24, height: 24 }}
               onClick={async () => {
                 await send("pin/delete", { pinId: pin.id });

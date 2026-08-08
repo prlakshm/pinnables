@@ -190,7 +190,7 @@ export function App() {
                   Cancel
                 </button>
                 <button
-                  className="pin-btn pin-btn--danger"
+                  className="pin-btn pin-btn--primary"
                   style={{ height: 24, padding: "0 9px" }}
                   onClick={() => void clearBoard()}
                 >
@@ -239,7 +239,7 @@ export function App() {
           <textarea
             className="pin-field"
             rows={2}
-            placeholder="Board instruction — applies to every pin…"
+            placeholder="Add an instruction for every pin…"
             defaultValue={board.globalInstruction}
             onBlur={(e) => void setInstruction(e.target.value)}
           />

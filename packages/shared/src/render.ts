@@ -98,7 +98,7 @@ export function renderRelationship(board: Board, relationshipId: string): string
     }
   }
 
-  if (rel.exception.trim()) lines.push(`except: ${rel.exception}`);
+  if (rel.exception.trim()) lines.push(`note: ${rel.exception}`);
   if (rel.instruction.trim()) lines.push(`> ${rel.instruction}`);
   return lines.join("\n");
 }

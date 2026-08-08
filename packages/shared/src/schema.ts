@@ -107,6 +107,12 @@ export const PinSchema = z.object({
   classList: z.array(z.string()),
   elementText: z.string(),
   componentName: z.string().nullable(),
+  /**
+   * What the user calls this pin. Null means "work it out from the element",
+   * which is right almost always — a name only needs typing when two pins on a
+   * board are the same component and the content does not tell them apart.
+   */
+  name: z.string().nullable().default(null),
   /** "src/components/StatCard.tsx:12" — from the dev plugin, or null. */
   sourceFile: z.string().nullable(),
   /** Allowlisted properties only. See styles.ts. */
@@ -176,3 +182,26 @@ export type Pin = z.infer<typeof PinSchema>;
 export type Relationship = z.infer<typeof RelationshipSchema>;
 export type Board = z.infer<typeof BoardSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
+
+/**
+ * What to call a pin on screen.
+ *
+ * The component name is the right answer until a board holds two of the same
+ * component, which is exactly when a relationship is most likely — "make this
+ * StatCard match that StatCard" is unreadable when both are called StatCard. So
+ * the content disambiguates: the first few words the element actually contains,
+ * which is what a person would have said anyway.
+ *
+ * A typed name always wins. Nothing derived should outrank something chosen.
+ */
+export function pinLabel(pin: Pin, siblings: readonly Pin[] = []): string {
+  if (pin.name?.trim()) return pin.name.trim();
+  const base = pin.componentName ?? pin.elementText.trim().slice(0, 24) ?? "element";
+  if (!pin.componentName) return base || "element";
+
+  const shares = siblings.some((p) => p.id !== pin.id && p.componentName === pin.componentName);
+  if (!shares) return base;
+
+  const detail = pin.elementText.trim().split(/\s+/).slice(0, 3).join(" ");
+  return detail ? `${base} · ${detail}` : base;
+}

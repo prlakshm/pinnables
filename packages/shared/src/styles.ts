@@ -62,6 +62,11 @@ export function expandProperties(properties: readonly string[]): string[] {
   return [...new Set(out)];
 }
 
+/** Which of the named groups actually differ between two pins. */
+export function differingGroups(source: Pin, target: Pin, groups: readonly string[]): string[] {
+  return groups.filter((group) => computeStyleDiff(source, target, [group]).length > 0);
+}
+
 export interface StyleDiffEntry {
   property: string;
   from: string;
