@@ -143,7 +143,8 @@ test("the floating identity label gives the component and source file separate w
 
   assert.match(labelRule, /grid-template-columns:\s*minmax\(0, 1fr\) auto/);
   assert.match(labelRule, /grid-template-areas:\s*"name close"\s*"source close"/);
-  assert.match(labelRule, /overflow-wrap:\s*anywhere/);
+  assert.match(labelRule, /\.pin-object__src\s*\{[\s\S]*white-space:\s*nowrap/);
+  assert.match(labelRule, /\.pin-object__src\s*\{[\s\S]*text-overflow:\s*ellipsis/);
 });
 
 test("floating pins measure relationship-driven size from the live page element", () => {

@@ -759,9 +759,9 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.005em;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The path stays mono and quiet, and gives up its space first — the name is what
@@ -773,9 +773,9 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
   line-height: 1.25;
   color: inherit;
   opacity: 0.55;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
   min-width: 0;
 }
 
@@ -1456,12 +1456,31 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
 .pin-change--stacked {
   row-gap: 5px;
 }
+/*
+ * `display: contents` so the three pieces become grid items of the row itself.
+ *
+ * Spanning columns 3-to-end and laying them out with flex made a second, private
+ * set of columns inside the first — the drawing's arrow landed wherever its own
+ * box put it, a few pixels off the arrow directly above. Dissolving the wrapper
+ * puts before, arrow and after in the same three columns the numbers use, so
+ * they line up because they are in the same grid, not because two gaps happen
+ * to match.
+ */
 .pin-change__viz {
-  grid-column: 3 / -1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  display: contents;
+}
+.pin-change__viz > :nth-child(1) {
+  grid-column: 3;
+}
+.pin-change__viz > :nth-child(2) {
+  grid-column: 4;
+}
+.pin-change__viz > :nth-child(3) {
+  grid-column: 5;
+}
+/* Left edge of the column, the same place the value above starts. */
+.pin-change__viz > * {
+  justify-self: start;
 }
 
 .pin-change__summary {
