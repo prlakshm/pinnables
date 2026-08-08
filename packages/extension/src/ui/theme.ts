@@ -44,59 +44,32 @@ export const PALETTE = {
   redSoft: "#f4564b",
 } as const;
 
-/** WCAG relative luminance, for deciding which side of the fence a colour is on. */
-function luminance(r: number, g: number, b: number): number {
-  const channel = (v: number) => {
-    const s = v / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-function parseRgb(value: string): [number, number, number, number] | null {
-  const match = /rgba?\(([^)]+)\)/.exec(value);
-  if (!match) return null;
-  const parts = match[1].split(/[\s,/]+/).filter(Boolean).map(Number);
-  if (parts.length < 3 || parts.some(Number.isNaN)) return null;
-  return [parts[0], parts[1], parts[2], parts[3] ?? 1];
-}
+const DARK = "(prefers-color-scheme: dark)";
 
 /**
- * The scheme comes from the host page's own background, not from
- * prefers-color-scheme — that setting reports the OS, and a dark app on a light
- * OS is exactly where the chrome would break. Pages routinely leave `body`
- * transparent and colour `html`, or the reverse, so the first opaque one wins.
+ * The scheme comes from the browser, not from the page underneath.
+ *
+ * This used to read the host page's own background luminance, on the theory
+ * that chrome should sit comfortably on whatever it floats over. That was
+ * backwards. Chrome that dresses like the page reads as *part of* the page —
+ * exactly wrong for a tool whose entire job is being visibly separate from the
+ * design you are judging. DevTools is dark over light pages all day and nobody
+ * finds it confusing, because it is obviously furniture.
+ *
+ * It also meant the toolbar and the side panel could disagree with each other:
+ * a dark shelf beside a light toolbar, one product looking like two. They are
+ * both Pinnables, so they take the same signal.
  */
 export function detectScheme(): Scheme {
-  for (const node of [document.body, document.documentElement].filter(Boolean)) {
-    const parsed = parseRgb(getComputedStyle(node).backgroundColor);
-    if (!parsed) continue;
-    const [r, g, b, a] = parsed;
-    if (a < 0.5) continue;
-    return luminance(r, g, b) < 0.45 ? "dark" : "light";
-  }
-  return "light";
+  return window.matchMedia(DARK).matches ? "dark" : "light";
 }
 
-/** Re-run the check when the host page flips its own theme. */
+/** Re-run when the browser or OS flips. */
 export function watchScheme(onChange: (scheme: Scheme) => void): () => void {
-  let current = detectScheme();
-  const check = () => {
-    const next = detectScheme();
-    if (next !== current) {
-      current = next;
-      onChange(next);
-    }
-  };
-  const observer = new MutationObserver(check);
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["class", "style", "data-theme"],
-  });
-  if (document.body) {
-    observer.observe(document.body, { attributes: true, attributeFilter: ["class", "style"] });
-  }
-  return () => observer.disconnect();
+  const query = window.matchMedia(DARK);
+  const handle = (event: MediaQueryListEvent) => onChange(event.matches ? "dark" : "light");
+  query.addEventListener("change", handle);
+  return () => query.removeEventListener("change", handle);
 }
 
 export type AnchorEdge = "left" | "right" | "top" | "bottom";

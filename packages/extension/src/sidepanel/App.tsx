@@ -36,6 +36,8 @@ export function App() {
    * from, so clearing the board after a failed copy would strand the work.
    */
   const [uncopied, setUncopied] = useState<string | null>(null);
+  /** Two-step, because clearing a board is the one thing here you cannot undo. */
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const reload = useCallback(async () => {
     const [{ board: next }, extState] = await Promise.all([
@@ -54,6 +56,13 @@ export function App() {
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, [reload]);
+
+  const clearBoard = useCallback(async () => {
+    if (!board) return;
+    await send("board/clear", { boardId: board.id });
+    setConfirmClear(false);
+    void reload();
+  }, [board, reload]);
 
   const toggleCapture = useCallback(async () => {
     if (!state) return;
@@ -162,6 +171,43 @@ export function App() {
         >
           Relationships {relCount > 0 && <span className="pin-badge">{relCount}</span>}
         </button>
+
+        {/*
+          * Clearing is the only irreversible thing in the panel, so it asks
+          * once. It sits on the tab rail rather than in the footer because it
+          * acts on exactly what the tabs are counting, and it disappears when
+          * there is nothing left to clear.
+          */}
+        {pinCount + relCount > 0 && (
+          <span className="pin-panel__tabs-end">
+            {confirmClear ? (
+              <>
+                <button
+                  className="pin-btn pin-btn--quiet"
+                  style={{ height: 24, padding: "0 9px" }}
+                  onClick={() => setConfirmClear(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="pin-btn pin-btn--danger"
+                  style={{ height: 24, padding: "0 9px" }}
+                  onClick={() => void clearBoard()}
+                >
+                  Clear {pinCount + relCount}
+                </button>
+              </>
+            ) : (
+              <button
+                className="pin-tab-action"
+                onClick={() => setConfirmClear(true)}
+                title="Remove every pin and relationship on this board"
+              >
+                Clear all
+              </button>
+            )}
+          </span>
+        )}
       </nav>
 
       <div className="pin-panel__body">

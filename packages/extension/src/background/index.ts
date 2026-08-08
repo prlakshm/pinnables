@@ -510,6 +510,15 @@ const handlers: Handlers = {
     return { board };
   },
 
+  async "board/clear"({ boardId }) {
+    const current = await store.readBoard(boardId);
+    // Screenshots are the bulk of what a board costs, so they go with it.
+    if (current) await Promise.all(current.pins.map((p) => store.dropScreenshot(p.id)));
+    const board = await store.mutateBoard(boardId, (b) => ({ ...b, pins: [], relationships: [] }));
+    await notifyBoardChanged(boardId);
+    return { board };
+  },
+
   async "relationship/delete"({ relationshipId }) {
     const found = await store.boardForRelationship(relationshipId);
     const board = await store.mutateBoard(found.id, (b) => ({

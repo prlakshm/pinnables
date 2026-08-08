@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Accession — a seed bank register</title>
+<title>Accession — a register of birth-month flowers</title>
 <style>
 /*
  * A film set, not a demo.
@@ -257,7 +257,7 @@ footer .stamp { color: var(--stamp); }
 <div class="wrap">
   <header class="masthead" data-pin-component="Masthead" data-pin-source="src/components/Masthead.tsx:8">
     <div class="mark">Access<span>i</span>on</div>
-    <div class="tagline">Seed bank register · est. 1974</div>
+    <div class="tagline">Birth-month flower register · est. 1974</div>
     <nav data-pin-component="SiteNav" data-pin-source="src/components/SiteNav.tsx:5">
       <a href="#/catalogue">Catalogue</a>
       <a href="#/variety">Specimen</a>
@@ -269,30 +269,24 @@ footer .stamp { color: var(--stamp); }
   <!-- ============================================================ CATALOGUE -->
   <section class="route" data-route="/catalogue">
     <div class="lede" data-pin-component="CatalogueLede" data-pin-source="src/routes/Catalogue.tsx:12">
-      <h1>Nine hundred varieties,<br />kept <em>living</em>.</h1>
-      <p>Every accession in the register is grown out on a seven-year cycle, pressed, and returned to cold store. What you see here is what is currently in seed.</p>
+      <h1>Twelve months,<br />twelve <em>flowers</em>.</h1>
+      <p>One flower for every month of the year, the way they have been assigned since the Romans. Each is grown out, pressed, and held in the register as a living reference.</p>
     </div>
 
     <div class="section">
       <div class="section-head">
-        <h2>In seed this season</h2>
+        <h2>In flower this season</h2>
         <span class="count">04 of 62 shown</span>
       </div>
 
       <div class="grid">
         <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
           <div class="plate">
-            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
-              <path d="M50 70V26" />
-              <path d="M50 40c-10-2-17-9-19-19 11 0 18 6 19 19z" />
-              <path d="M50 48c10-3 16-11 17-21-11 1-17 8-17 21z" />
-              <path d="M50 58c-8-1-14-7-16-15 9 0 15 5 16 15z" />
-              <ellipse cx="50" cy="22" rx="6" ry="8" />
-            </svg>
-            <span class="acc">ACC 0412</span>
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 74V40"/><path d="M50 40c-9 0-15-6-15-14 0-7 6-12 15-12s15 5 15 12c0 8-6 14-15 14z"/><path d="M41 26c4-4 14-4 18 0"/><path d="M44 32c3-3 9-3 12 0"/><path d="M50 56c-9-1-14-6-15-13 9 0 14 5 15 13z"/><path d="M50 64c9-1 14-6 15-13-9 0-14 5-15 13z"/></svg>
+            <span class="acc">ACC 0612</span>
           </div>
-          <h3 class="card-name">Wren's Egg</h3>
-          <p class="card-latin">Phaseolus vulgaris</p>
+          <h3 class="card-name">Rose</h3>
+          <p class="card-latin">Rosa gallica</p>
           <div class="traits">
             <div>Days<b>78</b></div>
             <div>Store<b>4y</b></div>
@@ -302,17 +296,11 @@ footer .stamp { color: var(--stamp); }
 
         <article class="variety variety--legacy" data-pin-component="VarietyCardLegacy" data-pin-source="src/components/VarietyCardLegacy.tsx:9">
           <div class="plate">
-            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
-              <path d="M50 72V30" />
-              <path d="M50 30c0-9 5-16 14-19-1 10-6 17-14 19z" />
-              <path d="M50 44c-9-2-14-8-15-17 9 1 14 7 15 17z" />
-              <path d="M38 58h24" />
-              <circle cx="50" cy="24" r="5" />
-            </svg>
-            <span class="acc">ACC 0871</span>
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 76V38"/><path d="M50 38 34 24m16 14 16-14M50 38 40 18m10 20 10-20M50 38V16"/><ellipse cx="50" cy="30" rx="8" ry="7"/><path d="M42 52c8-3 16-3 20 2"/></svg>
+            <span class="acc">ACC 0301</span>
           </div>
-          <h3 class="card-name">Cold Harbour</h3>
-          <p class="card-latin">Pisum sativum</p>
+          <h3 class="card-name">Daffodil</h3>
+          <p class="card-latin">Narcissus pseudonarcissus</p>
           <div class="traits">
             <div>Days<b>64</b></div>
             <div>Store<b>3y</b></div>
@@ -322,15 +310,11 @@ footer .stamp { color: var(--stamp); }
 
         <article class="variety variety--compact" data-pin-component="VarietyCardCompact" data-pin-source="src/components/VarietyCardCompact.tsx:6">
           <div class="plate">
-            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
-              <path d="M50 70V20" />
-              <path d="M44 30h12M42 40h16M44 50h12" />
-              <path d="M50 20c-5 4-8 9-8 14M50 20c5 4 8 9 8 14" />
-            </svg>
-            <span class="acc">ACC 1130</span>
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 74V42"/><circle cx="50" cy="30" r="9"/><path d="M50 21V13M50 47v-8M41 30h-8m26 0h8M43 23l-6-6m20 6 6-6M43 37l-6 6m20-6 6 6"/><path d="M50 58c-8-1-13-6-14-12 8 0 13 5 14 12z"/></svg>
+            <span class="acc">ACC 1017</span>
           </div>
-          <h3 class="card-name">Bere Barley</h3>
-          <p class="card-latin">Hordeum vulgare</p>
+          <h3 class="card-name">Marigold</h3>
+          <p class="card-latin">Tagetes erecta</p>
           <div class="traits">
             <div>Days<b>96</b></div>
             <div>Store<b>6y</b></div>
@@ -340,16 +324,11 @@ footer .stamp { color: var(--stamp); }
 
         <article class="variety variety--feature" data-pin-component="VarietyCardFeature" data-pin-source="src/components/VarietyCardFeature.tsx:11">
           <div class="plate">
-            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round">
-              <path d="M50 72V34" />
-              <path d="M50 34c-12 0-20-8-21-20 12 0 20 8 21 20z" />
-              <path d="M50 46c12-1 19-9 20-20-12 0-19 8-20 20z" />
-              <path d="M43 62c4-3 10-3 14 0" />
-            </svg>
-            <span class="acc">ACC 0009</span>
+            <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 76V44"/><circle cx="50" cy="30" r="8"/><path d="M50 22c0-6 3-10 8-11-1 6-3 9-8 11zm0 0c0-6-3-10-8-11 1 6 3 9 8 11z"/><path d="M58 30c6 0 10 3 11 8-6-1-9-3-11-8zm-16 0c-6 0-10 3-11 8 6-1 9-3 11-8z"/><path d="M50 38c0 6 3 10 8 11-1-6-3-9-8-11zm0 0c0 6-3 10-8 11 1-6 3-9 8-11z"/><path d="M42 58c6-3 12-3 16 1"/></svg>
+            <span class="acc">ACC 0803</span>
           </div>
-          <h3 class="card-name">Painted Mountain</h3>
-          <p class="card-latin">Zea mays</p>
+          <h3 class="card-name">Sunflower</h3>
+          <p class="card-latin">Helianthus annuus</p>
           <div class="traits">
             <div>Days<b>85</b></div>
             <div>Store<b>5y</b></div>
@@ -360,24 +339,24 @@ footer .stamp { color: var(--stamp); }
     </div>
 
     <div class="section">
-      <div class="section-head"><h2>Recently returned to store</h2><span class="count">03</span></div>
+      <div class="section-head"><h2>Later in the year</h2><span class="count">03</span></div>
       <div class="grid" style="grid-template-columns: repeat(3, 1fr)">
         <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
-          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round"><path d="M50 70V28"/><path d="M50 38c-11-1-18-8-19-18 11 0 18 7 19 18z"/><path d="M50 50c11-2 17-9 18-19-11 0-17 8-18 19z"/></svg><span class="acc">ACC 0553</span></div>
-          <h3 class="card-name">Skirret</h3>
-          <p class="card-latin">Sium sisarum</p>
+          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 74V44"/><path d="M38 34c0-8 5-13 12-13s12 5 12 13c0 7-5 11-12 11s-12-4-12-11z"/><path d="M40 28c6-3 14-3 20 0M40 38c6 3 14 3 20 0"/><path d="M44 58c4-2 9-2 12 0"/></svg><span class="acc">ACC 0114</span></div>
+          <h3 class="card-name">Carnation</h3>
+          <p class="card-latin">Dianthus caryophyllus</p>
           <div class="traits"><div>Days<b>120</b></div><div>Store<b>2y</b></div><div>Germ<b>72%</b></div></div>
         </article>
         <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
-          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round"><path d="M50 70V24"/><path d="M36 44c8-4 20-4 28 0"/><path d="M40 56c6-3 14-3 20 0"/><circle cx="50" cy="20" r="4"/></svg><span class="acc">ACC 0288</span></div>
-          <h3 class="card-name">Good King Henry</h3>
-          <p class="card-latin">Blitum bonus-henricus</p>
+          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 76V40"/><path d="M50 40c-10-2-16-9-16-18 10 1 16 8 16 18z"/><path d="M50 34c9-2 15-8 15-16-9 1-15 7-15 16z"/><path d="M64 44c5 3 7 8 6 14-5-3-7-8-6-14z"/><path d="M36 52c-5 3-7 8-6 14 5-3 7-8 6-14z"/></svg><span class="acc">ACC 0409</span></div>
+          <h3 class="card-name">Sweet Pea</h3>
+          <p class="card-latin">Lathyrus odoratus</p>
           <div class="traits"><div>Days<b>60</b></div><div>Store<b>3y</b></div><div>Germ<b>81%</b></div></div>
         </article>
         <article class="variety" data-pin-component="VarietyCard" data-pin-source="src/components/VarietyCard.tsx:14">
-          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round"><path d="M50 72V30"/><path d="M50 30c-9-3-14-10-14-19 9 2 14 9 14 19z"/><path d="M50 42c9-3 14-10 14-19-9 2-14 9-14 19z"/><path d="M44 60h12"/></svg><span class="acc">ACC 1402</span></div>
-          <h3 class="card-name">Lazy Housewife</h3>
-          <p class="card-latin">Phaseolus vulgaris</p>
+          <div class="plate"><svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M52 76V22"/><path d="M52 22c-8 2-13 8-14 16"/><circle cx="42" cy="34" r="5"/><circle cx="46" cy="48" r="5"/><circle cx="50" cy="62" r="5"/><path d="M52 30l-6 4m6 10-4 4m4 10-2 4"/></svg><span class="acc">ACC 0521</span></div>
+          <h3 class="card-name">Lily of the Valley</h3>
+          <p class="card-latin">Convallaria majalis</p>
           <div class="traits"><div>Days<b>70</b></div><div>Store<b>4y</b></div><div>Germ<b>89%</b></div></div>
         </article>
       </div>
@@ -388,8 +367,8 @@ footer .stamp { color: var(--stamp); }
   <section class="route" data-route="/variety">
     <div class="lede" style="grid-template-columns: 1fr; padding-bottom: 30px">
       <div>
-        <p class="eyebrow">Accession 0412 · collected Orkney, 1974</p>
-        <h1>Wren's <em>Egg</em></h1>
+        <p class="eyebrow">Accession 0612 · the flower of June</p>
+        <h1>The <em>Rose</em></h1>
       </div>
     </div>
 
@@ -404,24 +383,24 @@ footer .stamp { color: var(--stamp); }
             <ellipse cx="50" cy="24" rx="8" ry="11" />
             <path d="M38 96h24" />
           </svg>
-          <span class="acc">ACC 0412 · sheet 1 of 3</span>
+          <span class="acc">ACC 0612 · sheet 1 of 3</span>
         </div>
       </div>
 
       <div class="detail__body">
         <h2>Field notes</h2>
-        <p style="color: var(--ink-soft); max-width: 46ch">A climbing bean held in continuous cultivation on one Orkney holding since at least the 1870s. Seed is white with a maroon saddle, the marking that gives it its name. Tolerates wind better than any other pole bean in the register.</p>
+        <p style="color: var(--ink-soft); max-width: 46ch">June's flower, and the oldest assignment in the register — the Romans gave the month to Juno and the rose to Venus, and the pairing outlasted both. The apothecary rose held here has been in continuous cultivation since the 1300s.</p>
 
         <div class="note" data-pin-component="NotePanel" data-pin-source="src/components/NotePanel.tsx:10">
           <h3>Grow-out due 2027</h3>
-          <p>Germination has fallen four points since the last cycle. Priority for the spring plot.</p>
+          <p>Viability has fallen four points since the last cycle. Priority for the spring beds.</p>
         </div>
 
         <dl class="traitlist" data-pin-component="TraitList" data-pin-source="src/components/TraitList.tsx:9">
-          <div><dt>Family</dt><dd>Fabaceae</dd></div>
-          <div><dt>Habit</dt><dd>Climbing, 2.4m</dd></div>
-          <div><dt>Days to maturity</dt><dd>78</dd></div>
-          <div><dt>Germination</dt><dd>94% (tested 03/2026)</dd></div>
+          <div><dt>Family</dt><dd>Rosaceae</dd></div>
+          <div><dt>Month</dt><dd>June</dd></div>
+          <div><dt>Days to flower</dt><dd>78</dd></div>
+          <div><dt>Viability</dt><dd>94% (tested 03/2026)</dd></div>
           <div><dt>Store life</dt><dd>4 years at −18°C</dd></div>
           <div><dt>Donor</dt><dd>M. Sinclair, Birsay</dd></div>
           <div><dt>Duplicated at</dt><dd>Svalbard, box 114</dd></div>
@@ -433,8 +412,8 @@ footer .stamp { color: var(--stamp); }
   <!-- =============================================================== ALMANAC -->
   <section class="route" data-route="/almanac">
     <div class="lede" style="grid-template-columns: 1.2fr 1fr">
-      <h1>When to put it<br />in the <em>ground</em>.</h1>
-      <p>Sowing windows for the current season, north temperate. Windows shift roughly a fortnight for every degree of latitude.</p>
+      <h1>When each one<br />comes into <em>flower</em>.</h1>
+      <p>Flowering windows for the current season, north temperate. Windows shift roughly a fortnight for every degree of latitude.</p>
     </div>
 
     <div class="note note--almanac" data-pin-component="NotePanel" data-pin-source="src/components/NotePanel.tsx:10">
@@ -443,23 +422,23 @@ footer .stamp { color: var(--stamp); }
     </div>
 
     <div class="section">
-      <div class="section-head"><h2>Sowing calendar</h2><span class="count">06 varieties</span></div>
+      <div class="section-head"><h2>Flowering calendar</h2><span class="count">06 of 12 shown</span></div>
 
       <div class="months"><span></span><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span></div>
 
       <div class="sowing" data-pin-component="SowingGrid" data-pin-source="src/components/SowingGrid.tsx:15">
-        <div class="sowing__row"><div class="sowing__name">Wren's Egg<em>ACC 0412</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-        <div class="sowing__row"><div class="sowing__name">Cold Harbour<em>ACC 0871</em></div><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-        <div class="sowing__row"><div class="sowing__name">Bere Barley<em>ACC 1130</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span></div>
-        <div class="sowing__row"><div class="sowing__name">Painted Mountain<em>ACC 0009</em></div><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-        <div class="sowing__row"><div class="sowing__name">Skirret<em>ACC 0553</em></div><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span></div>
-        <div class="sowing__row"><div class="sowing__name">Good King Henry<em>ACC 0288</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Rose<em>ACC 0612</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Daffodil<em>ACC 0301</em></div><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Marigold<em>ACC 1017</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Sunflower<em>ACC 0803</em></div><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Carnation<em>ACC 0114</em></div><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span></div>
+        <div class="sowing__row"><div class="sowing__name">Sweet Pea<em>ACC 0409</em></div><span class="dot"></span><span class="dot"></span><span class="dot" data-on="sow"></span><span class="dot" data-on="plant"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot" data-on="harvest"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
       </div>
 
       <div class="key">
         <span><i style="background:#1d4a3a"></i>Sow under cover</span>
         <span><i style="background:#7ba98d"></i>Plant out</span>
-        <span><i style="background:#a33726"></i>Harvest seed</span>
+        <span><i style="background:#a33726"></i>In flower</span>
       </div>
     </div>
   </section>
@@ -475,13 +454,13 @@ footer .stamp { color: var(--stamp); }
       <table class="ledger" data-pin-component="LedgerTable" data-pin-source="src/components/LedgerTable.tsx:12">
         <thead><tr><th>Accession</th><th>Variety</th><th>Box</th><th>Mass</th><th>Tested</th><th>Status</th></tr></thead>
         <tbody>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0412</td><td class="name">Wren's Egg</td><td class="acc-no">114 · A3</td><td>310 g</td><td>03 / 2026</td><td><span class="chip">In seed</span></td></tr>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0871</td><td class="name">Cold Harbour</td><td class="acc-no">114 · A7</td><td>96 g</td><td>11 / 2025</td><td><span class="chip">In seed</span></td></tr>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 1130</td><td class="name">Bere Barley</td><td class="acc-no">116 · C1</td><td>1.4 kg</td><td>08 / 2025</td><td><span class="chip">In seed</span></td></tr>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0009</td><td class="name">Painted Mountain</td><td class="acc-no">109 · B2</td><td>880 g</td><td>01 / 2026</td><td><span class="chip">In seed</span></td></tr>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0553</td><td class="name">Skirret</td><td class="acc-no">121 · D4</td><td>28 g</td><td>05 / 2024</td><td><span class="chip" data-state="low">Grow out</span></td></tr>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0288</td><td class="name">Good King Henry</td><td class="acc-no">121 · D9</td><td>52 g</td><td>09 / 2025</td><td><span class="chip">In seed</span></td></tr>
-          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 1402</td><td class="name">Lazy Housewife</td><td class="acc-no">118 · A1</td><td>0 g</td><td>02 / 2023</td><td><span class="chip" data-state="out">Depleted</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0612</td><td class="name">Rose</td><td class="acc-no">114 · A3</td><td>310 g</td><td>03 / 2026</td><td><span class="chip">In flower</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0301</td><td class="name">Daffodil</td><td class="acc-no">114 · A7</td><td>96 g</td><td>11 / 2025</td><td><span class="chip">In flower</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 1017</td><td class="name">Marigold</td><td class="acc-no">116 · C1</td><td>1.4 kg</td><td>08 / 2025</td><td><span class="chip">In flower</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0803</td><td class="name">Sunflower</td><td class="acc-no">109 · B2</td><td>880 g</td><td>01 / 2026</td><td><span class="chip">In flower</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0114</td><td class="name">Carnation</td><td class="acc-no">121 · D4</td><td>28 g</td><td>05 / 2024</td><td><span class="chip" data-state="low">Grow out</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0409</td><td class="name">Sweet Pea</td><td class="acc-no">121 · D9</td><td>52 g</td><td>09 / 2025</td><td><span class="chip">In flower</span></td></tr>
+          <tr data-pin-component="LedgerRow" data-pin-source="src/components/LedgerRow.tsx:6"><td class="acc-no">ACC 0521</td><td class="name">Lily of the Valley</td><td class="acc-no">118 · A1</td><td>0 g</td><td>02 / 2023</td><td><span class="chip" data-state="out">Depleted</span></td></tr>
         </tbody>
       </table>
 
@@ -498,7 +477,7 @@ footer .stamp { color: var(--stamp); }
 
   <footer>
     <span class="stamp">Accession</span>
-    <span>Seed bank register</span>
+    <span>Birth-month flower register</span>
     <span>Orkney · Svalbard · Wakehurst</span>
     <span style="margin-left:auto">Sheet 1 of 3</span>
   </footer>

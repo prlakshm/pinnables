@@ -1093,6 +1093,32 @@
  * grows past the panel instead of scrolling, and the footer is pushed out of
  * sight. The overflow property was never the problem; the floor under it was.
  */
+/* Pushed to the far end of the tab rail, aligned with the tabs it acts on. */
+.pin-panel__tabs-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+
+.pin-tab-action {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pin-ink-muted);
+  padding: 4px 0;
+}
+.pin-tab-action:hover { color: var(--pin-red); }
+
+/* The only button in the product that removes something for good, so it is the
+   only one that wears the mark as a fill rather than as a tint. */
+.pin-btn--danger {
+  background: var(--pin-red);
+  border-color: var(--pin-red);
+  color: #fff;
+}
+.pin-btn--danger:hover { background: var(--pin-red-soft); border-color: var(--pin-red-soft); }
+
 .pin-panel__body {
   flex: 1 1 auto;
   min-height: 0;

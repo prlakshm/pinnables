@@ -43,11 +43,16 @@ createServer(async (req, res) => {
   const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   try {
     const body = await readFile(join(ROOT, file));
-    res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+    // Never cache. These files are edited constantly and a stale fixture is a
+    // bug hunt that has nothing to do with the tool.
+    res.writeHead(200, {
+      "content-type": TYPES[extname(file)] ?? "application/octet-stream",
+      "cache-control": "no-store",
+    });
     res.end(body);
   } catch {
     // Single-page app: unknown paths fall through to the shell.
-    res.writeHead(200, { "content-type": TYPES[".html"] });
+    res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store" });
     res.end(await readFile(join(ROOT, "index.html")));
   }
 }).listen(PORT, () => {

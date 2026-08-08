@@ -111,6 +111,13 @@ export interface Contract {
     res: { board: Board };
   };
   "relationship/delete": { req: { relationshipId: string }; res: { board: Board } };
+
+  /**
+   * Empty the board — every pin, every relationship, every screenshot. One
+   * message rather than a loop of deletes from the panel, so a board half-
+   * cleared by a worker that went to sleep is not a state that can exist.
+   */
+  "board/clear": { req: { boardId: string }; res: { board: Board } };
 }
 
 export type RequestType = keyof Contract;
