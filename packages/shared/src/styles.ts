@@ -56,21 +56,7 @@ export const STYLE_GROUPS = {
 
 export type StyleGroup = keyof typeof STYLE_GROUPS;
 
-/**
- * Captured, never offered.
- *
- * `isFlexStretched` needs these to tell a width somebody chose from one the row
- * handed out — without them every flex-derived size is offered as a change that
- * cannot be applied. But they are not something to have an opinion about:
- * nobody opens a diff wanting to match `flex-basis`. So they are captured for
- * the guards and kept out of the groups, which are the menu.
- */
-const CAPTURE_ONLY = ["flex-grow", "flex-shrink", "flex-basis"] as const;
-
-export const STYLE_ALLOWLIST: readonly string[] = [
-  ...Object.values(STYLE_GROUPS).flat(),
-  ...CAPTURE_ONLY,
-];
+export const STYLE_ALLOWLIST: readonly string[] = Object.values(STYLE_GROUPS).flat();
 
 /**
  * Expand a relationship's `properties` — which may hold friendly group names
@@ -142,15 +128,10 @@ export function applicabilityGuard(
   target: Pin,
 ): (property: string) => Applicability {
   const sourceBordered = hasVisibleBorder(source.computedStyles);
-  const bothStretched =
-    isFlexStretched(source.computedStyles) && isFlexStretched(target.computedStyles);
 
   return (property) => {
     if (property === "border-color" && !sourceBordered) {
       return { applicable: false, reason: "the source draws no border" };
-    }
-    if (bothStretched && (property === "width" || property === "height")) {
-      return { applicable: false, reason: "the flex row sets this size, not the element" };
     }
     return APPLICABLE;
   };
@@ -228,29 +209,6 @@ export function computeBlockedChanges(
     blocked.push({ property, from, to, applicability });
   }
   return blocked;
-}
-
-/**
- * Whether an element's size is handed to it by its flex container.
- *
- * `flex: 1` means `flex-grow: 1` and `flex-basis: 0%`: the row divides its space
- * and the item takes a share. The resulting width is real, and it is what
- * `getComputedStyle` reports, but nobody chose it — put the same card in a row
- * of three instead of four and the number changes.
- *
- * When both pins are stretched like this, their sizes differ because their rows
- * differ, not because they disagree about anything. Offering "match size" there
- * promises a change that cannot be written: `width` on such an item is ignored,
- * so the preview moves nothing and an agent handed the same line ships a no-op.
- *
- * A width that *is* authored — `flex: 0 0 240px`, or no flex parent at all —
- * still diffs normally. This only removes the dimensions nobody wrote.
- */
-function isFlexStretched(styles: Record<string, string>): boolean {
-  const grow = parseFloat(styles["flex-grow"] ?? "0");
-  const basis = styles["flex-basis"];
-  if (!(grow > 0) || basis === undefined) return false;
-  return basis === "0px" || basis === "0%" || basis.endsWith("%");
 }
 
 /**

@@ -193,10 +193,11 @@ export function App() {
     <div className="pin-panel">
       <header className="pin-panel__header">
         <img src={wordmarkUrl} alt="Pinnables" style={{ height: 17, display: "block" }} />
-        {/* Black when armed, light grey when not — the same pair as Ready for
-            agent and the composer's send. */}
+        {/* Black when armed; the plain button when not, the same one "New
+            relationship" uses — off is a thing you can press, not a thing that
+            has been dimmed. */}
         <button
-          className={`pin-btn ${state?.captureMode ? "pin-btn--primary" : "pin-btn--quiet"}`}
+          className={`pin-btn${state?.captureMode ? " pin-btn--primary" : ""}`}
           style={{ marginLeft: "auto" }}
           onClick={() => void toggleCapture()}
           aria-pressed={state?.captureMode ?? false}
