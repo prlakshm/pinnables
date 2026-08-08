@@ -20,8 +20,21 @@ const SWATCH = 22;
 /** The largest specimen we will draw, so a 48px heading cannot blow up the row. */
 const TYPE_CEILING = 20;
 
+/**
+ * Which changes are worth drawing.
+ *
+ * A drawing earns its line when the shape *is* the property: a radius is a
+ * corner, a shadow is a shadow, a colour is a colour, and a type size only
+ * means anything next to the size it is compared with. You judge those by
+ * looking, and the numbers alone make you imagine them.
+ *
+ * Box and gap are not like that. `32px 24px → 16px 20px` is already the whole
+ * story, and the swatch beside it — two dashed rectangles a few pixels apart —
+ * adds a line of height and nothing you did not already know. It read as noise
+ * next to the values it was supposed to support.
+ */
 export function hasPreview(kind: ValueKind): boolean {
-  return kind !== "text";
+  return kind === "color" || kind === "shadow" || kind === "radius" || kind === "type";
 }
 
 const frame: CSSProperties = {
