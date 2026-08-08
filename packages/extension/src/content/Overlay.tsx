@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { DEFAULT_DRAW_COLOR, type Board, type DrawShape, type Pin } from "@pinnables/shared";
 import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from "../lib/capture";
 import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
@@ -43,6 +51,9 @@ interface Connecting {
 }
 
 const posKey = (pinId: string) => `pos:${pinId}`;
+
+/** One shared empty array, so "no marks" is a stable dependency. */
+const NO_SHAPES: DrawShape[] = [];
 
 /** The midpoint of one edge of a rect, in viewport coordinates. */
 function edgePoint(rect: DOMRect, edge: AnchorEdge): Point {
@@ -206,7 +217,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   /* ------------------------------------------------------------------ ink */
 
   const regionPin = board?.pins.find((p) => p.kind === "region" && p.route === route) ?? null;
-  const shapes = regionPin?.drawings ?? [];
+  /*
+   * Memoised, and `?? []` would not be. A fresh array literal on every render is
+   * a fresh dependency, which rebuilt the measure callback, which re-ran its
+   * effect, which set state, which rendered again. The empty case is a module
+   * constant for the same reason.
+   */
+  const shapes = useMemo(() => regionPin?.drawings ?? NO_SHAPES, [regionPin]);
   const placed = usePlacedShapes(shapes);
 
   /**

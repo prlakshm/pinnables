@@ -1027,27 +1027,6 @@
  * grows past the panel instead of scrolling, and the footer is pushed out of
  * sight. The overflow property was never the problem; the floor under it was.
  */
-/*
- * Sits between the header and the tabs, outside the scrolling list. A notice
- * about why the tool is not working is the one thing that must not be able to
- * scroll out of view.
- */
-.pin-notice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 0 0 auto;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--pin-rule);
-  background: var(--pin-off);
-  color: var(--pin-ink);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.pin-notice[data-tone="flat"] {
-  color: var(--pin-ink-muted);
-}
-
 .pin-panel__body {
   flex: 1 1 auto;
   min-height: 0;

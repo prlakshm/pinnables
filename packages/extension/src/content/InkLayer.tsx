@@ -46,11 +46,31 @@ export function placeShapes(shapes: DrawShape[]): PlacedShape[] {
   });
 }
 
-/** Marks scaled to fit the page as it is now, ready to paint. */
+/** A cheap identity for a placement, so re-measuring can be a no-op. */
+function fingerprint(placed: PlacedShape[]): string {
+  return placed
+    .map((p) => `${p.shape.id}:${p.rect.x},${p.rect.y},${p.rect.width},${p.rect.height}`)
+    .join("|");
+}
+
+/**
+ * Marks scaled to fit the page as it is now, ready to paint.
+ *
+ * Every re-measure has to be able to change nothing. `placeShapes` builds a new
+ * array each call, so setting it unconditionally makes a new reference on every
+ * pass — and with a ResizeObserver feeding the loop that is a render that
+ * schedules a render, forever. React calls it "maximum update depth exceeded";
+ * from the outside the overlay simply never appears.
+ */
 export function usePlacedShapes(shapes: DrawShape[]): PlacedShape[] {
   const [placed, setPlaced] = useState<PlacedShape[]>(() => placeShapes(shapes));
 
-  const measure = useCallback(() => setPlaced(placeShapes(shapes)), [shapes]);
+  const measure = useCallback(() => {
+    setPlaced((current) => {
+      const next = placeShapes(shapes);
+      return fingerprint(next) === fingerprint(current) ? current : next;
+    });
+  }, [shapes]);
 
   useLayoutEffect(() => {
     measure();
@@ -107,10 +127,18 @@ export function InkLayer({ placed, onErase }: InkLayerProps) {
   }));
 
   useEffect(() => {
+    /*
+     * Same trap, one level down and worse: this layer is sized to the document
+     * and observes the document, so a new object on every observation is a loop
+     * that also happens to be measuring itself. Only real numbers get through.
+     */
     const measure = () =>
-      setSize({
-        width: document.documentElement.scrollWidth,
-        height: document.documentElement.scrollHeight,
+      setSize((current) => {
+        const width = document.documentElement.scrollWidth;
+        const height = document.documentElement.scrollHeight;
+        return current.width === width && current.height === height
+          ? current
+          : { width, height };
       });
     measure();
     const observer = new ResizeObserver(measure);

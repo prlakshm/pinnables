@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Board } from "@pinnables/shared";
-import { send, type Broadcast, type ExtensionState, type TabArmState } from "../lib/messages";
-import { useSiteAccess } from "./useSiteAccess";
+import { send, type Broadcast, type ExtensionState } from "../lib/messages";
 // Flat variant: same highlight, no gradient. The header renders at 17px, where
 // radial shading has nothing to resolve into but the highlight still reads.
 import wordmarkUrl from "../ui/wordmark-flat.svg";
@@ -37,8 +36,6 @@ export function App() {
    * from, so clearing the board after a failed copy would strand the work.
    */
   const [uncopied, setUncopied] = useState<string | null>(null);
-  const site = useSiteAccess();
-  const [armState, setArmState] = useState<TabArmState | null>(null);
 
   const reload = useCallback(async () => {
     const [{ board: next }, extState] = await Promise.all([
@@ -62,7 +59,6 @@ export function App() {
     if (!state) return;
     const next = await send("capture/setMode", { enabled: !state.captureMode });
     setState(next);
-    setArmState(next.captureMode ? next.activeTab : null);
     void reload();
   }, [state, reload]);
 
@@ -139,46 +135,6 @@ export function App() {
           {state?.captureMode ? "Capturing" : "Capture"}
         </button>
       </header>
-
-      {/*
-        * Why nothing appeared, said where it cannot be scrolled away from.
-        *
-        * Every way of failing to arm a tab used to be silent: the button read
-        * "Capturing" and the page did nothing. Worse, the one notice that did
-        * exist lived at the top of the scrolling list, so it was invisible the
-        * moment you had a few pins.
-        */}
-      {state?.captureMode && armState !== null && armState !== "armed" && (
-        <div className="pin-notice" data-tone={armState === "unsupported" ? "flat" : "act"}>
-          {armState === "unsupported" ? (
-            <span>This page can&apos;t be annotated — browser pages are off limits to extensions.</span>
-          ) : armState === "injected" ? (
-            <span>
-              Started on this tab. If nothing appeared, reload the page — a tab open from before
-              the extension loaded needs one.
-            </span>
-          ) : (
-            <>
-              <span style={{ flex: 1 }}>
-                Pinnables can&apos;t reach <strong>{site.origin ?? "this site"}</strong>. A tab whose
-                script died with an extension reload needs permission to be revived.
-              </span>
-              <button
-                className="pin-btn pin-btn--primary"
-                style={{ height: 26, flex: "0 0 auto" }}
-                onClick={async () => {
-                  await site.request();
-                  const next = await send("capture/setMode", { enabled: true });
-                  setState(next);
-                  setArmState(next.activeTab);
-                }}
-              >
-                Allow
-              </button>
-            </>
-          )}
-        </div>
-      )}
 
       <nav className="pin-panel__tabs">
         <button className="pin-tab" data-active={tab === "pins"} onClick={() => setTab("pins")}>
