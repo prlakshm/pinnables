@@ -138,7 +138,7 @@ export function CloseIcon({ size = 16 }: IconProps) {
 
 export function EraserIcon({ size = 18 }: IconProps) {
   return (
-    <svg {...traced(size)} stroke="currentColor" strokeWidth={0.75} strokeLinejoin="round">
+    <svg {...traced(size)} stroke="currentColor" strokeWidth={0.39} strokeLinejoin="round">
       {/*
         Traced from the reference in the concepts file — same pipeline as the
         other four toolbar glyphs. Three subpaths: the outer contour and the two
@@ -147,10 +147,15 @@ export function EraserIcon({ size = 18 }: IconProps) {
         this fills in solid.
 
         It also carries a hairline stroke of its own colour and is scaled up ~9%.
-        Its source render draws at a lighter weight than the navbar the other
-        glyphs came from, so at matched size it sat visibly thinner beside them —
-        and fattening the filled outline is the only way to add weight to a shape
-        whose thickness is baked in.
+        Its source render draws lighter than the navbar the other glyphs came
+        from, and fattening the filled outline is the only way to add weight to a
+        shape whose thickness is baked in.
+
+        The 0.39 is measured, not judged. Median dark-pixel run over glyph span
+        is 0.118 in the concepts render against 0.144 for the navbar pencil and
+        cursor — 0.817x the family. Across a 14.8-unit glyph that is a 0.39-unit
+        deficit, and stroking a ribbon's boundary thickens it by exactly the
+        stroke width. The first attempt guessed 0.75 and read heavy.
       */}
       <path
         d="M 7.92 7.35 C 5.9 9.36, 3.97 11.35, 3.65 11.81 C 2.59 13.24, 2.87 14.27, 4.79 16.09 L 5.96 17.19 7.82 17.19 L 9.68 17.19 13.54 13.31 L 17.41 9.42 17.28 8.63 C 17.17 7.97, 16.79 7.47, 15.08 5.77 C 12.15 2.88, 12.52 2.81, 7.92 7.35 M 9.47 7.44 L 6.84 10.14 8.93 12.25 L 11.02 14.34 13.54 11.72 C 15.07 10.13, 16.07 8.92, 16.08 8.65 C 16.08 8.37, 15.47 7.65, 14.29 6.54 C 13.3 5.63, 12.4 4.84, 12.29 4.81 C 12.18 4.77, 10.9 5.96, 9.47 7.44 M 5.07 11.92 C 4.53 12.5, 4.09 13.1, 4.09 13.26 C 4.09 13.66, 5.18 15.13, 5.88 15.69 C 6.34 16.05, 6.75 16.15, 7.77 16.15 C 8.91 16.15, 9.13 16.07, 9.63 15.56 L 10.19 14.97 8.13 12.92 L 6.07 10.86 5.07 11.92"
