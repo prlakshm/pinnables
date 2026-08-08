@@ -67,7 +67,20 @@ void chrome.runtime
   })
   .catch(() => {});
 
-function listen(message: Broadcast) {
+function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond: (v: unknown) => void) {
+  /*
+   * "Are you alive?" — the one message a dead script cannot answer.
+   *
+   * The worker asks before injecting, so a tab that already has a working
+   * script is left alone. Without it, every reload stacked a second loader on
+   * top of a live one, and the copies that lost the race threw on a
+   * `chrome.runtime` that no longer existed.
+   */
+  if (message.kind === "ping") {
+    respond(true);
+    return;
+  }
+
   if (message.kind === "capture-mode") {
     if (message.enabled) {
       void ensureOverlay().then((o) => o.setEnabled(true));

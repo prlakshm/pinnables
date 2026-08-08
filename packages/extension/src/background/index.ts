@@ -578,6 +578,23 @@ async function reinjectOpenTabs(): Promise<void> {
   await Promise.all(
     tabs.map(async (tab) => {
       if (tab.id === undefined) return;
+      /*
+       * Ask before injecting, exactly as `armTab` does.
+       *
+       * Injecting unconditionally put a second copy of the loader into tabs that
+       * already had a live one. The extra copies raced the reload they were
+       * triggered by, lost their extension context on the way up, and each threw
+       * `chrome.runtime.getURL of undefined` — dozens of errors from one reload,
+       * and a page whose newest script was a dead one.
+       *
+       * A tab that answers is already healthy and must be left alone. Only
+       * silence means there is nothing there to take over from.
+       */
+      const alive = await chrome.tabs
+        .sendMessage(tab.id, { kind: "ping" as const })
+        .then(() => true)
+        .catch(() => false);
+      if (alive) return;
       // Injection fails on anything we hold no permission for. That is most
       // tabs, and it is not an error worth surfacing.
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files }).catch(() => {});

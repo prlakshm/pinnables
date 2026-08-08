@@ -1462,6 +1462,13 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
 }
 /* The value being replaced stays faint in both states — it is the thing you are
    moving away from, and it should not brighten when you commit to leaving it. */
+.pin-change__summary {
+  grid-column: 3 / -1;
+  color: var(--pin-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pin-change[data-on="false"] .pin-change__summary { color: var(--pin-ink-muted); }
 .pin-change__from { color: var(--pin-ink-faint); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; }
 .pin-change__arrow { color: var(--pin-ink-faint); }
 

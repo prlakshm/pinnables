@@ -28,7 +28,7 @@ export const STYLE_GROUPS = {
    * carry `flex-grow: 1 → 0` and `flex-basis: 0% → auto` alongside the width,
    * which is the change that works — in the preview and in the source file.
    */
-  size: ["width", "height", "flex-grow", "flex-shrink", "flex-basis"],
+  size: ["width", "height"],
   spacing: [
     "padding-top",
     "padding-right",
@@ -56,7 +56,21 @@ export const STYLE_GROUPS = {
 
 export type StyleGroup = keyof typeof STYLE_GROUPS;
 
-export const STYLE_ALLOWLIST: readonly string[] = Object.values(STYLE_GROUPS).flat();
+/**
+ * Captured, never offered.
+ *
+ * `isFlexStretched` needs these to tell a width somebody chose from one the row
+ * handed out — without them every flex-derived size is offered as a change that
+ * cannot be applied. But they are not something to have an opinion about:
+ * nobody opens a diff wanting to match `flex-basis`. So they are captured for
+ * the guards and kept out of the groups, which are the menu.
+ */
+const CAPTURE_ONLY = ["flex-grow", "flex-shrink", "flex-basis"] as const;
+
+export const STYLE_ALLOWLIST: readonly string[] = [
+  ...Object.values(STYLE_GROUPS).flat(),
+  ...CAPTURE_ONLY,
+];
 
 /**
  * Expand a relationship's `properties` — which may hold friendly group names

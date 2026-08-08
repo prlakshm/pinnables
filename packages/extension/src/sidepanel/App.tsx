@@ -100,9 +100,27 @@ export function App() {
      *
      * The request has to ride a user gesture, which is what this handler is.
      */
+    /*
+     * Asked first, and never awaited before asking.
+     *
+     * `permissions.request` has to run inside the user gesture, and an `await`
+     * spends it — checking `permissions.contains` first meant the request that
+     * followed threw "must be called during a user gesture", the handler
+     * rejected, and `capture/setMode` was never reached. The button did nothing.
+     * It looked intermittent because the check is skipped once the permission is
+     * held, so it only failed when it mattered.
+     *
+     * `request` already resolves true when the origin is granted, so the check
+     * bought nothing. And a refusal must not block the toggle: capture mode
+     * still works, it just cannot take screenshots, and that is a better answer
+     * than a dead button.
+     */
     if (!state.captureMode) {
-      const held = await chrome.permissions.contains({ origins: ["<all_urls>"] });
-      if (!held) await chrome.permissions.request({ origins: ["<all_urls>"] });
+      try {
+        await chrome.permissions.request({ origins: ["<all_urls>"] });
+      } catch {
+        // Declined, or no gesture left to spend. Either way, still toggle.
+      }
     }
     const next = await send("capture/setMode", { enabled: !state.captureMode });
     setState(next);

@@ -184,6 +184,7 @@ function PinRow({
                 siblings={board.pins}
                 onChanged={onChanged}
                 className="pin-row__title"
+                readOnly={relating}
               />
               {pin.kind === "region" && <span className="pin-chip pin-chip--mono">region</span>}
               <span className="pin-row__route">{pin.route}</span>

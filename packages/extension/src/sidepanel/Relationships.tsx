@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   computeBlockedChanges,
   computeStyleDiff,
+  groupOf,
   describeChange,
   expandProperties,
   rawPropertiesFor,
@@ -13,7 +14,6 @@ import {
   type Relationship,
 } from "@pinnables/shared";
 import { RenamableTitle } from "./RenamableTitle";
-import { ChangePair, hasPreview } from "./ChangePreview";
 import { send } from "../lib/messages";
 import { LinkIcon, TrashIcon } from "../ui/icons";
 
@@ -169,7 +169,25 @@ function RelationshipCard({
     );
   };
 
-  const anyMatched = GROUP_NAMES.some((group) => groupRaw(group).length === 0);
+  /*
+   * "Already match" has to mean it, and it did not.
+   *
+   * A chip is disabled when `groupRaw` finds nothing to apply — but that happens
+   * for two unrelated reasons. The group genuinely matches, or every difference
+   * in it is *blocked*: real, visible, and impossible to write to the target.
+   * `size` is the second case whenever both cards are flex-stretched — the
+   * widths differ, you can see they differ, and the card claimed they matched
+   * while a disclosure two lines below said "2 that can't be applied".
+   *
+   * So the sentence is now earned per group: a group counts as matching only
+   * when nothing differs *and* nothing was blocked in it.
+   */
+  const blockedGroups = new Set(
+    blocked.map(({ entry }) => groupOf(entry.property)).filter((g): g is string => g !== null),
+  );
+  const anyMatched = GROUP_NAMES.some(
+    (group) => groupRaw(group).length === 0 && !blockedGroups.has(group),
+  );
 
   return (
     <div className="pin-card">
@@ -351,10 +369,24 @@ function ChangeRow({
   on: boolean;
   onToggle: (next: boolean) => void;
 }) {
-  const visual = hasPreview(detail.kind);
+  /*
+   * The grid, not the swatches.
+   *
+   * Rendering each difference in its own medium reads better one row at a time
+   * and worse as a list: every row became three lines tall, and a card with six
+   * changes no longer fit on screen — you lost the comparison the table was for.
+   *
+   * The decomposition survives, which was the half that mattered. `summary`
+   * turns `rgba(0,0,0,.06) 0 1px 2px → rgba(0,0,0,.08) 0 4px 12px` into
+   * `y 1→4 · blur 2→12`, and that is text, so it costs one line like the rest.
+   *
+   * `ChangePreview` is kept, not deleted — the swatches are right for a single
+   * focused change, and this is the call site that decided against them.
+   */
+  const from = detail.summary ? null : detail.from;
 
   return (
-    <label className={`pin-change${visual ? " pin-change--visual" : ""}`} data-on={on}>
+    <label className="pin-change" data-on={on}>
       <input
         type="checkbox"
         className="pin-change__box"
@@ -363,18 +395,11 @@ function ChangeRow({
       />
       <span className="pin-change__name">{detail.property}</span>
 
-      {visual ? (
-        <>
-          <ChangePair detail={detail} />
-          {/* The numbers keep their place, one step quieter — available to
-              check, no longer the thing you have to decode. */}
-          <span className="pin-change__caption">
-            {detail.summary ?? `${detail.from} → ${detail.to}`}
-          </span>
-        </>
+      {from === null ? (
+        <span className="pin-change__summary">{detail.summary}</span>
       ) : (
         <>
-          <span className="pin-change__from">{detail.from}</span>
+          <span className="pin-change__from">{from}</span>
           <span className="pin-change__arrow">→</span>
           <span className="pin-change__to">{detail.to}</span>
         </>

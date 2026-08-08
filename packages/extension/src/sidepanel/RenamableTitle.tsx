@@ -21,12 +21,22 @@ export function RenamableTitle({
   onChanged,
   className,
   style,
+  readOnly = false,
 }: {
   pin: Pin;
   siblings: readonly Pin[];
   onChanged: () => void;
   className?: string;
   style?: React.CSSProperties;
+  /**
+   * Render the name as plain text, with no rename affordance.
+   *
+   * While relating, the whole row is one target: "pick this one" is the only
+   * thing a click there can mean. A rename trigger sitting on the widest part
+   * of the row swallowed that click and started an edit instead — and being a
+   * button inside the row's own button, it was invalid nesting besides.
+   */
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -50,6 +60,14 @@ export function RenamableTitle({
     await send("pin/update", { pinId: pin.id, patch: { name } });
     onChanged();
   };
+
+  if (readOnly) {
+    return (
+      <span className={className} style={style}>
+        {shown}
+      </span>
+    );
+  }
 
   if (editing) {
     return (
