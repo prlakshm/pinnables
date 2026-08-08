@@ -17,7 +17,18 @@ export const STYLE_GROUPS = {
     "align-items",
     "grid-template-columns",
   ],
-  size: ["width", "height"],
+  /*
+   * `width` does not decide a flex item's width — `flex-basis` and `flex-grow`
+   * do, and a `flex: 1` card ignores any width you hand it. Capturing only the
+   * measured size meant the diff emitted `width: 232.5px` for an element that
+   * could never honour it: the preview applied it and nothing moved, and an
+   * agent writing the same line would have shipped a no-op.
+   *
+   * Capturing the properties that actually control the axis makes the diff
+   * carry `flex-grow: 1 → 0` and `flex-basis: 0% → auto` alongside the width,
+   * which is the change that works — in the preview and in the source file.
+   */
+  size: ["width", "height", "flex-grow", "flex-shrink", "flex-basis"],
   spacing: [
     "padding-top",
     "padding-right",
@@ -73,6 +84,56 @@ export interface StyleDiffEntry {
   to: string;
 }
 
+export interface Applicability {
+  /** Whether writing this property to the target would actually do anything. */
+  applicable: boolean;
+  /** Why not, in words — so a caller can say it rather than silently drop it. */
+  reason: string | null;
+}
+
+const APPLICABLE: Applicability = { applicable: true, reason: null };
+
+/**
+ * Whether a property can be applied to this target at all.
+ *
+ * Two rules used to live as bare `if`s inside the diff loop, and they are the
+ * same rule twice: a value that differs on paper but cannot manifest on the
+ * element. An undrawn border reports a colour it does not paint; a flex-stretched
+ * card reports a width nobody wrote and that it would ignore if you set it.
+ *
+ * They belong together because *anything ranking these changes has to consult
+ * them*. Perceptibility scoring in particular — a width difference alters layout
+ * in principle, so a naive "layout always counts" rule will confidently promote
+ * a change that is inert. The guard is the thing that stops that, and it is the
+ * place the third case goes when it turns up.
+ *
+ * Returns a closure so the facts each rule depends on are computed once per
+ * pair rather than once per property.
+ */
+export function applicabilityGuard(
+  source: Pin,
+  target: Pin,
+): (property: string) => Applicability {
+  const sourceBordered = hasVisibleBorder(source.computedStyles);
+  const bothStretched =
+    isFlexStretched(source.computedStyles) && isFlexStretched(target.computedStyles);
+
+  return (property) => {
+    if (property === "border-color" && !sourceBordered) {
+      return { applicable: false, reason: "the source draws no border" };
+    }
+    if (bothStretched && (property === "width" || property === "height")) {
+      return { applicable: false, reason: "the flex row sets this size, not the element" };
+    }
+    return APPLICABLE;
+  };
+}
+
+/** One-off form, for callers holding a single entry rather than a whole diff. */
+export function applicabilityOf(property: string, source: Pin, target: Pin): Applicability {
+  return applicabilityGuard(source, target)(property);
+}
+
 /**
  * The differentiator, computed rather than stored.
  *
@@ -86,7 +147,10 @@ export function computeStyleDiff(
   properties: readonly string[],
 ): StyleDiffEntry[] {
   const diff: StyleDiffEntry[] = [];
+  const applicable = applicabilityGuard(source, target);
   for (const property of expandProperties(properties)) {
+    // A change that cannot manifest is not a change. See `applicabilityGuard`.
+    if (!applicable(property).applicable) continue;
     const to = source.computedStyles[property];
     const from = target.computedStyles[property];
     if (to === undefined || from === undefined) continue;
@@ -94,6 +158,73 @@ export function computeStyleDiff(
     diff.push({ property, from, to });
   }
   return collapseShorthands(diff);
+}
+
+/**
+ * Whether an element's size is handed to it by its flex container.
+ *
+ * `flex: 1` means `flex-grow: 1` and `flex-basis: 0%`: the row divides its space
+ * and the item takes a share. The resulting width is real, and it is what
+ * `getComputedStyle` reports, but nobody chose it — put the same card in a row
+ * of three instead of four and the number changes.
+ *
+ * When both pins are stretched like this, their sizes differ because their rows
+ * differ, not because they disagree about anything. Offering "match size" there
+ * promises a change that cannot be written: `width` on such an item is ignored,
+ * so the preview moves nothing and an agent handed the same line ships a no-op.
+ *
+ * A width that *is* authored — `flex: 0 0 240px`, or no flex parent at all —
+ * still diffs normally. This only removes the dimensions nobody wrote.
+ */
+function isFlexStretched(styles: Record<string, string>): boolean {
+  const grow = parseFloat(styles["flex-grow"] ?? "0");
+  const basis = styles["flex-basis"];
+  if (!(grow > 0) || basis === undefined) return false;
+  return basis === "0px" || basis === "0%" || basis.endsWith("%");
+}
+
+/**
+ * Whether an element actually draws a border.
+ *
+ * `border-color` resolves to `currentColor` when nothing is drawn, so a card
+ * with no border reports its *text* colour — near-black on a white card. The
+ * diff then reads that as a deliberate choice and offers to apply it, which
+ * paints a real black border onto a target that only had a hairline.
+ *
+ * Matching a source with no border means removing the target's border, and
+ * `border-width` and `border-style` already say exactly that. The colour is
+ * inert on the result, so it stays out of the diff.
+ *
+ * Values can be per-side (`"1px 0px 1px 0px"`, `"none solid none solid"`), so
+ * each is checked component-wise: a border is visible when some side has both
+ * a non-zero width and a style that draws.
+ */
+function hasVisibleBorder(styles: Record<string, string>): boolean {
+  const widths = styles["border-width"]?.split(/\s+/) ?? [];
+  const styleNames = styles["border-style"]?.split(/\s+/) ?? [];
+  if (widths.length > 0 && !widths.some((w) => parseFloat(w) > 0)) return false;
+  if (styleNames.length > 0 && !styleNames.some((n) => n !== "none" && n !== "hidden")) return false;
+  return true;
+}
+
+/**
+ * The real properties behind a row of the diff.
+ *
+ * A row says `padding` because four longhands collapsed into it, and selection
+ * has to be stored in the longhands — they are what `computedStyles` holds and
+ * what the diff actually compares. Anything that did not collapse is itself.
+ */
+export function rawPropertiesFor(property: string): readonly string[] {
+  return SHORTHANDS[property] ?? [property];
+}
+
+/** Which named group a property belongs to, if any. */
+export function groupOf(property: string): string | null {
+  const raw = rawPropertiesFor(property);
+  for (const [group, members] of Object.entries(STYLE_GROUPS)) {
+    if (raw.some((p) => (members as readonly string[]).includes(p))) return group;
+  }
+  return null;
 }
 
 const SHORTHANDS: Record<string, readonly string[]> = {

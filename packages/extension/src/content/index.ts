@@ -1,4 +1,5 @@
 import type { Broadcast } from "../lib/messages";
+import { OVERLAY_HOST_ID } from "../lib/overlay-host";
 
 /**
  * Tier 1. This is the only Pinnables code resident on the page until the user
@@ -44,6 +45,15 @@ async function ensureOverlay(): Promise<Overlay> {
   }
   return loading;
 }
+
+/*
+ * A dead script's overlay outlives it: the host is plain DOM and nothing
+ * removes it when the extension context goes. `mountOverlay` clears it, but
+ * only if something mounts — with capture off, the stale toolbar would sit
+ * there taking clicks that go nowhere. This script is the live one now, so it
+ * takes the page over on arrival rather than on first use.
+ */
+document.getElementById(OVERLAY_HOST_ID)?.remove();
 
 chrome.runtime.onMessage.addListener(listen);
 

@@ -16,7 +16,11 @@
   script survives and floating pins have to persist across the change.
 
   data-pin-source stands in for the dev-time Vite plugin, so source mapping can
-  be demonstrated before that plugin exists.
+  be demonstrated before that plugin exists. It points at the CSS rule an agent
+  would actually have to edit, not at the markup — every difference this app is
+  built to expose is a style difference. Paths are real and resolve from the
+  repo root: an agent handed one can open it, and a path that cannot be opened
+  is worse than no path at all.
 -->
 <style>
   * { box-sizing: border-box; }
@@ -123,20 +127,20 @@
 
 <script>
 const stat = (label, value, delta, down) => `
-  <article class="stat-card" data-pin-source="src/components/StatCard.tsx:12" data-pin-component="StatCard">
+  <article class="stat-card" data-pin-source="fixtures/demo-app/index.html:56" data-pin-component="StatCard">
     <div class="label">${label}</div>
     <div class="big">${value}</div>
     <div class="delta${down ? " down" : ""}">${delta}</div>
   </article>`;
 
 const mini = (label, value) => `
-  <article class="mini-card" data-pin-source="src/components/MiniCard.tsx:7" data-pin-component="MiniCard">
+  <article class="mini-card" data-pin-source="fixtures/demo-app/index.html:66" data-pin-component="MiniCard">
     <div class="label">${label}</div>
     <div class="big" style="font-size:20px">${value}</div>
   </article>`;
 
 const projectRow = (name, status, cls, updated, owner) => `
-  <tr data-pin-source="src/components/ProjectRow.tsx:19" data-pin-component="ProjectRow">
+  <tr data-pin-source="fixtures/demo-app/index.html:83" data-pin-component="ProjectRow">
     <td>${name}</td>
     <td><span class="pill ${cls}">${status}</span></td>
     <td>${updated}</td>
@@ -144,7 +148,7 @@ const projectRow = (name, status, cls, updated, owner) => `
   </tr>`;
 
 const person = (name, role) => `
-  <div class="row" data-pin-source="src/components/TeamRow.tsx:11" data-pin-component="TeamRow">
+  <div class="row" data-pin-source="fixtures/demo-app/index.html:104" data-pin-component="TeamRow">
     <span class="avatar"></span>
     <div><div style="font-size:14px">${name}</div><div class="label">${role}</div></div>
   </div>`;
@@ -170,7 +174,7 @@ const views = {
 
     <h2>Recent activity</h2>
     <div class="grid">
-      <article class="activity-card" data-pin-source="src/components/ActivityCard.tsx:21" data-pin-component="ActivityCard">
+      <article class="activity-card" data-pin-source="fixtures/demo-app/index.html:61" data-pin-component="ActivityCard">
         <div class="label">This week</div>
         <ul>
           <li>Invite accepted — Sam Designer</li>
@@ -180,7 +184,7 @@ const views = {
           <li>Billing address updated</li>
         </ul>
       </article>
-      <article class="activity-card" data-pin-source="src/components/ActivityCard.tsx:21" data-pin-component="ActivityCard">
+      <article class="activity-card" data-pin-source="fixtures/demo-app/index.html:61" data-pin-component="ActivityCard">
         <div class="label">Last week</div>
         <ul>
           <li>Composer run completed</li>
@@ -192,7 +196,7 @@ const views = {
     </div>
 
     <h2>Projects</h2>
-    <div class="panel" data-pin-source="src/components/ProjectTable.tsx:8" data-pin-component="ProjectTable">
+    <div class="panel" data-pin-source="fixtures/demo-app/index.html:75" data-pin-component="ProjectTable">
       <table>
         <thead><tr><th>Project</th><th>Status</th><th>Updated</th><th>Owner</th></tr></thead>
         <tbody>
@@ -207,7 +211,7 @@ const views = {
     </div>
 
     <h2>Team</h2>
-    <div class="panel" data-pin-source="src/components/TeamPanel.tsx:6" data-pin-component="TeamPanel">
+    <div class="panel" data-pin-source="fixtures/demo-app/index.html:75" data-pin-component="TeamPanel">
       ${person("Jane Developer", "Engineering Lead")}
       ${person("Alex Frontend", "Senior Engineer")}
       ${person("Sam Designer", "Product Designer")}
@@ -225,7 +229,7 @@ const views = {
     <p class="sub">Manage your preferences and workspace settings.</p>
 
     <h2>Plan</h2>
-    <article class="plan-card" data-pin-source="src/components/SettingsCard.tsx:8" data-pin-component="SettingsCard">
+    <article class="plan-card" data-pin-source="fixtures/demo-app/index.html:71" data-pin-component="SettingsCard">
       <div class="label">Team plan</div>
       <div class="big">$29</div>
       <div class="label">per user / month</div>
@@ -233,7 +237,7 @@ const views = {
     </article>
 
     <h2>Workspace</h2>
-    <div class="panel" data-pin-source="src/components/WorkspaceForm.tsx:14" data-pin-component="WorkspaceForm">
+    <div class="panel" data-pin-source="fixtures/demo-app/index.html:75" data-pin-component="WorkspaceForm">
       <div class="field">
         <span class="label">Workspace name</span>
         <input value="Acme Inc." />
@@ -250,7 +254,7 @@ const views = {
     </div>
 
     <h2>Preferences</h2>
-    <div class="panel" data-pin-source="src/components/PreferencesPanel.tsx:9" data-pin-component="PreferencesPanel">
+    <div class="panel" data-pin-source="fixtures/demo-app/index.html:75" data-pin-component="PreferencesPanel">
       <div class="row"><div style="flex:1">Theme</div><span class="label">System</span></div>
       <div class="row"><div style="flex:1">Time zone</div><span class="label">GMT+0</span></div>
       <div class="row"><div style="flex:1">Weekly digest</div><span class="pill">On</span></div>
@@ -258,7 +262,7 @@ const views = {
     </div>
 
     <h2>Data</h2>
-    <div class="panel" data-pin-source="src/components/DataPanel.tsx:5" data-pin-component="DataPanel">
+    <div class="panel" data-pin-source="fixtures/demo-app/index.html:75" data-pin-component="DataPanel">
       <div style="display:flex;align-items:center;gap:16px">
         <div style="flex:1">
           <div style="font-size:14px">Export data</div>
@@ -272,7 +276,7 @@ const views = {
     <h1>Reports</h1>
     <p class="sub">Nothing generated yet.</p>
 
-    <div class="empty" data-pin-source="src/components/EmptyState.tsx:5" data-pin-component="EmptyState">
+    <div class="empty" data-pin-source="fixtures/demo-app/index.html:79" data-pin-component="EmptyState">
       <div>No reports yet</div>
       <button style="margin-top:12px">Create report</button>
     </div>
@@ -285,7 +289,7 @@ const views = {
     </div>
 
     <h2>Scheduled</h2>
-    <div class="panel" data-pin-source="src/components/ScheduleTable.tsx:8" data-pin-component="ScheduleTable">
+    <div class="panel" data-pin-source="fixtures/demo-app/index.html:75" data-pin-component="ScheduleTable">
       <table>
         <thead><tr><th>Report</th><th>Status</th><th>Next run</th><th>Owner</th></tr></thead>
         <tbody>

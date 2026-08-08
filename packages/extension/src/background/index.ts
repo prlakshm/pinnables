@@ -550,7 +550,40 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+  void reinjectOpenTabs();
 });
+
+/**
+ * Reloading the extension orphans every content script already on a page.
+ *
+ * The DOM survives, so the toolbar and the pins stay on screen, but the isolated
+ * world's `chrome.runtime` is gone — the script becomes a picture of itself.
+ * Capture mode stops toggling and "Clear all" empties the board without
+ * clearing the page, because both are messages nothing is left to receive.
+ *
+ * `armTab` only recovers this on the way *in* to capture mode, so a tab could
+ * sit dead indefinitely. The only cure was reloading each tab by hand, which is
+ * a thing to remember at exactly the wrong moment. Re-injecting here means the
+ * extension reload is the whole fix.
+ *
+ * Safe to do unconditionally: every previously injected script is already dead
+ * by the time this fires, and `mountOverlay` drops a stale host on the way in.
+ */
+async function reinjectOpenTabs(): Promise<void> {
+  const script = chrome.runtime.getManifest().content_scripts?.[0];
+  const files = script?.js ?? [];
+  const matches = script?.matches ?? [];
+  if (files.length === 0 || matches.length === 0) return;
+  const tabs = await chrome.tabs.query({ url: matches }).catch(() => []);
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (tab.id === undefined) return;
+      // Injection fails on anything we hold no permission for. That is most
+      // tabs, and it is not an error worth surfacing.
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files }).catch(() => {});
+    }),
+  );
+}
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (tab.windowId !== undefined) {

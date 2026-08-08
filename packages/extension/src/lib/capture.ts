@@ -1,7 +1,9 @@
 import { STYLE_ALLOWLIST } from "@pinnables/shared";
 import type { CapturedElement } from "./messages";
 
-export const OVERLAY_HOST_ID = "pinnables-overlay-host";
+import { OVERLAY_HOST_ID } from "./overlay-host";
+
+export { OVERLAY_HOST_ID };
 
 /**
  * CSS initial values, per property. A captured style set that repeats the
@@ -148,6 +150,25 @@ export function findComponentName(el: Element): string | null {
  * covers come down. Returns the undo.
  */
 export function maskSensitive(): () => void {
+  /*
+   * A text selection is part of the screenshot.
+   *
+   * Clicking around to choose an element leaves highlighted words behind, and
+   * `captureVisibleTab` photographs the page as it is — so the pin arrives with
+   * a blue band across it and the agent is handed a picture of the component
+   * plus whatever was selected a moment earlier. The selection is state of the
+   * session, never of the component.
+   *
+   * Ranges are put back rather than dropped: the user did not ask to lose their
+   * selection, they asked for a picture without it.
+   */
+  const selection = window.getSelection();
+  const ranges: Range[] = [];
+  if (selection) {
+    for (let i = 0; i < selection.rangeCount; i += 1) ranges.push(selection.getRangeAt(i).cloneRange());
+    selection.removeAllRanges();
+  }
+
   const targets = document.querySelectorAll<HTMLElement>(
     'input[type="password"], [data-pin-redact]',
   );
@@ -173,7 +194,13 @@ export function maskSensitive(): () => void {
     covers.push(cover);
   }
 
-  return () => covers.forEach((c) => c.remove());
+  return () => {
+    covers.forEach((c) => c.remove());
+    if (selection && ranges.length > 0) {
+      selection.removeAllRanges();
+      for (const range of ranges) selection.addRange(range);
+    }
+  };
 }
 
 function truncate(text: string, max: number): string {

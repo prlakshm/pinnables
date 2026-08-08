@@ -1,11 +1,18 @@
+import { useState } from "react";
 import {
+  applicabilityGuard,
   computeStyleDiff,
-  differingGroups,
+  describeChange,
+  expandProperties,
+  rawPropertiesFor,
   STYLE_GROUPS,
   type Board,
+  type DiffDetail,
+  type Pin,
   type Relationship,
 } from "@pinnables/shared";
 import { RenamableTitle } from "./RenamableTitle";
+import { ChangePair, hasPreview } from "./ChangePreview";
 import { send } from "../lib/messages";
 import { LinkIcon, TrashIcon } from "../ui/icons";
 
@@ -52,14 +59,84 @@ function RelationshipCard({
 }) {
   const byId = new Map(board.pins.map((p) => [p.id, p]));
   const source = byId.get(relationship.sourcePinId);
-  /** Source and target read the same way, so the pair scans as a pair. */
-  const line = (pinId: string, role: string) => {
-    const pin = byId.get(pinId);
+  const [showSubtle, setShowSubtle] = useState(false);
+
+  /*
+   * Selection lives in raw CSS properties, never in the names on screen.
+   *
+   * A chip says "spacing" and a row says "padding", and neither is something the
+   * diff can compare — `computedStyles` holds `padding-top` and its siblings.
+   * Storing the raw properties is what makes the two controls one selection seen
+   * twice: a chip is on when every property beneath it is on, and ticking a row
+   * can complete its chip without either control knowing the other exists.
+   */
+  const selected = new Set(expandProperties(relationship.properties));
+
+  /** Every difference between the pins, regardless of what is selected. */
+  const rows = source
+    ? relationship.targetPinIds.flatMap((targetId) => {
+        const target = byId.get(targetId);
+        if (!target) return [];
+        const applicable = applicabilityGuard(source, target);
+        return computeStyleDiff(source, target, GROUP_NAMES).map((entry) => ({
+          key: `${targetId}:${entry.property}`,
+          // The same guard the diff itself ran, handed on so ranking cannot
+          // promote a change that could never manifest.
+          entry: describeChange(entry, applicable(entry.property)),
+          raw: rawPropertiesFor(entry.property),
+        }));
+      })
+    : [];
+
+  /*
+   * Ordered for the eye, never filtered for the agent.
+   *
+   * `rows` stays whole — the chips above count against it, the selection is
+   * stored against it, and `computeStyleDiff` runs again untouched when the
+   * board is materialized. This decides only which rows are rendered up front
+   * and which sit behind a count. Nothing is dropped: a 15px that should be
+   * 16px is invisible *and* is the drift this product exists to catch, so it
+   * stays a click away rather than a threshold away.
+   */
+  const perceptible = rows.filter((r) => r.entry.perceptible);
+  const subtle = rows.filter((r) => !r.entry.perceptible);
+
+  const differingRaw = new Set(rows.flatMap((r) => r.raw));
+  const groupRaw = (group: string) => expandProperties([group]).filter((p) => differingRaw.has(p));
+
+  const write = (next: Set<string>) =>
+    send("relationship/update", {
+      relationshipId: relationship.id,
+      patch: { properties: [...next] },
+    }).then(onChanged);
+
+  const toggle = (raw: readonly string[], on: boolean) => {
+    const next = new Set(selected);
+    for (const property of raw) {
+      if (on) next.add(property);
+      else next.delete(property);
+    }
+    void write(next);
+  };
+
+  const line = (pin: Pin | undefined, role: string, lead: boolean) => {
     if (!pin) return null;
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-        <span style={{ color: "var(--pin-ink-muted)", display: "inline-flex", flex: "0 0 auto" }}>
-          <LinkIcon size={14} />
+        {/*
+          The icon belongs to the pair rather than to each half, so only the
+          source carries it — the target keeps the same indent so both names
+          start on one line.
+        */}
+        <span
+          style={{
+            width: 14,
+            flex: "0 0 auto",
+            display: "inline-flex",
+            color: "var(--pin-ink-muted)",
+          }}
+        >
+          {lead ? <LinkIcon size={14} /> : null}
         </span>
         <span style={{ fontSize: 12, fontWeight: 500, minWidth: 0 }}>
           <RenamableTitle pin={pin} siblings={board.pins} onChanged={onChanged} />
@@ -69,51 +146,23 @@ function RelationshipCard({
     );
   };
 
-  /*
-   * Which groups are worth deciding about.
-   *
-   * A group where both pins already agree has nothing to apply, so offering it
-   * as a live choice is offering a change that would do nothing. It stays on
-   * screen, greyed, because silence would read as "never checked" rather than
-   * "checked and fine".
-   */
-  const differing = source
-    ? new Set(
-        relationship.targetPinIds.flatMap((id) => {
-          const target = byId.get(id);
-          return target ? differingGroups(source, target, GROUP_NAMES) : [];
-        }),
-      )
-    : new Set<string>();
-  const matched = GROUP_NAMES.filter((g) => !differing.has(g));
-
-  const patch = async (next: Partial<Relationship>) => {
-    await send("relationship/update", { relationshipId: relationship.id, patch: next });
-    onChanged();
-  };
-
-  const toggleProperty = (group: string) => {
-    const has = relationship.properties.includes(group);
-    void patch({
-      properties: has
-        ? relationship.properties.filter((p) => p !== group)
-        : [...relationship.properties, group],
-    });
-  };
+  const anyMatched = GROUP_NAMES.some((group) => groupRaw(group).length === 0);
 
   return (
     <div className="pin-card">
       <div style={{ padding: "10px 11px", display: "flex", flexDirection: "column", gap: 9 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, flex: 1 }}>
-            {line(relationship.sourcePinId, "source")}
+            {line(source, "source", true)}
             {relationship.targetPinIds.map((id) => (
-              <div key={id}>{line(id, "target")}</div>
+              <div key={id}>{line(byId.get(id), "target", false)}</div>
             ))}
           </div>
+          {/* The same button the shelf rows use — two deletes on two screens
+              were two different shapes before. */}
           <button
-            className="pin-btn pin-btn--ghost"
-            style={{ width: 28, padding: 0, flex: "0 0 auto" }}
+            className="pin-icon-btn pin-icon-btn--square"
+            style={{ width: 28, height: 28, flex: "0 0 auto" }}
             onClick={async () => {
               await send("relationship/delete", { relationshipId: relationship.id });
               onChanged();
@@ -127,57 +176,139 @@ function RelationshipCard({
 
         <div>
           <span className="pin-section-label">Apply changes</span>
-          {matched.length > 0 && <p className="pin-note-line">Disabled properties already match.</p>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
             {GROUP_NAMES.map((group) => {
-              const same = !differing.has(group);
+              const raw = groupRaw(group);
+              const on = raw.length > 0 && raw.every((p) => selected.has(p));
               return (
                 <button
                   key={group}
                   className="pin-chip"
-                  data-on={relationship.properties.includes(group)}
-                  disabled={same}
-                  onClick={() => !same && toggleProperty(group)}
-                  title={same ? "Already the same on both" : `Make the target match on ${group}`}
+                  data-on={on}
+                  disabled={raw.length === 0}
+                  onClick={() => toggle(raw, !on)}
+                  title={raw.length === 0 ? "Already the same on both" : `Match on ${group}`}
                 >
                   {group}
                 </button>
               );
             })}
           </div>
+          {/* Under the chips, where it explains something already on screen —
+              above them it was a caption for a row you had not read yet. */}
+          {anyMatched && <p className="pin-note-line">Disabled properties already match.</p>}
         </div>
 
-        {source &&
-          relationship.targetPinIds.map((targetId) => {
-            const target = byId.get(targetId);
-            if (!target) return null;
-            const diff = computeStyleDiff(source, target, relationship.properties);
-            return (
-              <div key={targetId} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {diff.length === 0 ? null : (
-                  <div className="pin-diff">
-                    {diff.map((entry) => (
-                      <div className="pin-diff__row" key={entry.property}>
-                        <span>{entry.property}</span>
-                        <span className="pin-diff__from">{entry.from}</span>
-                        <span className="pin-diff__arrow">→</span>
-                        <span>{entry.to}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        {/*
+          The same selection at the resolution you can actually judge. "Radius"
+          is a category to have an opinion about; `4px → 12px` is two values you
+          can look at.
+        */}
+        {rows.length > 0 && (
+          <div className="pin-changes">
+            {perceptible.map(({ key, entry, raw }) => (
+              <ChangeRow
+                key={key}
+                detail={entry}
+                on={raw.every((p) => selected.has(p))}
+                onToggle={(next) => toggle(raw, next)}
+              />
+            ))}
+
+            {/*
+              The quiet ones, counted rather than listed.
+
+              They are still in the diff and still selected by default — the
+              line says so, because a reader who is told something is hidden
+              will assume it was dropped.
+            */}
+            {subtle.length > 0 && (
+              <>
+                <button
+                  className="pin-change pin-change--more"
+                  onClick={() => setShowSubtle((open) => !open)}
+                  aria-expanded={showSubtle}
+                >
+                  {showSubtle
+                    ? `Hide ${subtle.length} you can't see`
+                    : `${subtle.length} more you can't see — sent to the agent anyway`}
+                </button>
+                {showSubtle &&
+                  subtle.map(({ key, entry, raw }) => (
+                    <ChangeRow
+                      key={key}
+                      detail={entry}
+                      on={raw.every((p) => selected.has(p))}
+                      onToggle={(next) => toggle(raw, next)}
+                    />
+                  ))}
+              </>
+            )}
+          </div>
+        )}
 
         <textarea
           className="pin-field"
           rows={2}
           placeholder="Add an annotation…"
           defaultValue={relationship.exception}
-          onBlur={(e) => e.target.value !== relationship.exception && void patch({ exception: e.target.value })}
+          onBlur={(e) => {
+            if (e.target.value === relationship.exception) return;
+            void send("relationship/update", {
+              relationshipId: relationship.id,
+              patch: { exception: e.target.value },
+            }).then(onChanged);
+          }}
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * One difference, drawn where it can be and spelled where it cannot.
+ *
+ * The checkbox means the same thing in both cases — this property is part of
+ * the match — so the row stays a label wrapping a real checkbox rather than
+ * becoming two different controls for one idea.
+ */
+function ChangeRow({
+  detail,
+  on,
+  onToggle,
+}: {
+  detail: DiffDetail;
+  on: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  const visual = hasPreview(detail.kind);
+
+  return (
+    <label className={`pin-change${visual ? " pin-change--visual" : ""}`} data-on={on}>
+      <input
+        type="checkbox"
+        className="pin-change__box"
+        checked={on}
+        onChange={() => onToggle(!on)}
+      />
+      <span className="pin-change__name">{detail.property}</span>
+
+      {visual ? (
+        <>
+          <ChangePair detail={detail} />
+          {/* The numbers keep their place, one step quieter — available to
+              check, no longer the thing you have to decode. */}
+          <span className="pin-change__caption">
+            {detail.summary ?? `${detail.from} → ${detail.to}`}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="pin-change__from">{detail.from}</span>
+          <span className="pin-change__arrow">→</span>
+          <span className="pin-change__to">{detail.to}</span>
+        </>
+      )}
+    </label>
   );
 }

@@ -50,6 +50,28 @@ npm run smoke
 
 Drives the MCP server over a real stdio session against the fixture board.
 
+## Source mapping
+
+Add the Vite plugin to the app you're reviewing. This is the primary path, not a nicety: the
+extension's fallback reads `_debugSource` off the React fiber, and React 19 removed it — so without
+the plugin a pin can name its component but not say where it lives.
+
+```js
+// vite.config.js
+import { pinnables } from "@pinnables/vite-plugin";
+
+export default { plugins: [pinnables(), react()] };
+```
+
+Every DOM element gains `data-pin-source="src/components/Card.tsx:42"` and
+`data-pin-component="Card"`, which is what turns a pin into a file an agent can open. Components are
+skipped — `data-*` on `<Card />` is a prop that may never reach the DOM — and attributes are
+inserted after the tag name, so line numbers stay exactly where they were.
+
+Dev only unless you ask otherwise: the attributes publish your source tree to anyone with an
+inspector, which is fine on localhost and odd in production. Pass `{ includeProduction: true }` if
+you want them in a build.
+
 ## Connect an agent
 
 **Claude Code** — `.mcp.json` at the project root:

@@ -5,5 +5,6 @@
  */
 export * from "./schema.js";
 export * from "./styles.js";
+export * from "./perception.js";
 export * from "./drawings.js";
 export * from "./render.js";

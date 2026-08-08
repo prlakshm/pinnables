@@ -123,8 +123,13 @@
   --pin-radius: 10px;
   --pin-radius-lg: 16px;
 
-  --pin-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Native interface type: Apple's system aliases resolve to SF Pro, while
+     Windows resolves to Segoe UI. The explicit SF Pro name is a fallback for
+     environments that expose the family but not the system alias. */
+  --pin-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --pin-tracking-ui: -0.01em;
+  --pin-tracking-label: 0.06em;
 
   /* Tight and low — elevation should read as a crisp edge, not a haze. */
   --pin-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 12px rgba(9, 9, 11, 0.08);
@@ -134,6 +139,7 @@
   color: var(--pin-ink);
   font-size: 13px;
   line-height: 1.5;
+  letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -227,6 +233,7 @@
   background: var(--pin-paper);
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
   white-space: nowrap;
   transition: background 120ms ease, border-color 120ms ease;
 }
@@ -313,6 +320,12 @@
   background: var(--pin-paper-sunk);
   color: var(--pin-ink);
 }
+/* Deletes and other row-level actions square off. The circle reads as a tool
+   you can be holding — that is the toolbar's language, not a list row's. */
+.pin-icon-btn--square {
+  border-radius: var(--pin-radius-sm);
+}
+
 /*
  * The active tool: light blue disc, dark blue glyph, filling the whole button.
  * The disc is what makes the state readable at toolbar size — a colour change
@@ -343,16 +356,32 @@
   white-space: nowrap;
 }
 /*
- * A chip with nothing to decide wears the off state — the light grey of Capture
- * before it is capturing. Dimming the *on* state instead produced a mid-grey
- * fill that read as a third thing, neither on nor off, and darker than either.
+ * A chip with nothing to decide keeps the white plate and just recedes — same
+ * shape, fainter ink and hairline. A grey fill made it a third state, neither
+ * on nor off and darker than both; this reads as the same chip, further away.
  */
 .pin-chip:disabled {
-  background: var(--pin-off);
-  border-color: transparent;
-  color: var(--pin-ink-muted);
+  background: var(--pin-paper);
+  border-color: var(--pin-rule);
+  color: var(--pin-ink-faint);
   cursor: default;
 }
+/*
+ * Three states, two full steps apart: faint for a chip with nothing to decide,
+ * near-black for one you can press, the black fill for one you have.
+ *
+ * Scoped to `button` because the same class is a passive badge on the shelf,
+ * and the on-state is excluded outright rather than out-specified — hovering a
+ * selected chip must not lift the black fill off it, and black text on that
+ * fill is the failure that ordering alone would leave one edit away.
+ */
+button.pin-chip:not(:disabled):not([data-on="true"]) {
+  color: var(--pin-ink);
+}
+button.pin-chip:not(:disabled):not([data-on="true"]):hover {
+  background: var(--pin-paper-soft);
+}
+
 .pin-chip[data-on="true"] {
   background: var(--pin-on-fill);
   border-color: transparent;
@@ -1075,6 +1104,7 @@
   padding: 10px 0;
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
   color: var(--pin-ink-muted);
   border-bottom: 1.5px solid transparent;
   margin-bottom: -1px;
@@ -1104,13 +1134,23 @@
 /* Matches the tabs it sits beside — same size, weight and colour. What tells
    it apart is where it is and what it does on hover, not a pixel of type size.
    A one-pixel difference on the same rail reads as a mistake, not a rank. */
+/* Same hover as the trash it is a bulk version of — grey plate, darker ink.
+   The negative margin pays back the padding so the text still sits flush with
+   the rail's right edge; only the plate extends past it. */
 .pin-tab-action {
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
   color: var(--pin-ink-muted);
-  padding: 4px 0;
+  padding: 4px 7px;
+  margin-right: -7px;
+  border-radius: var(--pin-radius-sm);
+  transition: background 120ms ease, color 120ms ease;
 }
-.pin-tab-action:hover { color: var(--pin-ink); }
+.pin-tab-action:hover {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
+}
 
 .pin-panel__body {
   flex: 1 1 auto;
@@ -1207,6 +1247,7 @@
 .pin-row__title {
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1319,21 +1360,155 @@
 
 .pin-rename {
   font: inherit;
+  letter-spacing: var(--pin-tracking-ui);
   font-weight: 500;
   color: var(--pin-ink);
   background: var(--pin-paper);
   border: none;
   outline: none;
   padding: 1px 3px;
-  margin: -1px -3px;
+  /*
+   * Left stays pulled so the name does not shift sideways when you click it.
+   * The right does not: the trigger's -3px is almost exactly the width of the
+   * space that follows, so the field ate it, and the 1.5px ring then sat on
+   * the "i" of "is the target".
+   */
+  margin: -1px 2px -1px -3px;
   border-radius: 4px;
   box-shadow: 0 0 0 1.5px var(--pin-ink);
+  /* As wide as the name and no wider — a fixed field would sit over the words
+     that follow it, and the row would resize the moment you started typing. */
+  field-sizing: content;
+  min-width: 3ch;
   max-width: 190px;
 }
+
+/*
+ * The differences, one row each, with a box you can tick.
+ *
+ * The same selection as the chips above at a resolution you can judge: "radius"
+ * is a category to have an opinion about, `4px → 12px` is two values you can
+ * look at. Unticked rows dim rather than disappear, so the list does not
+ * reflow under the pointer while you are working down it.
+ */
+.pin-changes {
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  overflow: hidden;
+}
+
+.pin-change {
+  display: grid;
+  grid-template-columns: 15px 74px 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--pin-rule);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.pin-change:last-child { border-bottom: none; }
+.pin-change:hover { background: var(--pin-paper-soft); }
+
+.pin-change__box {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--pin-rule-strong);
+  background: var(--pin-paper);
+  cursor: pointer;
+  position: relative;
+}
+.pin-change__box:checked {
+  background: var(--pin-on-fill);
+  border-color: var(--pin-on-fill);
+}
+/* The tick is drawn rather than a glyph, so it scales with the box and needs
+   no icon import inside a label. */
+.pin-change__box:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--pin-on-ink);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(45deg);
+}
+
+/*
+ * The property and the value it would become are one statement, so they carry
+ * one colour and step together: grey while the row is off, black once it is on.
+ * A blanket opacity used to do this, which faded the old value and the arrow by
+ * the same amount and left the row uniformly washed out — nothing in it looked
+ * more important than anything else.
+ */
+.pin-change__name,
+.pin-change__to {
+  color: var(--pin-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 120ms ease;
+}
+.pin-change__to { font-weight: 600; }
+.pin-change[data-on="false"] .pin-change__name,
+.pin-change[data-on="false"] .pin-change__to {
+  color: var(--pin-ink-muted);
+}
+/* The value being replaced stays faint in both states — it is the thing you are
+   moving away from, and it should not brighten when you commit to leaving it. */
+.pin-change__from { color: var(--pin-ink-faint); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; }
+.pin-change__arrow { color: var(--pin-ink-faint); }
+
+/*
+ * A row that draws its difference instead of describing it.
+ *
+ * Six columns rather than five: the two value cells become fixed-width swatch
+ * frames, and the numbers they used to hold move to a caption at the end. The
+ * swatches size themselves, so `auto` — a `1fr` value column would stretch a
+ * 22px square across half the row.
+ */
+.pin-change--visual {
+  grid-template-columns: 15px 74px auto 12px auto 1fr;
+}
+.pin-change__caption {
+  color: var(--pin-ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/*
+ * The counted rows.
+ *
+ * Full width rather than a grid cell, because it is a sentence about the list
+ * and not another item in it — giving it the same columns as the rows above
+ * would make it read as a change you could tick.
+ */
+.pin-change--more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--pin-rule);
+  background: var(--pin-paper-soft);
+  color: var(--pin-ink-muted);
+  font-family: var(--pin-font);
+  font-size: 11px;
+}
+.pin-change--more:hover { color: var(--pin-ink); }
 
 .pin-section-label {
   font-size: 11px;
   font-weight: 500;
+  letter-spacing: var(--pin-tracking-label);
+  text-transform: uppercase;
   color: var(--pin-ink-muted);
   padding: 6px 2px 2px;
 }

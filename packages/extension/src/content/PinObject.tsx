@@ -21,6 +21,12 @@ interface PinObjectProps {
   primary: boolean;
   selectionCount: number;
   connecting: boolean;
+  /**
+   * The source values this pin's element would take, when it is the target of a
+   * relationship with properties selected. Container treatment only — the shot
+   * is a photograph, so nothing that reflows content can be shown on it.
+   */
+  preview?: Record<string, string>;
   onSelect: (additive: boolean) => void;
   /** Live, per frame — state only, never storage. */
   onMove: (position: FloatPosition) => void;
@@ -51,6 +57,7 @@ export function PinObject({
   primary,
   selectionCount,
   connecting,
+  preview,
   onSelect,
   onMove,
   onMoveEnd,
@@ -181,18 +188,102 @@ export function PinObject({
     captured && captured.width > 0 && captured.height > 0
       ? Math.min(1, MAX_SHOT.height / captured.height)
       : null;
+  /*
+   * The previewed box, in page pixels.
+   *
+   * A padding change resizes the element, so the card has to resize with it or
+   * the two stop describing the same thing. The photograph cannot reflow — the
+   * content inside it stays exactly the size it was shot at — but that is what
+   * more padding actually looks like: the same content, more room around it.
+   *
+   * So the frame grows by the padding delta and the shot sits at its natural
+   * size inside. The space that opens up is not a gap to be avoided; it *is*
+   * the padding, and it is filled with the element's own background below.
+   */
+  const previewBox = (() => {
+    if (!captured) return null;
+    const num = (value: string | undefined) => {
+      const px = Number.parseFloat(value ?? "");
+      return Number.isFinite(px) ? px : null;
+    };
+    const delta = (side: string) => {
+      const next = num(preview?.[`padding-${side}`]);
+      const now = num(pin.computedStyles[`padding-${side}`]);
+      return next === null || now === null ? 0 : next - now;
+    };
+    const width = num(preview?.["width"]) ?? captured.width + delta("left") + delta("right");
+    const height = num(preview?.["height"]) ?? captured.height + delta("top") + delta("bottom");
+    return { width: Math.max(1, width), height: Math.max(1, height) };
+  })();
+
+  const box = previewBox ?? captured;
   const shotStyle =
     fit !== null && captured
       ? { width: Math.round(captured.width * fit), height: Math.round(captured.height * fit) }
       : undefined;
-  const cropped = shotStyle !== undefined && shotStyle.width > MAX_SHOT.width;
-  const frameStyle = shotStyle
-    ? { width: Math.min(shotStyle.width, MAX_SHOT.width), height: shotStyle.height }
+  const boxStyle =
+    fit !== null && box
+      ? { width: Math.round(box.width * fit), height: Math.round(box.height * fit) }
+      : undefined;
+  const cropped = boxStyle !== undefined && boxStyle.width > MAX_SHOT.width;
+  /** The preview grew or shrank the box, so the photograph no longer fills it. */
+  const inset =
+    boxStyle !== undefined &&
+    shotStyle !== undefined &&
+    (boxStyle.width !== shotStyle.width || boxStyle.height !== shotStyle.height);
+  const frameStyle = boxStyle
+    ? {
+        width: Math.min(boxStyle.width, MAX_SHOT.width),
+        height: boxStyle.height,
+        // The room the padding opens up is the element's own background, not
+        // our grey. Filled with it, the space reads as part of the component
+        // rather than as a hole where the picture failed to reach.
+        background:
+          preview?.["background-color"] ?? pin.computedStyles["background-color"] ?? undefined,
+        display: "grid",
+        placeItems: "center",
+      }
     : undefined;
+
+  /*
+   * Border and shadow, previewed on the card itself.
+   *
+   * The shot is a photograph, so anything that reflows content — padding, gap,
+   * font size — cannot be shown on it without lying. Border and shadow are
+   * different: they are drawn *around* the element, so drawing them around the
+   * frame is the same change, not an impression of it. Radius goes through
+   * `--pin-card-radius` above rather than here.
+   *
+   * Lengths are scaled by `fit` for the same reason the shot is: a 2px border
+   * on a card shown at 60% is 1.2px, and an unscaled one would read as heavier
+   * than the change actually is.
+   */
+  const previewFrame = (() => {
+    if (!preview) return undefined;
+    const scale = fit ?? 1;
+    const px = (value: string) => `${Number.parseFloat(value) * scale}px`;
+    const out: React.CSSProperties = {};
+    if (preview["border-style"]) out.borderStyle = preview["border-style"];
+    if (preview["border-width"]) out.borderWidth = px(preview["border-width"]);
+    if (preview["border-color"]) out.borderColor = preview["border-color"];
+    // A border added inside a frame sized to the shot would crop it; the box
+    // grows outward instead so the photograph stays whole.
+    if (out.borderWidth) out.boxSizing = "content-box";
+    return Object.keys(out).length > 0 ? out : undefined;
+  })();
 
   const radiusPx = (() => {
     if (pin.kind !== "element") return null;
-    const value = pin.computedStyles["border-radius"];
+    /*
+     * The preview wins over what was captured.
+     *
+     * Radius rides the existing `--pin-card-radius` plumbing rather than being
+     * set on the frame directly — that variable already drives the card, the
+     * clipped shot and the clamped label corner together, and a second source
+     * of truth for the same curve is what put a crescent at the corners once
+     * already.
+     */
+    const value = preview?.["border-radius"] ?? pin.computedStyles["border-radius"];
     const px = value === undefined ? 0 : Number.parseFloat(value);
     if (!Number.isFinite(px)) return null;
     return px * (fit ?? 1);
@@ -273,13 +364,31 @@ export function PinObject({
         </div>
       )}
 
-      <div className="pin-object__card" data-pulse={pulse} ref={card}>
-        <div className="pin-object__inner" style={frameStyle} data-cropped={cropped}>
+      <div
+        className="pin-object__card"
+        data-pulse={pulse}
+        ref={card}
+        style={preview?.["box-shadow"] ? { boxShadow: preview["box-shadow"] } : undefined}
+      >
+        <div
+          className="pin-object__inner"
+          style={{ ...frameStyle, ...previewFrame }}
+          data-cropped={cropped}
+        >
           {shot ? (
             <img
               className="pin-object__shot"
               src={shot}
-              style={shotStyle}
+              style={{
+                ...shotStyle,
+                /*
+                 * `.pin-object__shot` inherits the frame's radius so the photo
+                 * is clipped along the curve it was cut on. Once padding insets
+                 * it that curve is no longer at its edge, and inheriting it
+                 * rounds off content instead of the card.
+                 */
+                ...(inset ? { borderRadius: 0 } : null),
+              }}
               alt={pin.elementText || "Pinned element"}
             />
           ) : (

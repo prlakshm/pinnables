@@ -58,6 +58,7 @@ export function RenamableTitle({
         className={`pin-rename ${className ?? ""}`}
         style={style}
         value={draft}
+        size={Math.max(draft.length + 1, 3)}
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => void commit(draft)}

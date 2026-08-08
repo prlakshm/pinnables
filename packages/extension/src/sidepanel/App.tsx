@@ -25,6 +25,32 @@ type Phase = "idle" | "submitting" | "submitted";
  */
 const SUBMITTED_MS = 1200;
 
+/**
+ * Hand the pointer to Cursor directly.
+ *
+ * MCP cannot push, so the agent has to be told to come and look. Cursor's
+ * deeplink is the one channel that goes the other way: it opens the app with a
+ * prompt already in the composer, which is the difference between "press
+ * submit" and "press submit, switch apps, paste".
+ *
+ * Only ever called once the board is materialised — a prompt telling Cursor to
+ * load a board that never reached disk is worse than no prompt, because it
+ * fails inside the agent where the reason is invisible.
+ *
+ * The anchor is deliberate: assigning `location.href` in a side panel navigates
+ * the panel itself, and a synthetic click on a detached anchor hands the URL to
+ * the OS without the panel going anywhere.
+ */
+function openInCursor(pointer: string): void {
+  const url = `cursor://anysphere.cursor-deeplink/prompt?text=${encodeURIComponent(pointer)}`;
+  const link = document.createElement("a");
+  link.href = url;
+  link.rel = "noreferrer";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
 export function App() {
   const [board, setBoard] = useState<Board | null>(null);
   const [state, setState] = useState<ExtensionState | null>(null);
@@ -95,6 +121,11 @@ export function App() {
       } catch {
         setUncopied(result.pointer);
       }
+      // The clipboard is still written first, and on purpose: the deeplink can
+      // fail quietly — no Cursor installed, protocol handler declined, the
+      // wrong app registered — and a pointer already on the clipboard turns
+      // that into a paste rather than a dead end.
+      if (result.materialized) openInCursor(result.pointer);
       setPhase("submitted");
     } catch {
       // The board is untouched and still on screen, so the press can simply be
@@ -218,7 +249,7 @@ export function App() {
           <textarea
             className="pin-field"
             rows={2}
-            placeholder="Add instructions for every pin"
+            placeholder="Add instructions for every pin…"
             defaultValue={board.globalInstruction}
             onBlur={(e) => void setInstruction(e.target.value)}
           />

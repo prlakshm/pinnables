@@ -7,7 +7,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { DEFAULT_DRAW_COLOR, type Board, type DrawShape, type Pin } from "@pinnables/shared";
+import {
+  computeStyleDiff,
+  DEFAULT_DRAW_COLOR,
+  expandProperties,
+  type Board,
+  type DrawShape,
+  type Pin,
+} from "@pinnables/shared";
 import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from "../lib/capture";
 import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
 import type { OverlayApi } from "./mount";
@@ -273,6 +280,104 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     [route, api, guard],
   );
 
+  /* --------------------------------------------------------- live preview */
+
+  /**
+   * Selected differences, applied to the real element on the page.
+   *
+   * Ticking a property is a claim about how the page should look, and the
+   * fastest way to know whether the claim was right is to see it. So the target
+   * element takes the source's values as inline styles, immediately — no button,
+   * no round trip through an agent.
+   *
+   * It is a preview and nothing more. Inline styles die with the page, touch no
+   * source file, and are lifted the moment the property is unticked. The agent
+   * is still what makes any of it real.
+   *
+   * Derived rather than applied inline, because the answer has two consumers:
+   * the real element on the page, and the pinned card floating over it.
+   * Computing it once keeps them the same claim rather than two that drift, and
+   * keeps a render loop out of an effect that also mutates the DOM.
+   */
+  const previews = useMemo(() => {
+    const map = new Map<string, Record<string, string>>();
+    if (!board) return map;
+    for (const rel of board.relationships) {
+      const source = board.pins.find((p) => p.id === rel.sourcePinId);
+      if (!source) continue;
+      const wanted = expandProperties(rel.properties);
+      if (wanted.length === 0) continue;
+      for (const targetId of rel.targetPinIds) {
+        const target = board.pins.find((p) => p.id === targetId);
+        if (!target) continue;
+        const styles = map.get(targetId) ?? {};
+        // Longhands, not the collapsed row — `padding` is not a thing the
+        // element's style object can be set to from four captured values.
+        for (const property of wanted) {
+          const value = source.computedStyles[property];
+          if (value === undefined) continue;
+          if (target.computedStyles[property] === value) continue;
+          styles[property] = value;
+        }
+        if (Object.keys(styles).length > 0) map.set(targetId, styles);
+      }
+    }
+    return map;
+  }, [board]);
+
+  useEffect(() => {
+    if (!board) return;
+    const touched: Array<{ element: HTMLElement; property: string; had: string }> = [];
+
+    for (const [targetId, styles] of previews) {
+      const target = board.pins.find((p) => p.id === targetId);
+      if (!target || target.route !== route) continue;
+      const found = refindElement(target);
+      if (!found) continue;
+      const element = found.element as HTMLElement;
+
+      const set = (property: string, value: string) => {
+        touched.push({ element, property, had: element.style.getPropertyValue(property) });
+        element.style.setProperty(property, value, "important");
+      };
+
+      for (const [property, value] of Object.entries(styles)) {
+        set(property, value);
+        /*
+         * A flex item's width is not decided by `width`.
+         *
+         * `flex: 1` means `flex-basis: 0%` and `flex-grow: 1` — the row sizes
+         * the item and `width` is ignored no matter how loudly it is set.
+         *
+         * Only a fallback: `flex-basis` and `flex-grow` are captured now, so
+         * the diff usually carries them itself, and the source's real values
+         * beat anything guessed here.
+         */
+        const axis = property === "width" ? "row" : property === "height" ? "column" : null;
+        if (!axis) continue;
+        if ("flex-basis" in styles || "flex-grow" in styles) continue;
+        const parent = element.parentElement;
+        if (!parent) continue;
+        const parentDisplay = getComputedStyle(parent).display;
+        if (parentDisplay !== "flex" && parentDisplay !== "inline-flex") continue;
+        const direction = getComputedStyle(parent).flexDirection.startsWith("column")
+          ? "column"
+          : "row";
+        if (direction !== axis) continue;
+        set("flex-basis", "auto");
+        set("flex-grow", "0");
+      }
+    }
+
+    return () => {
+      // Put back exactly what was there, which for almost every property is "".
+      for (const { element, property, had } of touched) {
+        if (had) element.style.setProperty(property, had);
+        else element.style.removeProperty(property);
+      }
+    };
+  }, [board, route, previews]);
+
   /* ---------------------------------------------------------- multi-select */
 
   /**
@@ -448,6 +553,21 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       setHighlight(null);
       const measured = measureElement(element);
       const unmask = maskSensitive();
+      /*
+       * Our own overlay is not part of the component.
+       *
+       * `captureVisibleTab` photographs the viewport and the result is cropped
+       * to the element, so anything of ours sitting over that rect lands inside
+       * the crop — a floating pin parked on a neighbouring card, the toolbar, a
+       * hover outline. The pin then shows the component wearing Pinnables.
+       *
+       * Hidden rather than unmounted: the tree keeps its state and comes back
+       * in the same frame, where a remount would drop positions and re-run the
+       * mount effects for the sake of one screenshot.
+       */
+      const host = document.getElementById(OVERLAY_HOST_ID);
+      const hadVisibility = host?.style.visibility ?? "";
+      if (host) host.style.visibility = "hidden";
       try {
         // One frame so the redaction covers are painted before the shot.
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -463,6 +583,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       } catch (err) {
         if (!guard(err)) console.error("[pinnables] capture failed", err);
       } finally {
+        if (host) host.style.visibility = hadVisibility;
         unmask();
         setCapturing(false);
       }
@@ -717,6 +838,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           onSelect={(additive) => selectPin(pin.id, additive)}
           onMove={(next) => moveTo(pin.id, next)}
           onMoveEnd={(next) => persistPosition(pin.id, next)}
+          preview={previews.get(pin.id)}
           onDismiss={() => setDismissed((prev) => new Set(prev).add(pin.id))}
           onCommit={commitNote}
           onRelate={relateSelected}

@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run check-tokens && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
+    "build": "npm run check-tokens && npm run check-typography && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/vite-plugin && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
     "dev:extension": "npm run dev --workspace @pinnables/extension",
     "dev:service": "npm run start --workspace @pinnables/service",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
@@ -17,6 +17,7 @@
     "demo": "node scripts/serve-demo.mjs demo",
     "make-icons": "node scripts/make-icons.mjs",
     "check-tokens": "node scripts/check-tokens.mjs",
+    "check-typography": "node scripts/check-typography.mjs",
     "film": "node scripts/serve-demo.mjs film"
   },
   "devDependencies": {
