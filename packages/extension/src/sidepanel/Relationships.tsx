@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   computeBlockedChanges,
   computeStyleDiff,
@@ -6,6 +5,7 @@ import {
   describeChange,
   expandProperties,
   rawPropertiesFor,
+  STYLE_ALLOWLIST,
   STYLE_GROUPS,
   type Board,
   type BlockedChange,
@@ -60,8 +60,6 @@ function RelationshipCard({
 }) {
   const byId = new Map(board.pins.map((p) => [p.id, p]));
   const source = byId.get(relationship.sourcePinId);
-  const [showSubtle, setShowSubtle] = useState(false);
-  const [showBlocked, setShowBlocked] = useState(false);
 
   /*
    * Selection lives in raw CSS properties, never in the names on screen.
@@ -121,8 +119,6 @@ function RelationshipCard({
    * 16px is invisible *and* is the drift this product exists to catch, so it
    * stays a click away rather than a threshold away.
    */
-  const perceptible = rows.filter((r) => r.entry.perceptible);
-  const subtle = rows.filter((r) => !r.entry.perceptible);
 
   const differingRaw = new Set(rows.flatMap((r) => r.raw));
   const groupRaw = (group: string) => expandProperties([group]).filter((p) => differingRaw.has(p));
@@ -185,6 +181,23 @@ function RelationshipCard({
   const blockedGroups = new Set(
     blocked.map(({ entry }) => groupOf(entry.property)).filter((g): g is string => g !== null),
   );
+  /*
+   * Canonical order, so the table does not reshuffle as selections change.
+   *
+   * `STYLE_ALLOWLIST` is the order the properties are captured in, which is the
+   * order they were read in before the buckets split them up. A collapsed row
+   * like `padding` sorts by the first longhand underneath it.
+   */
+  const rank = (property: string) => {
+    const first = rawPropertiesFor(property)[0] ?? property;
+    const at = STYLE_ALLOWLIST.indexOf(first);
+    return at === -1 ? Number.MAX_SAFE_INTEGER : at;
+  };
+  const ordered = [
+    ...rows.map((r) => ({ ...r, blocked: false as const })),
+    ...blocked.map((b) => ({ ...b, raw: [] as string[], blocked: true as const })),
+  ].sort((a, b) => rank(a.entry.property) - rank(b.entry.property));
+
   const anyMatched = GROUP_NAMES.some(
     (group) => groupRaw(group).length === 0 && !blockedGroups.has(group),
   );
@@ -245,68 +258,29 @@ function RelationshipCard({
           is a category to have an opinion about; `4px → 12px` is two values you
           can look at.
         */}
-        {rows.length > 0 && (
+        {/*
+          One table, in the order the properties are captured in.
+          
+          Splitting it into "you can see these", "you cannot see these" and
+          "these cannot be applied" was three disclosures over five rows: you
+          had to open two of them to find out that width and height were even
+          in the diff. Every difference is listed, in one place, in a stable
+          order — the ones that cannot be applied say so in their own row rather
+          than being counted behind a toggle.
+        */}
+        {ordered.length > 0 && (
           <div className="pin-changes">
-            {perceptible.map(({ key, entry, raw }) => (
-              <ChangeRow
-                key={key}
-                detail={entry}
-                on={raw.every((p) => selected.has(p))}
-                onToggle={(next) => toggle(raw, next)}
-              />
-            ))}
-
-            {/*
-              The quiet ones, counted rather than listed.
-
-              They are still in the diff and still selected by default — the
-              line says so, because a reader who is told something is hidden
-              will assume it was dropped.
-            */}
-            {subtle.length > 0 && (
-              <>
-                <button
-                  className="pin-change pin-change--more"
-                  onClick={() => setShowSubtle((open) => !open)}
-                  aria-expanded={showSubtle}
-                >
-                  {showSubtle
-                    ? `Hide ${subtle.length} you can't see`
-                    : `${subtle.length} more you can't see — sent to the agent anyway`}
-                </button>
-                {showSubtle &&
-                  subtle.map(({ key, entry, raw }) => (
-                    <ChangeRow
-                      key={key}
-                      detail={entry}
-                      on={raw.every((p) => selected.has(p))}
-                      onToggle={(next) => toggle(raw, next)}
-                    />
-                  ))}
-              </>
-            )}
-
-            {/*
-              Its own disclosure rather than sharing the one above, because the
-              two say different things: those are changes you cannot see, these
-              are not changes at all. One toggle would need a label that covers
-              both, and every phrasing of that label is untrue about half of
-              what it reveals. Same treatment, so the card stays as quiet.
-            */}
-            {blocked.length > 0 && (
-              <>
-                <button
-                  className="pin-change pin-change--more"
-                  onClick={() => setShowBlocked((open) => !open)}
-                  aria-expanded={showBlocked}
-                >
-                  {showBlocked
-                    ? `Hide ${blocked.length} that can't be applied`
-                    : `${blocked.length} that can't be applied`}
-                </button>
-                {showBlocked &&
-                  blocked.map(({ key, entry }) => <BlockedRow key={key} change={entry} />)}
-              </>
+            {ordered.map((row) =>
+              row.blocked ? (
+                <BlockedRow key={row.key} change={row.entry} />
+              ) : (
+                <ChangeRow
+                  key={row.key}
+                  detail={row.entry}
+                  on={row.raw.every((p) => selected.has(p))}
+                  onToggle={(next) => toggle(row.raw, next)}
+                />
+              ),
             )}
           </div>
         )}
