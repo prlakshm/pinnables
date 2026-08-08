@@ -292,6 +292,11 @@
  * remembering which is which.
  */
 .pin-btn--quiet {
+  /* A step past the hairline the rest of the panel uses. At 1px against a grey
+     plate the edge was there and did not register; the fill is close enough to
+     the line that it needs the extra half-pixel to read as an edge at all.
+     Safe to thicken: `box-sizing: border-box` holds the button's footprint. */
+  border-width: 1.5px;
   border-color: var(--pin-rule);
 }
 .pin-btn--quiet:hover {
