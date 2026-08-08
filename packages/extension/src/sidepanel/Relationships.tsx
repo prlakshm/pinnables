@@ -127,7 +127,7 @@ function RelationshipCard({
 
         <div>
           <span className="pin-section-label">Apply changes</span>
-          {matched.length > 0 && <p className="pin-note-line">Grayed properties already match.</p>}
+          {matched.length > 0 && <p className="pin-note-line">Disabled properties already match.</p>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
             {GROUP_NAMES.map((group) => {
               const same = !differing.has(group);
