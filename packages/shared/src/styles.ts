@@ -160,6 +160,49 @@ export function computeStyleDiff(
   return collapseShorthands(diff);
 }
 
+export interface BlockedChange extends StyleDiffEntry {
+  applicability: Applicability;
+}
+
+/**
+ * The differences the guard threw away, for the one caller that wants them.
+ *
+ * A sibling rather than a flag on `computeStyleDiff`, because the three
+ * consumers of that function do not want the same thing and only one of them
+ * wants these. The brief must not carry them — `width: 232.5px` on a flex item
+ * is an instruction that does nothing, and an agent quietly doing nothing is a
+ * failure nobody sees in review. The live preview must not apply them for the
+ * same reason. Only the panel should show them, greyed, with the reason.
+ *
+ * So the default stays safe and the exception opts in. Inverting that — return
+ * everything flagged, let callers filter — would put the burden on three call
+ * sites to remember, and the one that forgets fails silently and ships.
+ *
+ * Note the second condition: blocked is not the same as blocked *and*
+ * differing. `border-color` is inert on a borderless source whether or not the
+ * two pins disagree about it, and a greyed row for two identical colours is a
+ * row about nothing.
+ */
+export function computeBlockedChanges(
+  source: Pin,
+  target: Pin,
+  properties: readonly string[],
+): BlockedChange[] {
+  const blocked: BlockedChange[] = [];
+  const applicable = applicabilityGuard(source, target);
+
+  for (const property of expandProperties(properties)) {
+    const applicability = applicable(property);
+    if (applicability.applicable) continue;
+    const to = source.computedStyles[property];
+    const from = target.computedStyles[property];
+    if (to === undefined || from === undefined) continue;
+    if (to === from) continue;
+    blocked.push({ property, from, to, applicability });
+  }
+  return blocked;
+}
+
 /**
  * Whether an element's size is handed to it by its flex container.
  *

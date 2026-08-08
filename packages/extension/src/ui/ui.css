@@ -1504,6 +1504,22 @@ button.pin-chip:not(:disabled):not([data-on="true"]):hover {
 }
 .pin-change--more:hover { color: var(--pin-ink); }
 
+/*
+ * A row that explains itself instead of offering something.
+ *
+ * Three columns: the checkbox slot stays empty rather than collapsing, so the
+ * property names still line up with the rows above — the reader should see one
+ * list with a quiet tail, not two lists that happen to be adjacent. Default
+ * cursor, because nothing here responds to a click.
+ */
+.pin-change--blocked {
+  grid-template-columns: 15px 74px 1fr;
+  cursor: default;
+}
+.pin-change--blocked:hover { background: none; }
+.pin-change--blocked .pin-change__name { color: var(--pin-ink-faint); }
+.pin-change__caption--lead { text-align: left; }
+
 .pin-section-label {
   font-size: 11px;
   font-weight: 500;

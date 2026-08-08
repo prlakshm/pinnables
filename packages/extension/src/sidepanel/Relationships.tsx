@@ -1,12 +1,13 @@
 import { useState } from "react";
 import {
-  applicabilityGuard,
+  computeBlockedChanges,
   computeStyleDiff,
   describeChange,
   expandProperties,
   rawPropertiesFor,
   STYLE_GROUPS,
   type Board,
+  type BlockedChange,
   type DiffDetail,
   type Pin,
   type Relationship,
@@ -60,6 +61,7 @@ function RelationshipCard({
   const byId = new Map(board.pins.map((p) => [p.id, p]));
   const source = byId.get(relationship.sourcePinId);
   const [showSubtle, setShowSubtle] = useState(false);
+  const [showBlocked, setShowBlocked] = useState(false);
 
   /*
    * Selection lives in raw CSS properties, never in the names on screen.
@@ -77,13 +79,34 @@ function RelationshipCard({
     ? relationship.targetPinIds.flatMap((targetId) => {
         const target = byId.get(targetId);
         if (!target) return [];
-        const applicable = applicabilityGuard(source, target);
+        // No applicability threaded here: `computeStyleDiff` already dropped
+        // everything the guard rejects, so every entry that reaches this line
+        // is applicable by construction and passing the guard's verdict would
+        // only imply a variation that cannot occur. The blocked ones come back
+        // separately below, carrying their own.
         return computeStyleDiff(source, target, GROUP_NAMES).map((entry) => ({
           key: `${targetId}:${entry.property}`,
-          // The same guard the diff itself ran, handed on so ranking cannot
-          // promote a change that could never manifest.
-          entry: describeChange(entry, applicable(entry.property)),
+          entry: describeChange(entry),
           raw: rawPropertiesFor(entry.property),
+        }));
+      })
+    : [];
+
+  /**
+   * The differences that exist and cannot be acted on — a width the flex row
+   * decides, a border colour on a card that draws no border. They are not in
+   * the diff, because the agent must not be handed instructions that do
+   * nothing, and the preview must not try to apply them. They are still true
+   * about these two pins, so the panel says so rather than leaving the reader
+   * to wonder why "size" is greyed out.
+   */
+  const blocked = source
+    ? relationship.targetPinIds.flatMap((targetId) => {
+        const target = byId.get(targetId);
+        if (!target) return [];
+        return computeBlockedChanges(source, target, GROUP_NAMES).map((entry) => ({
+          key: `${targetId}:${entry.property}`,
+          entry,
         }));
       })
     : [];
@@ -244,6 +267,29 @@ function RelationshipCard({
                   ))}
               </>
             )}
+
+            {/*
+              Its own disclosure rather than sharing the one above, because the
+              two say different things: those are changes you cannot see, these
+              are not changes at all. One toggle would need a label that covers
+              both, and every phrasing of that label is untrue about half of
+              what it reveals. Same treatment, so the card stays as quiet.
+            */}
+            {blocked.length > 0 && (
+              <>
+                <button
+                  className="pin-change pin-change--more"
+                  onClick={() => setShowBlocked((open) => !open)}
+                  aria-expanded={showBlocked}
+                >
+                  {showBlocked
+                    ? `Hide ${blocked.length} that can't be applied`
+                    : `${blocked.length} that can't be applied`}
+                </button>
+                {showBlocked &&
+                  blocked.map(({ key, entry }) => <BlockedRow key={key} change={entry} />)}
+              </>
+            )}
           </div>
         )}
 
@@ -261,6 +307,30 @@ function RelationshipCard({
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * A difference the guard rejected, shown as an explanation rather than an option.
+ *
+ * No checkbox: the row exists precisely because there is nothing to apply, and
+ * a control that cannot be acted on is worse than no control. The values move
+ * to the tooltip — they are why this looks like a change, not what you would do
+ * about it — and the reason takes their place, uncapitalised in the data and
+ * read as a fragment here.
+ */
+function BlockedRow({ change }: { change: BlockedChange }) {
+  return (
+    <div
+      className="pin-change pin-change--blocked"
+      title={`${change.property}: ${change.from} → ${change.to}`}
+    >
+      <span />
+      <span className="pin-change__name">{change.property}</span>
+      <span className="pin-change__caption pin-change__caption--lead">
+        can&apos;t apply — {change.applicability.reason}
+      </span>
     </div>
   );
 }
