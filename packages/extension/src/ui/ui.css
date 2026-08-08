@@ -1102,8 +1102,11 @@
   align-self: center;
 }
 
+/* Matches the tabs it sits beside — same size, weight and colour. What tells
+   it apart is where it is and what it does on hover, not a pixel of type size.
+   A one-pixel difference on the same rail reads as a mistake, not a rank. */
 .pin-tab-action {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--pin-ink-muted);
   padding: 4px 0;
