@@ -296,7 +296,7 @@
      plate the edge was there and did not register; the fill is close enough to
      the line that it needs the extra half-pixel to read as an edge at all.
      Safe to thicken: `box-sizing: border-box` holds the button's footprint. */
-  border-width: 2px;
+  border-width: 1.5px;
   border-color: var(--pin-rule);
 }
 .pin-btn--quiet:hover {
