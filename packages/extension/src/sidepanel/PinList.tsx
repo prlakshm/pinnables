@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { describeDrawings, sortedByOrder, type Board, type Pin } from "@pinnables/shared";
+import { describeDrawings, pinLabel, sortedByOrder, type Board, type Pin } from "@pinnables/shared";
 import { send, type Contract } from "../lib/messages";
 import { ArrowUpRightIcon, CheckIcon, LinkIcon, TrashIcon } from "../ui/icons";
 import { Inspector } from "./Inspector";
+import { RenamableTitle } from "./RenamableTitle";
 
 /**
  * Compact rows by default, expand for the screenshot and the inspector.
@@ -150,7 +151,7 @@ function PinRow({
 
   useEffect(() => setDraft(pin.annotation), [pin.annotation]);
 
-  const title = pin.componentName ?? pin.elementText.slice(0, 32) ?? pin.selector;
+  const title = pinLabel(pin, board.pins);
   const linked = board.relationships.some(
     (r) => r.sourcePinId === pin.id || r.targetPinIds.includes(pin.id),
   );
@@ -178,7 +179,12 @@ function PinRow({
 
           <span className="pin-row__main">
             <span className="pin-row__head">
-              <span className="pin-row__title">{title || "Element"}</span>
+              <RenamableTitle
+                pin={pin}
+                siblings={board.pins}
+                onChanged={onChanged}
+                className="pin-row__title"
+              />
               {pin.kind === "region" && <span className="pin-chip pin-chip--mono">region</span>}
               <span className="pin-row__route">{pin.route}</span>
               {linked && (

@@ -186,22 +186,28 @@ export type Project = z.infer<typeof ProjectSchema>;
 /**
  * What to call a pin on screen.
  *
- * The component name is the right answer until a board holds two of the same
- * component, which is exactly when a relationship is most likely — "make this
- * StatCard match that StatCard" is unreadable when both are called StatCard. So
- * the content disambiguates: the first few words the element actually contains,
- * which is what a person would have said anyway.
+ * A name is a label the user talks in, not a fact about the code. The component
+ * name is right until a board holds two of the same component — and that is
+ * exactly when a relationship is most likely, because "make this StatCard match
+ * that StatCard" is a sentence with no subject.
+ *
+ * So duplicates get a number, in the order they were pinned: StatCard 1, then
+ * StatCard 2. Numbering beats describing. An earlier version built the label out
+ * of the element's own text and produced "StatCard · Open issues 37", which is
+ * longer than the row it sits in and changes the moment the page does.
  *
  * A typed name always wins. Nothing derived should outrank something chosen.
  */
 export function pinLabel(pin: Pin, siblings: readonly Pin[] = []): string {
   if (pin.name?.trim()) return pin.name.trim();
-  const base = pin.componentName ?? pin.elementText.trim().slice(0, 24) ?? "element";
+  const base = pin.componentName ?? pin.elementText.trim().slice(0, 24);
   if (!pin.componentName) return base || "element";
 
-  const shares = siblings.some((p) => p.id !== pin.id && p.componentName === pin.componentName);
-  if (!shares) return base;
+  const family = siblings
+    .filter((p) => p.componentName === pin.componentName)
+    .sort((a, b) => a.order - b.order);
+  if (family.length < 2) return base;
 
-  const detail = pin.elementText.trim().split(/\s+/).slice(0, 3).join(" ");
-  return detail ? `${base} · ${detail}` : base;
+  const index = family.findIndex((p) => p.id === pin.id);
+  return index === -1 ? base : `${base} ${index + 1}`;
 }

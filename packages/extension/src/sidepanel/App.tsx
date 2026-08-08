@@ -239,7 +239,7 @@ export function App() {
           <textarea
             className="pin-field"
             rows={2}
-            placeholder="Add an instruction for every pin…"
+            placeholder="Add instructions for every pin"
             defaultValue={board.globalInstruction}
             onBlur={(e) => void setInstruction(e.target.value)}
           />

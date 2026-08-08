@@ -142,6 +142,10 @@ export function renderPinContext(
   } else {
     lines.push(`source      ${pin.sourceFile ?? "unresolved"}`);
     lines.push(`component   ${pin.componentName ?? "unknown"}`);
+    // Only worth a line when the two differ — otherwise it repeats itself.
+    if (pin.name?.trim() && pin.name.trim() !== pin.componentName) {
+      lines.push(`called      ${pin.name.trim()}   (the user's name for it)`);
+    }
     lines.push(`selector    ${pin.selector}`);
     lines.push(`dom path    ${pin.domPath}`);
     lines.push(`screenshot  ${screenshotPath}`);
@@ -183,10 +187,21 @@ export function renderPinContext(
   return lines.join("\n");
 }
 
+/**
+ * What to call this pin to the agent.
+ *
+ * A user-given name is how the instructions talk about the thing — "make the
+ * revenue card match" means nothing unless the agent knows which component that
+ * is. So both travel: the name the person uses, and the component the code uses,
+ * because the first is needed to read the instruction and the second to find the
+ * file.
+ */
 function describePin(pin: Pin): string {
   if (pin.kind === "region") return pin.elementText.trim() || "marked region";
-  const label = pin.componentName ?? pin.elementText.trim().slice(0, 40);
-  return label || pin.selector;
+  const code = pin.componentName ?? pin.elementText.trim().slice(0, 40);
+  const given = pin.name?.trim();
+  if (given && code && given !== code) return `${given} (${code})`;
+  return given || code || pin.selector;
 }
 
 function sourceSuffix(pin: Pin): string {

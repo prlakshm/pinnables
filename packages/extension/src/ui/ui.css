@@ -342,8 +342,15 @@
   color: var(--pin-ink-muted);
   white-space: nowrap;
 }
+/*
+ * A chip with nothing to decide wears the off state — the light grey of Capture
+ * before it is capturing. Dimming the *on* state instead produced a mid-grey
+ * fill that read as a third thing, neither on nor off, and darker than either.
+ */
 .pin-chip:disabled {
-  opacity: 0.45;
+  background: var(--pin-off);
+  border-color: transparent;
+  color: var(--pin-ink-muted);
   cursor: default;
 }
 .pin-chip[data-on="true"] {
@@ -1287,6 +1294,41 @@
   margin: 8px 0 0;
   font-size: 11px;
   color: var(--pin-ink-muted);
+}
+
+/*
+ * The name as a label, and as a field. It has to sit on the same baseline and at
+ * the same size in both states, or clicking it makes the row jump.
+ */
+.pin-rename-trigger {
+  font: inherit;
+  color: inherit;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  border-radius: 4px;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.pin-rename-trigger:hover {
+  background: var(--pin-off);
+}
+
+.pin-rename {
+  font: inherit;
+  font-weight: 500;
+  color: var(--pin-ink);
+  background: var(--pin-paper);
+  border: none;
+  outline: none;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1.5px var(--pin-ink);
+  max-width: 190px;
 }
 
 .pin-section-label {
