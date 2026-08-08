@@ -216,7 +216,7 @@ function RelationshipCard({
           {/* The same button the shelf rows use — two deletes on two screens
               were two different shapes before. */}
           <button
-            className="pin-icon-btn pin-icon-btn--square"
+            className="pin-icon-btn"
             style={{ width: 28, height: 28, flex: "0 0 auto" }}
             onClick={async () => {
               await send("relationship/delete", { relationshipId: relationship.id });

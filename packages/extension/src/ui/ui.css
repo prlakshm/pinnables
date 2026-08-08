@@ -320,12 +320,6 @@
   background: var(--pin-paper-sunk);
   color: var(--pin-ink);
 }
-/* Deletes and other row-level actions square off. The circle reads as a tool
-   you can be holding — that is the toolbar's language, not a list row's. */
-.pin-icon-btn--square {
-  border-radius: var(--pin-radius-sm);
-}
-
 /*
  * The active tool: light blue disc, dark blue glyph, filling the whole button.
  * The disc is what makes the state readable at toolbar size — a colour change

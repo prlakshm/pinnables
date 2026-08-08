@@ -251,7 +251,7 @@ function PinRow({
                carry a warning, and the row is not dangerous — the click is, and
                the click is one gesture away from being undone by re-pinning. */
             <button
-              className="pin-icon-btn pin-icon-btn--square"
+              className="pin-icon-btn"
               style={{ width: 24, height: 24 }}
               onClick={async () => {
                 await send("pin/delete", { pinId: pin.id });

@@ -16,7 +16,13 @@ import {
   type DrawShape,
   type Pin,
 } from "@pinnables/shared";
-import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from "../lib/capture";
+import {
+  OVERLAY_HOST_ID,
+  maskSensitive,
+  measureElement,
+  refindElement,
+  routeForLocation,
+} from "../lib/capture";
 import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type DrawTool, type ToolMode } from "./Toolbar";
@@ -129,7 +135,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * reloading — so nothing would tell us to swap them. History is patched
    * because pushState and replaceState fire no event of their own.
    */
-  const [route, setRoute] = useState(() => location.pathname + location.search);
+  const [route, setRoute] = useState(() => routeForLocation());
   const hovered = useRef<Element | null>(null);
   const pressStartedInOurs = useRef(false);
   const hoverAnchor = useRef<{ pinId: string; edge: AnchorEdge } | null>(null);
@@ -149,7 +155,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   useEffect(() => watchScheme(setScheme), []);
 
   useEffect(() => {
-    const read = () => setRoute(location.pathname + location.search);
+    const read = () => setRoute(routeForLocation());
     const patch = (name: "pushState" | "replaceState") => {
       const original = history[name];
       history[name] = function patched(this: History, ...args: Parameters<History["pushState"]>) {

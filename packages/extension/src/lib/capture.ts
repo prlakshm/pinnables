@@ -208,13 +208,30 @@ function truncate(text: string, max: number): string {
   return collapsed.length > max ? `${collapsed.slice(0, max)}…` : collapsed;
 }
 
+/**
+ * The stable route identity for both history- and hash-routed applications.
+ *
+ * A normal fragment such as `#pricing` is an in-page anchor, not a new screen.
+ * Hash routers, however, put the entire route after `#` (`#/settings` or
+ * `#!/settings`). In that case the hash path is the route; ignoring it merges
+ * every screen in the app into `/` and makes pins and drawings bleed between
+ * pages.
+ */
+export function routeForLocation(
+  value: Pick<Location, "pathname" | "search" | "hash"> = window.location,
+): string {
+  if (value.hash.startsWith("#!/")) return value.hash.slice(2);
+  if (value.hash.startsWith("#/")) return value.hash.slice(1);
+  return value.pathname + value.search;
+}
+
 export function measureElement(el: Element): CapturedElement {
   const rect = el.getBoundingClientRect();
   return {
     rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
     devicePixelRatio: window.devicePixelRatio || 1,
     url: location.href,
-    route: location.pathname + location.search,
+    route: routeForLocation(),
     viewport: { width: window.innerWidth, height: window.innerHeight },
     selector: buildSelector(el),
     domPath: buildDomPath(el),

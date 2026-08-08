@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { Board, Pin } from "@pinnables/shared";
 import { PinObject } from "../packages/extension/src/content/PinObject.tsx";
+import { routeForLocation } from "../packages/extension/src/lib/capture.ts";
 
 const root = new URL("../", import.meta.url);
 const source = (path: string) => readFileSync(new URL(path, root), "utf8");
@@ -158,4 +159,19 @@ test("the floating pin does not draw a second permanent outline over the compone
   const css = source("packages/extension/src/ui/ui.css");
 
   assert.doesNotMatch(css, /\.pin-object__card::after\s*\{/);
+});
+
+test("hash-router screens get distinct route identities", () => {
+  assert.equal(
+    routeForLocation({ pathname: "/", search: "", hash: "#/dashboard" }),
+    "/dashboard",
+  );
+  assert.equal(
+    routeForLocation({ pathname: "/", search: "", hash: "#/settings" }),
+    "/settings",
+  );
+  assert.equal(
+    routeForLocation({ pathname: "/docs", search: "?mode=edit", hash: "#section-2" }),
+    "/docs?mode=edit",
+  );
 });
