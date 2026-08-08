@@ -27,24 +27,48 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"],
-      "js": ["src/content/index.ts"],
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "http://[::1]/*"
+      ],
+      "js": [
+        "src/content/index.ts"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
-  "permissions": ["storage", "unlimitedStorage", "sidePanel", "scripting", "activeTab", "tabs"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "sidePanel",
+    "scripting",
+    "activeTab",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>",
+    "http://*/*",
+    "https://*/*"
+  ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*"],
-      "matches": ["http://*/*", "https://*/*"],
+      "resources": [
+        "assets/*"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
       "use_dynamic_url": false
     }
   ],
   "commands": {
     "toggle-capture": {
-      "suggested_key": { "default": "Alt+Shift+P" },
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
       "description": "Toggle capture mode"
     }
   }

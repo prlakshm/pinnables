@@ -57,6 +57,21 @@ export function App() {
 
   const toggleCapture = useCallback(async () => {
     if (!state) return;
+    /*
+     * Ask for screenshot access on the way in, from the click itself.
+     *
+     * `chrome.tabs.captureVisibleTab` takes `<all_urls>` or `activeTab` and
+     * nothing narrower — a host permission for the exact origin does not satisfy
+     * it. `activeTab` is granted by clicking the extension icon and lapses on
+     * navigation, which makes it useless here: navigating is the whole point,
+     * and the first pin after a route change would fail every time.
+     *
+     * The request has to ride a user gesture, which is what this handler is.
+     */
+    if (!state.captureMode) {
+      const held = await chrome.permissions.contains({ origins: ["<all_urls>"] });
+      if (!held) await chrome.permissions.request({ origins: ["<all_urls>"] });
+    }
     const next = await send("capture/setMode", { enabled: !state.captureMode });
     setState(next);
     void reload();

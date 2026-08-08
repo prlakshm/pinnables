@@ -81,6 +81,13 @@ export interface Contract {
     res: { pin: Pin | null };
   };
 
+  /**
+   * Open the side panel for the tab this came from. It has to be the worker that
+   * calls `chrome.sidePanel.open` — the API does not exist in a content script,
+   * and it needs the window id the content script cannot see.
+   */
+  "panel/open": { req: Record<string, never>; res: { ok: boolean } };
+
   "board/get": { req: { boardId?: string }; res: { board: Board | null } };
   "board/list": { req: Record<string, never>; res: { boards: Board[] } };
   "board/create": { req: { title: string }; res: { board: Board } };

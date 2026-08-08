@@ -9,6 +9,8 @@ export type ToolMode = "browse" | "pin" | "draw";
 interface ToolbarProps {
   mode: ToolMode;
   onMode: (mode: ToolMode) => void;
+  pinCount: number;
+  onOpenBoard: () => void;
   onExit: () => void;
   /** Draw mode swaps the bar's contents; these drive that half of it. */
   drawTool: DrawTool;
@@ -27,6 +29,8 @@ const POSITION_KEY = "toolbarPosition";
 export function Toolbar({
   mode,
   onMode,
+  pinCount,
+  onOpenBoard,
   onExit,
   drawTool,
   onDrawTool,
@@ -157,6 +161,13 @@ export function Toolbar({
           />
         ))}
       </span>
+
+      <span className="pin-toolbar__divider" />
+
+      <button className="pin-toolbar__board" onClick={onOpenBoard} title="Open the annotation board">
+        Board
+        <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
+      </button>
 
       <span className="pin-toolbar__divider" />
 
