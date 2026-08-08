@@ -13,6 +13,7 @@ import {
   type Pin,
   type Relationship,
 } from "@pinnables/shared";
+import { ChangePair, hasPreview } from "./ChangePreview";
 import { RenamableTitle } from "./RenamableTitle";
 import { send } from "../lib/messages";
 import { LinkIcon, TrashIcon } from "../ui/icons";
@@ -358,9 +359,10 @@ function ChangeRow({
    * focused change, and this is the call site that decided against them.
    */
   const from = detail.summary ? null : detail.from;
+  const visual = hasPreview(detail.kind);
 
   return (
-    <label className="pin-change" data-on={on}>
+    <label className={`pin-change${visual ? " pin-change--stacked" : ""}`} data-on={on}>
       <input
         type="checkbox"
         className="pin-change__box"
@@ -377,6 +379,25 @@ function ChangeRow({
           <span className="pin-change__arrow">→</span>
           <span className="pin-change__to">{detail.to}</span>
         </>
+      )}
+
+      {/*
+        The picture under the numbers, not instead of them.
+        
+        Showing only the drawing lost the exact values, and showing only the
+        values made a shadow into two forty-character strings. Stacked, the row
+        reads the way you actually judge one: the shape tells you whether you
+        want it, the numbers tell you what it is. Aligned to the value columns
+        so the before sits under the before.
+        
+        Only where a drawing can be honest — a radius is a corner and a shadow
+        is a shadow, but there is no picture of `display: flex` that is not a
+        diagram of something else.
+      */}
+      {visual && (
+        <span className="pin-change__viz">
+          <ChangePair detail={detail} />
+        </span>
       )}
     </label>
   );
