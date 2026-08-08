@@ -18,7 +18,7 @@ import type { DrawShape } from "./schema.js";
  * here and nowhere else. Values are the shared primitives; `check-tokens` holds
  * this list to them so the two palettes cannot fork.
  */
-export const DRAW_COLORS = ["#9BD3F9", "#1E3FD8", "#ED1C24", "#292C33"] as const;
+export const DRAW_COLORS = ["#292C33", "#1E3FD8", "#9BD3F9", "#ED1C24"] as const;
 export const DEFAULT_DRAW_COLOR: string = DRAW_COLORS[0];
 
 /** Stroke width scales with the frame so a mark reads the same at any size. */
