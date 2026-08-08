@@ -971,7 +971,7 @@
  */
 .pin-pens {
   --pin-pen-size: 20px;
-  --pin-pen-peek: 7px;
+  --pin-pen-peek: 9px;
   --pin-pen-gap: 6.85px;
   --pin-pen-step: calc(var(--pin-pen-size) + var(--pin-pen-gap));
 
