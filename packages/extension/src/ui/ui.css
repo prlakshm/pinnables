@@ -953,27 +953,10 @@
   cursor: default;
 }
 
-.pin-draw__bar {
-  position: fixed;
-  left: 50%;
-  top: 16px;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 5px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--pin-rule);
-  background: var(--pin-paper);
-  box-shadow: var(--pin-shadow);
-  max-width: calc(100vw - 32px);
-  pointer-events: auto;
-  z-index: 2;
-}
-
+/* A pen colour, sitting among the icon buttons in the one toolbar. */
 .pin-draw__swatch {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
   flex: 0 0 auto;
   margin: 0 2px;

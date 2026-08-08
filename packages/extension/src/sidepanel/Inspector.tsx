@@ -112,8 +112,11 @@ export function Inspector({ pin, onEdit }: InspectorProps) {
     ["status", pin.status],
     ["route", pin.route],
     ["viewport", `${pin.viewport.width}×${pin.viewport.height}`],
+    // No selector row: a CSS path is the one fact here nobody reads and nobody
+    // can act on — it is how the pin finds its element again, not something the
+    // reviewer is deciding about. "Go to source" answers the question it was
+    // standing in for.
     ["source", pin.sourceFile ?? "unresolved"],
-    ["selector", pin.selector],
   ];
 
   return (

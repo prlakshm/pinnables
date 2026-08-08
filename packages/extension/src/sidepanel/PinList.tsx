@@ -14,7 +14,8 @@ import { Inspector } from "./Inspector";
  */
 export function PinList({ board, onChanged }: { board: Board; onChanged: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [relatingFrom, setRelatingFrom] = useState<string | null>(null);
+  /** The pin every picked pin will be made to match — `sourcePinId` in the contract. */
+  const [source, setSource] = useState<string | null>(null);
   const [targets, setTargets] = useState<Set<string>>(new Set());
 
   const pins = sortedByOrder(board.pins);
@@ -27,19 +28,19 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
     });
 
   const confirmRelationship = useCallback(async () => {
-    if (!relatingFrom || targets.size === 0) return;
+    if (!source || targets.size === 0) return;
     await send("relationship/create", {
-      sourcePinId: relatingFrom,
+      sourcePinId: source,
       targetPinIds: [...targets],
     });
-    setRelatingFrom(null);
+    setSource(null);
     setTargets(new Set());
     onChanged();
-  }, [relatingFrom, targets, onChanged]);
+  }, [source, targets, onChanged]);
 
   return (
     <>
-      {relatingFrom && (
+      {source && (
         <div
           className="pin-banner"
           style={{
@@ -49,7 +50,10 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
           }}
         >
           <LinkIcon size={14} />
-          <span style={{ flex: 1 }}>Pick which pins should match this one, then confirm.</span>
+          {/* Source and target are named here rather than left to be inferred,
+              because the direction is the whole meaning of the relationship —
+              which pin changes and which one stays put. */}
+          <span style={{ flex: 1 }}>Pick the targets that should match this source.</span>
         </div>
       )}
 
@@ -60,12 +64,12 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
           board={board}
           expanded={expanded === pin.id}
           onExpand={() => setExpanded((id) => (id === pin.id ? null : pin.id))}
-          relating={relatingFrom !== null}
-          isSource={relatingFrom === pin.id}
+          relating={source !== null}
+          isSource={source === pin.id}
           isTarget={targets.has(pin.id)}
           onToggleTarget={() => toggleTarget(pin.id)}
-          onRelateFrom={() => {
-            setRelatingFrom(pin.id);
+          onCreateRelationship={() => {
+            setSource(pin.id);
             setTargets(new Set());
             setExpanded(null);
           }}
@@ -73,17 +77,20 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
         />
       ))}
 
-      {relatingFrom && (
+      {source && (
         <div style={{ display: "flex", gap: 8 }}>
           <button
             className="pin-btn"
             onClick={() => {
-              setRelatingFrom(null);
+              setSource(null);
               setTargets(new Set());
             }}
           >
             Cancel
           </button>
+          {/* Just the verb. The count was already on screen twice — once as the
+              highlighted rows, once as their target chips — and a button that
+              renumbers itself as you click is a label you have to re-read. */}
           <button
             className="pin-btn pin-btn--primary"
             style={{ marginLeft: "auto" }}
@@ -91,7 +98,7 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
             onClick={() => void confirmRelationship()}
           >
             <CheckIcon size={14} />
-            Match {targets.size} pin{targets.size === 1 ? "" : "s"}
+            Match
           </button>
         </div>
       )}
@@ -108,7 +115,7 @@ interface PinRowProps {
   isSource: boolean;
   isTarget: boolean;
   onToggleTarget: () => void;
-  onRelateFrom: () => void;
+  onCreateRelationship: () => void;
   onChanged: () => void;
 }
 
@@ -121,7 +128,7 @@ function PinRow({
   isSource,
   isTarget,
   onToggleTarget,
-  onRelateFrom,
+  onCreateRelationship,
   onChanged,
 }: PinRowProps) {
   const [thumb, setThumb] = useState<string | null>(null);
@@ -194,11 +201,14 @@ function PinRow({
           {relating ? (
             isSource ? (
               <span className="pin-chip" data-on="true">
-                reference
+                source
               </span>
             ) : (
+              /* Picked rows name their role; unpicked ones name the gesture,
+                 since "target" on a row you have not chosen would read as a
+                 claim about the row rather than an invitation. */
               <span className="pin-chip" data-on={isTarget}>
-                {isTarget ? "match" : "pick"}
+                {isTarget ? "target" : "pick"}
               </span>
             )
           ) : (
@@ -257,6 +267,8 @@ function PinRow({
             onBlur={() => draft !== pin.annotation && void update({ annotation: draft })}
           />
 
+          {/* Two actions, both of which take you somewhere: to the code, or into
+              picking what this pin should match. */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button className="pin-btn" onClick={() => void send("pin/revealSource", { pinId: pin.id })}>
               <ArrowUpRightIcon />
@@ -265,18 +277,11 @@ function PinRow({
             {/* Relationships resolve into a style diff, and a region pin has no
                 computed styles to diff — it marks an area, not a component. */}
             {pin.kind === "element" && (
-              <button className="pin-btn" onClick={onRelateFrom}>
+              <button className="pin-btn" onClick={onCreateRelationship}>
                 <LinkIcon size={14} />
-                Use as reference
+                Create relationship
               </button>
             )}
-            <button
-              className="pin-btn"
-              onClick={() => void update({ status: pin.status === "done" ? "todo" : "done" })}
-            >
-              <CheckIcon size={14} />
-              {pin.status === "done" ? "Reopen" : "Resolve"}
-            </button>
           </div>
         </div>
       )}

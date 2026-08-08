@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_DRAW_COLOR, DRAW_COLORS, type DrawShape } from "@pinnables/shared";
+import { type DrawShape } from "@pinnables/shared";
 import { anchorForBox, buildDomPath, buildSelector, documentRect } from "../lib/capture";
-import { CloseIcon, EraserIcon, PencilIcon } from "../ui/icons";
 import { InkLayer, usePlacedShapes } from "./InkLayer";
-
-type Tool = "draw" | "erase";
+import type { DrawTool } from "./Toolbar";
 
 /**
  * Drawing on the live page.
@@ -21,15 +19,19 @@ type Tool = "draw" | "erase";
  */
 export function DrawLayer({
   shapes,
+  tool,
+  color,
   onChange,
   onDone,
+  onTool,
 }: {
   shapes: DrawShape[];
+  tool: DrawTool;
+  color: string;
   onChange: (shapes: DrawShape[]) => void;
   onDone: () => void;
+  onTool: (tool: DrawTool) => void;
 }) {
-  const [tool, setTool] = useState<Tool>("draw");
-  const [color, setColor] = useState<string>(DEFAULT_DRAW_COLOR);
   /** Points in document coordinates, only while the pointer is down. */
   const [draft, setDraft] = useState<Array<{ x: number; y: number }> | null>(null);
   const drawingId = useRef(0);
@@ -114,12 +116,12 @@ export function DrawLayer({
         onDone();
         return;
       }
-      if (event.key.toLowerCase() === "e") setTool((t) => (t === "erase" ? "draw" : "erase"));
-      if (event.key.toLowerCase() === "b") setTool("draw");
+      if (event.key.toLowerCase() === "e") onTool(tool === "erase" ? "draw" : "erase");
+      if (event.key.toLowerCase() === "b") onTool("draw");
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [onDone]);
+  }, [onDone, onTool, tool]);
 
   /** The stroke in progress, still in document pixels and not yet anchored. */
   const draftPath = draft
@@ -158,51 +160,6 @@ export function DrawLayer({
         </svg>
       )}
 
-      <div className="pin-draw__bar">
-        <button
-          className="pin-icon-btn"
-          data-active={tool === "draw"}
-          onClick={() => setTool("draw")}
-          title="Draw · B"
-          aria-label="Draw"
-          aria-pressed={tool === "draw"}
-        >
-          <PencilIcon />
-        </button>
-        <button
-          className="pin-icon-btn"
-          data-active={tool === "erase"}
-          onClick={() => setTool("erase")}
-          title="Erase a whole stroke · E"
-          aria-label="Erase"
-          aria-pressed={tool === "erase"}
-        >
-          <EraserIcon />
-        </button>
-
-        <span className="pin-toolbar__divider" />
-
-        {DRAW_COLORS.map((swatch) => (
-          <button
-            key={swatch}
-            className="pin-draw__swatch"
-            data-active={color === swatch}
-            style={{ background: swatch }}
-            onClick={() => {
-              setColor(swatch);
-              setTool("draw");
-            }}
-            title={`Draw in ${swatch}`}
-            aria-label={`Draw in ${swatch}`}
-          />
-        ))}
-
-        <span className="pin-toolbar__divider" />
-
-        <button className="pin-icon-btn" onClick={onDone} title="Done · Esc" aria-label="Done drawing">
-          <CloseIcon size={17} />
-        </button>
-      </div>
     </>
   );
 }

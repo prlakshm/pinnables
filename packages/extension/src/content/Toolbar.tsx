@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CloseIcon, CursorIcon, GripIcon, PencilIcon, PinIcon } from "../ui/icons";
+import { DRAW_COLORS } from "@pinnables/shared";
+import { CloseIcon, CursorIcon, EraserIcon, GripIcon, PencilIcon, PinIcon } from "../ui/icons";
+
+export type DrawTool = "draw" | "erase";
 
 export type ToolMode = "browse" | "pin" | "draw";
 
@@ -9,6 +12,11 @@ interface ToolbarProps {
   pinCount: number;
   onOpenBoard: () => void;
   onExit: () => void;
+  /** Draw mode swaps the bar's contents; these drive that half of it. */
+  drawTool: DrawTool;
+  onDrawTool: (tool: DrawTool) => void;
+  drawColor: string;
+  onDrawColor: (color: string) => void;
 }
 
 const POSITION_KEY = "toolbarPosition";
@@ -18,7 +26,17 @@ const POSITION_KEY = "toolbarPosition";
  * the top of a page, and a bar below the fold is a bar you forget is armed —
  * the tradeoff is that it can sit over a header, which is what dragging is for.
  */
-export function Toolbar({ mode, onMode, pinCount, onOpenBoard, onExit }: ToolbarProps) {
+export function Toolbar({
+  mode,
+  onMode,
+  pinCount,
+  onOpenBoard,
+  onExit,
+  drawTool,
+  onDrawTool,
+  drawColor,
+  onDrawColor,
+}: ToolbarProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const dragging = useRef<{ dx: number; dy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -77,37 +95,97 @@ export function Toolbar({ mode, onMode, pinCount, onOpenBoard, onExit }: Toolbar
         <GripIcon size={17} />
       </span>
 
-      {tools.map((tool) => (
-        <button
-          key={tool.id}
-          className="pin-icon-btn"
-          data-active={mode === tool.id}
-          onClick={() => onMode(tool.id)}
-          title={tool.label}
-          aria-label={tool.label}
-          aria-pressed={mode === tool.id}
-        >
-          {tool.icon}
-        </button>
-      ))}
+      {/*
+        * Draw mode changes what this bar holds rather than putting a second bar
+        * on top of it. Two pills at the same place is two borders and two
+        * shadows pretending to be one control.
+        */}
+      {mode === "draw" ? (
+        <>
+          <button
+            className="pin-icon-btn"
+            data-active={drawTool === "draw"}
+            onClick={() => onDrawTool("draw")}
+            title="Draw · B"
+            aria-label="Draw"
+            aria-pressed={drawTool === "draw"}
+          >
+            <PencilIcon />
+          </button>
+          <button
+            className="pin-icon-btn"
+            data-active={drawTool === "erase"}
+            onClick={() => onDrawTool("erase")}
+            title="Erase a whole stroke · E"
+            aria-label="Erase"
+            aria-pressed={drawTool === "erase"}
+          >
+            <EraserIcon />
+          </button>
 
-      <span className="pin-toolbar__divider" />
+          <span className="pin-toolbar__divider" />
 
-      <button className="pin-toolbar__board" onClick={onOpenBoard} title="Open the annotation board">
-        Board
-        <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
-      </button>
+          {DRAW_COLORS.map((swatch) => (
+            <button
+              key={swatch}
+              className="pin-draw__swatch"
+              data-active={drawColor === swatch}
+              style={{ background: swatch }}
+              onClick={() => {
+                onDrawColor(swatch);
+                onDrawTool("draw");
+              }}
+              title={`Draw in ${swatch}`}
+              aria-label={`Draw in ${swatch}`}
+            />
+          ))}
 
-      <span className="pin-toolbar__divider" />
+          <span className="pin-toolbar__divider" />
 
-      <button
-        className="pin-icon-btn"
-        onClick={onExit}
-        title="Exit capture mode · Esc"
-        aria-label="Exit capture mode"
-      >
-        <CloseIcon size={17} />
-      </button>
+          <button
+            className="pin-icon-btn"
+            onClick={() => onMode("pin")}
+            title="Done drawing · Esc"
+            aria-label="Done drawing"
+          >
+            <CloseIcon size={17} />
+          </button>
+        </>
+      ) : (
+        <>
+          {tools.map((tool) => (
+            <button
+              key={tool.id}
+              className="pin-icon-btn"
+              data-active={mode === tool.id}
+              onClick={() => onMode(tool.id)}
+              title={tool.label}
+              aria-label={tool.label}
+              aria-pressed={mode === tool.id}
+            >
+              {tool.icon}
+            </button>
+          ))}
+
+          <span className="pin-toolbar__divider" />
+
+          <button className="pin-toolbar__board" onClick={onOpenBoard} title="Open the annotation board">
+            Board
+            <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
+          </button>
+
+          <span className="pin-toolbar__divider" />
+
+          <button
+            className="pin-icon-btn"
+            onClick={onExit}
+            title="Exit capture mode · Esc"
+            aria-label="Exit capture mode"
+          >
+            <CloseIcon size={17} />
+          </button>
+        </>
+      )}
     </div>
   );
 }

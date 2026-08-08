@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { Board, DrawShape, Pin } from "@pinnables/shared";
+import { DEFAULT_DRAW_COLOR, type Board, type DrawShape, type Pin } from "@pinnables/shared";
 import { OVERLAY_HOST_ID, maskSensitive, measureElement, refindElement } from "../lib/capture";
 import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
 import type { OverlayApi } from "./mount";
-import { Toolbar, type ToolMode } from "./Toolbar";
+import { Toolbar, type DrawTool, type ToolMode } from "./Toolbar";
 import { PinObject } from "./PinObject";
 import { Composer } from "./Composer";
 import { DrawLayer } from "./DrawLayer";
@@ -84,6 +84,8 @@ function bestEdges(a: DOMRect, b: DOMRect): [AnchorEdge, AnchorEdge] {
 export function OverlayRoot({ api }: { api: OverlayApi }) {
   const state = useSyncExternalStore(api.subscribe, api.snapshot);
   const [mode, setMode] = useState<ToolMode>("pin");
+  const [drawTool, setDrawTool] = useState<DrawTool>("draw");
+  const [drawColor, setDrawColor] = useState<string>(DEFAULT_DRAW_COLOR);
   const [board, setBoard] = useState<Board | null>(null);
   const [highlight, setHighlight] = useState<HighlightBox | null>(null);
   const [positions, setPositions] = useState<Record<string, FloatPosition>>({});
@@ -634,7 +636,14 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         */}
       {!drawing && <InkLayer placed={placed} />}
       {drawing && (
-        <DrawLayer shapes={shapes} onChange={(next) => void saveShapes(next)} onDone={() => setMode("pin")} />
+        <DrawLayer
+          shapes={shapes}
+          tool={drawTool}
+          color={drawColor}
+          onChange={(next) => void saveShapes(next)}
+          onDone={() => setMode("pin")}
+          onTool={setDrawTool}
+        />
       )}
 
       <div className="pin-overlay">
@@ -711,16 +720,18 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         </div>
       )}
 
-      {/* Draw mode brings its own bar — two floating toolbars is one too many. */}
-      {!drawing && (
-        <Toolbar
-          mode={mode}
-          onMode={setMode}
-          pinCount={pins.length}
-          onOpenBoard={() => void send("capture/setMode", { enabled: true }).catch(guard)}
-          onExit={() => void send("capture/setMode", { enabled: false }).catch(guard)}
-        />
-      )}
+      {/* One bar, always. Draw mode changes what is in it. */}
+      <Toolbar
+        mode={mode}
+        onMode={setMode}
+        pinCount={pins.length}
+        onOpenBoard={() => void send("capture/setMode", { enabled: true }).catch(guard)}
+        onExit={() => void send("capture/setMode", { enabled: false }).catch(guard)}
+        drawTool={drawTool}
+        onDrawTool={setDrawTool}
+        drawColor={drawColor}
+        onDrawColor={setDrawColor}
+      />
       </div>
     </>
   );

@@ -52,6 +52,13 @@ function createApi(teardown: () => void): OverlayApi {
 }
 
 export async function mountOverlay(): Promise<OverlayApi> {
+  /*
+   * A host left behind by a previous script has to go. After an extension
+   * reload the old copy is dead but its DOM is not, and two hosts means two
+   * toolbars — one of which answers nothing.
+   */
+  document.getElementById(OVERLAY_HOST_ID)?.remove();
+
   const host = document.createElement("div");
   host.id = OVERLAY_HOST_ID;
   host.setAttribute("data-pinnables", "");

@@ -14,16 +14,20 @@ import type { Broadcast } from "../lib/messages";
  * optional host permission would run this file and then fail on the import.
  */
 
-/**
- * The worker injects this script into tabs that were open before the extension
- * loaded, which means a page can end up running two copies — each with its own
- * module scope and so its own idea of whether an overlay exists. A sentinel on
- * the page keeps the first one authoritative and makes the second a no-op.
+/*
+ * There used to be a sentinel on globalThis here, to stop a page running two
+ * copies of this script. It was worse than the problem.
+ *
+ * An isolated world's globalThis outlives the extension context that wrote to
+ * it. Reloading the extension leaves the flag set and the old listener dead, so
+ * the fresh copy the worker injects saw "already resident", did nothing, and
+ * capture mode turned on to complete silence.
+ *
+ * The double-injection it guarded cannot actually happen: the worker only
+ * injects *after* a sendMessage fails, and a failed sendMessage means nothing is
+ * listening. So the guard is gone, and `mountOverlay` clears any stale host so a
+ * new script takes the page over cleanly.
  */
-const SENTINEL = "__pinnablesContentScript";
-const globals = globalThis as unknown as Record<string, boolean>;
-const alreadyResident = globals[SENTINEL] === true;
-globals[SENTINEL] = true;
 
 type Overlay = Awaited<ReturnType<typeof import("./mount").mountOverlay>>;
 
@@ -41,19 +45,17 @@ async function ensureOverlay(): Promise<Overlay> {
   return loading;
 }
 
-if (!alreadyResident) {
-  chrome.runtime.onMessage.addListener(listen);
+chrome.runtime.onMessage.addListener(listen);
 
-  // A tab opened while capture mode was already on should come up armed. This
-  // also covers the injected case, where the worker's message can land before
-  // the listener above is registered.
-  void chrome.runtime
-    .sendMessage({ type: "state/get" })
-    .then((res: { ok: boolean; data?: { captureMode: boolean } } | undefined) => {
-      if (res?.ok && res.data?.captureMode) void ensureOverlay().then((o) => o.setEnabled(true));
-    })
-    .catch(() => {});
-}
+// A tab opened while capture mode was already on should come up armed. This also
+// covers the injected case, where the worker's message can land before the
+// listener above is registered.
+void chrome.runtime
+  .sendMessage({ type: "state/get" })
+  .then((res: { ok: boolean; data?: { captureMode: boolean } } | undefined) => {
+    if (res?.ok && res.data?.captureMode) void ensureOverlay().then((o) => o.setEnabled(true));
+  })
+  .catch(() => {});
 
 function listen(message: Broadcast) {
   if (message.kind === "capture-mode") {
