@@ -109,7 +109,6 @@
   --pin-red: var(--pin-red-500);
   --pin-red-soft: var(--pin-red-400);
   --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, transparent);
-  --pin-red-tint-hover: color-mix(in srgb, var(--pin-red-400) 30%, transparent);
 
   /* The one status colour left, for the offline banner. Not part of the brand
      ramp — a warning has to be recognisable before it is on-palette. */
@@ -1115,21 +1114,21 @@
 .pin-tab-action:hover { color: var(--pin-red); }
 
 /*
- * Red as a tint behind red text, the way the delete button on a pin row works.
+ * Exactly the delete button on a pin row, in button form: grey at rest, red only
+ * once the pointer is on it.
  *
- * It was a solid red fill with white text, which made it the only place in the
- * product where the mark is a fill — louder than anything else on screen, for a
- * button that has already been asked for once. Red here means "this is the
- * destructive one", not "look at me": the confirm step is already the answer to
- * a question you just asked, so it has to be identifiable, not alarming.
+ * Red at rest was wrong twice over. It made this the loudest thing on screen for
+ * a step you had already asked for, and it spent the mark on a button that has
+ * not been pressed yet. Red is what the control becomes when you reach for it,
+ * not what it is while it waits.
  */
 .pin-btn--danger {
-  background: var(--pin-red-tint);
+  background: var(--pin-off);
   border-color: transparent;
-  color: var(--pin-red);
+  color: var(--pin-ink-muted);
 }
 .pin-btn--danger:hover {
-  background: var(--pin-red-tint-hover);
+  background: var(--pin-red-tint);
   border-color: transparent;
   color: var(--pin-red);
 }
