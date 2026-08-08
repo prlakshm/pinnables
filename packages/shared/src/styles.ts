@@ -62,6 +62,19 @@ export const STYLE_ALLOWLIST: readonly string[] = Object.values(STYLE_GROUPS).fl
  * Expand a relationship's `properties` — which may hold friendly group names
  * ("spacing") or bare CSS properties ("border-radius") — into CSS properties.
  * Unknown entries pass through so a hand-written board still works.
+ *
+ * **Anything expanding this must run `applicabilityGuard` itself.** This is the
+ * function that makes the two shapes interchangeable, so it is where the
+ * assumption gets made and where it goes wrong. Expanding a group hands back
+ * every longhand under it — `"border"` yields `border-color` whether or not the
+ * source draws a border — and the fact that the panel only ever *stores*
+ * guarded properties says nothing about what a board authored elsewhere holds.
+ * The checked-in fixture stores group names; so does anything hand-written.
+ *
+ * The live preview learned this the expensive way: it expanded, read the
+ * source's value and wrote it as `!important`, painting a black border from a
+ * borderless card. Upstream filtering is not a guarantee when the input has two
+ * shapes, and the guard belongs where the value is written.
  */
 export function expandProperties(properties: readonly string[]): string[] {
   const out: string[] = [];

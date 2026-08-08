@@ -10,6 +10,7 @@ import {
 import {
   computeStyleDiff,
   DEFAULT_DRAW_COLOR,
+  applicabilityGuard,
   expandProperties,
   type Board,
   type DrawShape,
@@ -311,9 +312,24 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         const target = board.pins.find((p) => p.id === targetId);
         if (!target) continue;
         const styles = map.get(targetId) ?? {};
+        /*
+         * The same guard the diff runs, applied where the value is written.
+         *
+         * The panel only ever stores properties that survived `computeStyleDiff`,
+         * so this looked redundant — but `expandProperties` also accepts group
+         * names, and a board authored anywhere else carries them: the checked-in
+         * fixture stores `["radius", "spacing", "shadow"]`. Expanding a group
+         * yields every longhand under it, guarded or not, and `border-color`
+         * from a borderless source paints the black border this was supposed to
+         * have fixed.
+         *
+         * Upstream filtering is not a guarantee when the input has two shapes.
+         */
+        const applicable = applicabilityGuard(source, target);
         // Longhands, not the collapsed row — `padding` is not a thing the
         // element's style object can be set to from four captured values.
         for (const property of wanted) {
+          if (!applicable(property).applicable) continue;
           const value = source.computedStyles[property];
           if (value === undefined) continue;
           if (target.computedStyles[property] === value) continue;
