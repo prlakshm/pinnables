@@ -53,6 +53,7 @@ export function Composer({ count, onCommit, onRelate, autoFocus }: ComposerProps
         rows={1}
         value={draft}
         placeholder={multi ? `Describe the change for all ${count}` : "Describe the change"}
+        aria-label={multi ? `Annotation for all ${count} selected pins` : "Pin annotation"}
         onChange={(e) => setDraft(e.target.value.replace(/\n/g, " "))}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;

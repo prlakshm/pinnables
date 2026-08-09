@@ -4,11 +4,7 @@ import "../ui/ui.css";
 import { App } from "./App";
 import { detectScheme, watchScheme, type Scheme } from "../ui/theme";
 
-/**
- * Same signal as the toolbar out on the page — `detectScheme` reads the
- * browser's preference for both, so the two halves of the product can never
- * disagree about what colour they are.
- */
+/** Same browser/OS signal as the page toolbar, so both surfaces stay in sync. */
 function Panel() {
   const [scheme, setScheme] = useState<Scheme>(detectScheme);
 

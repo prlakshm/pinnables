@@ -1,4 +1,10 @@
-import { SCHEMA_VERSION, type Board, type Pin } from "@pinnables/shared";
+import {
+  SCHEMA_VERSION,
+  expandProperties,
+  type Board,
+  type Pin,
+  type Relationship,
+} from "@pinnables/shared";
 import {
   broadcastToTab,
   type Broadcast,
@@ -9,6 +15,7 @@ import {
 } from "../lib/messages";
 import * as store from "../lib/store";
 import { isServiceOnline, materializeBoard } from "../lib/service";
+import { bitmapCropRect, visibleElementFrame } from "../lib/crop";
 
 /**
  * Stateless router. Every handler reads from and writes to chrome.storage —
@@ -31,10 +38,12 @@ async function crop(
   // CSS pixels relative to that same viewport. Elements taller than the fold
   // are clipped rather than stitched — stitching costs two captures/second and
   // would break "adding a pin feels instantaneous".
-  const sx = Math.max(0, Math.round(rect.x * dpr));
-  const sy = Math.max(0, Math.round(rect.y * dpr));
-  const sw = Math.max(1, Math.min(bitmap.width - sx, Math.round(rect.width * dpr)));
-  const sh = Math.max(1, Math.min(bitmap.height - sy, Math.round(rect.height * dpr)));
+  const { x: sx, y: sy, width: sw, height: sh } = bitmapCropRect(
+    rect,
+    dpr,
+    bitmap.width,
+    bitmap.height,
+  );
 
   const full = new OffscreenCanvas(sw, sh);
   full.getContext("2d")!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
@@ -126,6 +135,117 @@ async function armTab(tabId: number, enabled: boolean): Promise<TabArmState> {
   }
 }
 
+/**
+ * Serialize capture-state delivery per tab and coalesce adjacent requests for
+ * the same state.
+ *
+ * Tab lifecycle events routinely arrive together: creating a tab can be
+ * followed immediately by activation and then a completed update. Without one
+ * shared in-flight operation, all three calls can observe the missing listener
+ * and inject three copies of the loader. Keeping only the short-lived promise
+ * here is safe for MV3: after a worker restart there cannot be an operation
+ * from the old worker still capable of completing.
+ */
+const pendingTabArms = new Map<
+  number,
+  { enabled: boolean; promise: Promise<TabArmState> }
+>();
+
+function queueTabArm(tabId: number, enabled: boolean): Promise<TabArmState> {
+  const pending = pendingTabArms.get(tabId);
+  if (pending?.enabled === enabled) return pending.promise;
+
+  const promise = pending
+    ? pending.promise.catch(() => "blocked" as const).then(() => armTab(tabId, enabled))
+    : armTab(tabId, enabled);
+  const operation = { enabled, promise };
+  pendingTabArms.set(tabId, operation);
+  const release = () => {
+    if (pendingTabArms.get(tabId) === operation) pendingTabArms.delete(tabId);
+  };
+  void promise.then(release, release);
+  return promise;
+}
+
+function isAnnotatableTab(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: number } {
+  if (tab.id === undefined) return false;
+  return [tab.url, tab.pendingUrl].some((url) => /^https?:\/\//i.test(url ?? ""));
+}
+
+/** Re-arm a web tab only when the persisted global capture state still asks for it. */
+async function rearmCaptureTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (!isAnnotatableTab(tab)) return;
+  if (!(await store.getState()).captureMode) return;
+
+  await queueTabArm(tab.id, true);
+
+  // Capture can be switched off while executeScript is waiting on Chrome. A
+  // final state read prevents that late injection from leaving a newly-created
+  // overlay armed after the global off broadcast has already gone by.
+  if (!(await store.getState()).captureMode) await queueTabArm(tab.id, false);
+}
+
+const REVEAL_NAVIGATION_TIMEOUT_MS = 5_000;
+const REVEAL_DELIVERY_TIMEOUT_MS = 1_500;
+const REVEAL_RETRY_MS = 50;
+
+/** Wait for the requested document, not an arbitrary amount of wall-clock time. */
+async function waitForDestination(tabId: number, url: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (ready: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve(ready);
+    };
+    const onUpdated = (updatedId: number, _change: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+      if (updatedId === tabId && tab.url === url && tab.status === "complete") finish(true);
+    };
+    const timer = setTimeout(() => finish(false), REVEAL_NAVIGATION_TIMEOUT_MS);
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    void chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.url === url && tab.status === "complete") finish(true);
+      })
+      .catch(() => finish(false));
+  });
+}
+
+/** Deliver a reveal to a live loader, injecting and retrying when none exists. */
+async function deliverReveal(tabId: number, message: Broadcast): Promise<boolean> {
+  const sendReveal = async () => {
+    try {
+      await chrome.tabs.sendMessage(tabId, message);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (await sendReveal()) return true;
+
+  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
+  if (files.length === 0) return false;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files });
+  } catch {
+    return false;
+  }
+
+  const deadline = Date.now() + REVEAL_DELIVERY_TIMEOUT_MS;
+  do {
+    if (await sendReveal()) return true;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(REVEAL_RETRY_MS, remaining)));
+  } while (Date.now() < deadline);
+  return false;
+}
+
 /** Arms every tab, and reports what happened to the one in front. */
 async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
   await store.patchState({ captureMode: enabled });
@@ -143,11 +263,15 @@ async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
     tabs.map(async (tab) => {
       if (tab.id === undefined) return;
       const annotatable = /^https?:/.test(tab.url ?? "");
-      const result = annotatable ? await armTab(tab.id, enabled) : "unsupported";
+      const result = annotatable ? await queueTabArm(tab.id, enabled) : "unsupported";
       if (tab.id === active?.id) activeState = result;
     }),
   );
   return activeState;
+}
+
+function assertDraftBoard(board: Board): void {
+  if (board.status !== "draft") throw new Error("Board changes require a draft board");
 }
 
 const handlers: Handlers = {
@@ -170,30 +294,47 @@ const handlers: Handlers = {
     const tabId = sender.tab?.id;
     const windowId = sender.tab?.windowId;
     if (tabId === undefined || windowId === undefined) throw new Error("Capture must come from a tab");
+    // A page click can already be queued when Escape or submission disarms the
+    // overlay. Do not let that stale request create a fresh board or take a
+    // screenshot after the UI has visibly stopped capturing.
+    if (!(await store.getState()).captureMode) throw new Error("Capture mode is off");
 
     const board = await store.ensureActiveBoard();
-    const activeBefore = await chrome.tabs.query({ active: true, windowId });
-    if (activeBefore[0]?.id !== tabId) throw new Error("Capture cancelled because the active tab changed");
-    const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
-    const activeAfter = await chrome.tabs.query({ active: true, windowId });
-    if (activeAfter[0]?.id !== tabId) throw new Error("Capture cancelled because the active tab changed");
-    const { full, thumb } = await crop(shot, element.rect, element.devicePixelRatio);
-
-    /**
-     * Clicking the same element twice updates the pin you already have.
-     *
-     * The alternative — a second pin for the same component on the same route —
-     * splits one conversation into two, and the agent then has to guess whether
-     * two notes on the same selector are one instruction or two. Identity is
-     * selector plus route, because the same component on /dashboard and
-     * /settings is genuinely two things worth saying different things about.
-     *
-     * The screenshot and styles are refreshed (the page may have changed since);
-     * the annotation, status, order and requested values are the user's and are
-     * left alone.
-     */
     let savedPin!: Pin;
     await store.mutateBoard(board.id, async (current) => {
+      if (current.status !== "draft") {
+        throw new Error("Capture requires a draft board");
+      }
+
+      // Reserve this board's mutation before any screenshot work. Clear and
+      // submit requests that arrive while Chrome is photographing or cropping
+      // now wait behind this capture instead of committing first and then being
+      // overwritten by its late pin write.
+      const activeBefore = await chrome.tabs.query({ active: true, windowId });
+      if (activeBefore[0]?.id !== tabId) {
+        throw new Error("Capture cancelled because the active tab changed");
+      }
+      const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+      const activeAfter = await chrome.tabs.query({ active: true, windowId });
+      if (activeAfter[0]?.id !== tabId) {
+        throw new Error("Capture cancelled because the active tab changed");
+      }
+      const { full, thumb } = await crop(shot, element.rect, element.devicePixelRatio);
+      const screenshotFrame = visibleElementFrame(element.rect, element.viewport) ?? undefined;
+
+      /**
+       * Clicking the same element twice updates the pin you already have.
+       *
+       * The alternative — a second pin for the same component on the same route —
+       * splits one conversation into two, and the agent then has to guess whether
+       * two notes on the same selector are one instruction or two. Identity is
+       * selector plus route, because the same component on /dashboard and
+       * /settings is genuinely two things worth saying different things about.
+       *
+       * The screenshot and styles are refreshed (the page may have changed since);
+       * the annotation, status, order and requested values are the user's and are
+       * left alone.
+       */
       const existing = current.pins.find(
         (candidate) =>
           candidate.kind === "element" &&
@@ -207,6 +348,7 @@ const handlers: Handlers = {
           url: element.url,
           viewport: element.viewport,
           elementSize: { width: element.rect.width, height: element.rect.height },
+          screenshotFrame,
           domPath: element.domPath,
           outerHtml: element.outerHtml,
           classList: element.classList,
@@ -238,6 +380,7 @@ const handlers: Handlers = {
         route: element.route,
         viewport: element.viewport,
         elementSize: { width: element.rect.width, height: element.rect.height },
+        screenshotFrame,
         screenshotPath: `pins/${pinId}.png`,
         thumbnailPath: `pins/${pinId}.thumb.webp`,
         selector: element.selector,
@@ -269,25 +412,6 @@ const handlers: Handlers = {
       throw new Error("Drawing must come from a tab");
     }
     const board = await store.ensureActiveBoard();
-    const existing = board.pins.find((p) => p.kind === "region" && p.route === route);
-    const now = new Date().toISOString();
-
-    // No marks left means no region pin. A route the user erased clean should
-    // not leave an empty pin on the shelf for them to tidy up.
-    if (shapes.length === 0) {
-      if (!existing) return { pin: null };
-      await store.dropScreenshot(existing.id);
-      await store.writeBoard({
-        ...board,
-        pins: board.pins.filter((p) => p.id !== existing.id),
-        relationships: board.relationships
-          .filter((r) => r.sourcePinId !== existing.id)
-          .map((r) => ({ ...r, targetPinIds: r.targetPinIds.filter((t) => t !== existing.id) }))
-          .filter((r) => r.targetPinIds.length > 0),
-      });
-      await notifyBoardChanged(board.id);
-      return { pin: null };
-    }
 
     /*
      * The screenshot is the agent's copy of what was drawn, and it can only be
@@ -295,17 +419,27 @@ const handlers: Handlers = {
      * one is kept rather than replaced with a picture of the wrong part of the
      * page — stale beats wrong.
      */
-    const pinId = existing?.id ?? store.nextId("pin");
+    let screenshot: { full: string; thumb: string } | null = null;
     if (shotRect) {
+      const activeBefore = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+      if (activeBefore[0]?.id !== tab.id) {
+        throw new Error("Drawing capture cancelled because the active tab changed");
+      }
       const frame = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+      const activeAfter = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+      if (activeAfter[0]?.id !== tab.id) {
+        throw new Error("Drawing capture cancelled because the active tab changed");
+      }
       const bitmap = await createImageBitmap(await (await fetch(frame)).blob());
       // captureVisibleTab returns the viewport at device pixel ratio; the rect
       // is CSS pixels against that same viewport.
       const dpr = bitmap.width / viewport.width;
-      const sx = Math.max(0, Math.round(shotRect.x * dpr));
-      const sy = Math.max(0, Math.round(shotRect.y * dpr));
-      const sw = Math.max(1, Math.min(bitmap.width - sx, Math.round(shotRect.width * dpr)));
-      const sh = Math.max(1, Math.min(bitmap.height - sy, Math.round(shotRect.height * dpr)));
+      const { x: sx, y: sy, width: sw, height: sh } = bitmapCropRect(
+        shotRect,
+        dpr,
+        bitmap.width,
+        bitmap.height,
+      );
       const canvas = new OffscreenCanvas(sw, sh);
       canvas.getContext("2d")!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
       const scale = Math.min(1, THUMB_WIDTH / sw);
@@ -315,60 +449,85 @@ const handlers: Handlers = {
       );
       thumb.getContext("2d")!.drawImage(canvas, 0, 0, sw, sh, 0, 0, thumb.width, thumb.height);
       bitmap.close();
-      await store.putScreenshot(
-        pinId,
-        await encodeCanvas(canvas, "image/png"),
-        await encodeCanvas(thumb, "image/webp", 0.75),
-      );
+      screenshot = {
+        full: await encodeCanvas(canvas, "image/png"),
+        thumb: await encodeCanvas(thumb, "image/webp", 0.75),
+      };
     }
 
-    if (existing) {
-      const updated: Pin = { ...existing, drawings: shapes, url, viewport, updatedAt: now };
-      await store.writeBoard({
-        ...board,
-        pins: board.pins.map((p) => (p.id === existing.id ? updated : p)),
-      });
-      await notifyBoardChanged(board.id);
-      return { pin: updated };
-    }
+    let savedPin: Pin | null = null;
+    let droppedScreenshot: string | null = null;
+    await store.mutateBoard(board.id, async (current) => {
+      assertDraftBoard(current);
+      const existing = current.pins.find((p) => p.kind === "region" && p.route === route);
 
-    const highest = store.sortedPins(board).at(-1)?.order ?? 0;
-    const pin: Pin = {
-      id: pinId,
-      schemaVersion: SCHEMA_VERSION,
-      boardId: board.id,
-      kind: "region",
-      drawings: shapes,
-      order: highest + 1,
-      groupId: null,
-      url,
-      route,
-      viewport,
-      // A region has no element behind it, so its crop is its own size.
-      elementSize: { width: 0, height: 0 },
-      screenshotPath: `pins/${pinId}.png`,
-      thumbnailPath: `pins/${pinId}.thumb.webp`,
-      // A region marks an area, so it carries no element identity by
-      // construction — leaving these empty is more honest than filling them in.
-      selector: "",
-      domPath: "",
-      outerHtml: "",
-      classList: [],
-      elementText: `marks on ${route}`,
-      componentName: null,
-      name: null,
-      sourceFile: null,
-      computedStyles: {},
-      styleEdits: {},
-      annotation: "",
-      captureState: viewport.width < 640 ? "mobile" : "default",
-      status: "todo",
-      createdAt: now,
-      updatedAt: now,
-    };
-    await store.writeBoard({ ...board, pins: [...board.pins, pin] });
+      // No marks left means no region pin. Resolve this against the queued,
+      // latest board so an annotation or pin arriving while the screenshot was
+      // encoded cannot be overwritten by the older board snapshot.
+      if (shapes.length === 0) {
+        if (!existing) return current;
+        droppedScreenshot = existing.id;
+        return {
+          ...current,
+          pins: current.pins.filter((p) => p.id !== existing.id),
+          relationships: current.relationships
+            .filter((r) => r.sourcePinId !== existing.id)
+            .map((r) => ({ ...r, targetPinIds: r.targetPinIds.filter((t) => t !== existing.id) }))
+            .filter((r) => r.targetPinIds.length > 0),
+        };
+      }
+
+      const now = new Date().toISOString();
+      const pinId = existing?.id ?? store.nextId("pin");
+      if (screenshot) await store.putScreenshot(pinId, screenshot.full, screenshot.thumb);
+
+      if (existing) {
+        savedPin = { ...existing, drawings: shapes, url, viewport, updatedAt: now };
+        return {
+          ...current,
+          pins: current.pins.map((p) => (p.id === existing.id ? savedPin! : p)),
+        };
+      }
+
+      const highest = store.sortedPins(current).at(-1)?.order ?? 0;
+      savedPin = {
+        id: pinId,
+        schemaVersion: SCHEMA_VERSION,
+        boardId: current.id,
+        kind: "region",
+        drawings: shapes,
+        order: highest + 1,
+        groupId: null,
+        url,
+        route,
+        viewport,
+        // A region has no element behind it, so its crop is its own size.
+        elementSize: { width: 0, height: 0 },
+        screenshotPath: `pins/${pinId}.png`,
+        thumbnailPath: `pins/${pinId}.thumb.webp`,
+        // A region marks an area, so it carries no element identity by
+        // construction — leaving these empty is more honest than filling them in.
+        selector: "",
+        domPath: "",
+        outerHtml: "",
+        classList: [],
+        elementText: `marks on ${route}`,
+        componentName: null,
+        name: null,
+        sourceFile: null,
+        computedStyles: {},
+        styleEdits: {},
+        annotation: "",
+        captureState: viewport.width < 640 ? "mobile" : "default",
+        status: "todo",
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { ...current, pins: [...current.pins, savedPin] };
+    });
+    if (droppedScreenshot) await store.dropScreenshot(droppedScreenshot);
     await notifyBoardChanged(board.id);
-    return { pin };
+    return { pin: savedPin };
   },
 
   async "board/get"({ boardId }) {
@@ -388,7 +547,10 @@ const handlers: Handlers = {
   },
 
   async "board/setInstruction"({ boardId, instruction }) {
-    const board = await store.mutateBoard(boardId, (b) => ({ ...b, globalInstruction: instruction }));
+    const board = await store.mutateBoard(boardId, (b) => {
+      assertDraftBoard(b);
+      return { ...b, globalInstruction: instruction };
+    });
     await notifyBoardChanged(boardId);
     return { board };
   },
@@ -398,6 +560,10 @@ const handlers: Handlers = {
       if (!(await isServiceOnline())) {
         throw new Error("Local service is offline; the board was not submitted");
       }
+      // Close every picker while this queued submission still owns the board.
+      // A capture already ahead of us finishes first; one arriving now queues
+      // behind us and will be rejected after the board becomes ready.
+      await setCaptureMode(false);
       const ready: Board = {
         ...current,
         status: "ready",
@@ -428,12 +594,15 @@ const handlers: Handlers = {
 
   async "pin/update"({ pinId, patch }) {
     const found = await store.boardForPin(pinId);
-    const board = await store.mutateBoard(found.id, (b) => ({
-      ...b,
-      pins: b.pins.map((p) =>
-        p.id === pinId ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p,
-      ),
-    }));
+    const board = await store.mutateBoard(found.id, (b) => {
+      assertDraftBoard(b);
+      return {
+        ...b,
+        pins: b.pins.map((p) =>
+          p.id === pinId ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p,
+        ),
+      };
+    });
     await notifyBoardChanged(board.id);
     return { board };
   },
@@ -444,15 +613,21 @@ const handlers: Handlers = {
 
   async "pin/delete"({ pinId }) {
     const found = await store.boardForPin(pinId);
+    const board = await store.mutateBoard(found.id, (b) => {
+      assertDraftBoard(b);
+      return {
+        ...b,
+        pins: b.pins.filter((p) => p.id !== pinId),
+        relationships: b.relationships
+          .filter((r) => r.sourcePinId !== pinId)
+          .map((r) => ({ ...r, targetPinIds: r.targetPinIds.filter((t) => t !== pinId) }))
+          .filter((r) => r.targetPinIds.length > 0),
+      };
+    });
+    // Drop its stored artifacts only after deletion wins its place in the board
+    // queue. A concurrent re-capture can otherwise write a fresh image after an
+    // early drop and leave that image orphaned once the queued delete removes it.
     await store.dropScreenshot(pinId);
-    const board = await store.mutateBoard(found.id, (b) => ({
-      ...b,
-      pins: b.pins.filter((p) => p.id !== pinId),
-      relationships: b.relationships
-        .filter((r) => r.sourcePinId !== pinId)
-        .map((r) => ({ ...r, targetPinIds: r.targetPinIds.filter((t) => t !== pinId) }))
-        .filter((r) => r.targetPinIds.length > 0),
-    }));
     await notifyBoardChanged(board.id);
     return { board };
   },
@@ -460,6 +635,7 @@ const handlers: Handlers = {
   async "pin/reorder"({ pinId, beforePinId }) {
     const found = await store.boardForPin(pinId);
     const board = await store.mutateBoard(found.id, (b) => {
+      assertDraftBoard(b);
       const ordered = store.sortedPins(b).filter((p) => p.id !== pinId);
       const index = beforePinId ? ordered.findIndex((p) => p.id === beforePinId) : ordered.length;
       const before = index > 0 ? ordered[index - 1].order : null;
@@ -478,79 +654,145 @@ const handlers: Handlers = {
     if (!tab?.id) return { ok: false };
 
     if (tab.url !== pin.url) {
-      await chrome.tabs.update(tab.id, { url: pin.url });
-      // Give the page a beat to settle before asking for a highlight.
-      await new Promise((r) => setTimeout(r, 700));
+      try {
+        await chrome.tabs.update(tab.id, { url: pin.url });
+      } catch {
+        return { ok: false };
+      }
+      if (!(await waitForDestination(tab.id, pin.url))) return { ok: false };
+    } else if (tab.status === "loading" && !(await waitForDestination(tab.id, pin.url))) {
+      return { ok: false };
     }
-    broadcastToTab(tab.id, {
+
+    const delivered = await deliverReveal(tab.id, {
       kind: "reveal-pin",
       pinId,
       selector: pin.selector,
       domPath: pin.domPath,
       elementText: pin.elementText,
     });
-    return { ok: true };
+    return { ok: delivered };
   },
 
   async "relationship/create"({ sourcePinId, targetPinIds }) {
     const found = await store.boardForPin(sourcePinId);
-    const source = found.pins.find((pin) => pin.id === sourcePinId);
-    if (!source || source.kind !== "element") {
-      throw new Error("Relationships require an element pin as the source");
-    }
     const uniqueTargetIds = [...new Set(targetPinIds)].filter((id) => id !== sourcePinId);
-    if (uniqueTargetIds.length === 0) throw new Error("A relationship needs a target");
-    for (const targetId of uniqueTargetIds) {
-      const target = found.pins.find((pin) => pin.id === targetId);
-      if (!target || target.kind !== "element") {
-        throw new Error("Relationships require element pins as targets");
+    let relationship: Relationship | undefined;
+    const board = await store.mutateBoard(found.id, (b) => {
+      assertDraftBoard(b);
+      const source = b.pins.find((pin) => pin.id === sourcePinId);
+      if (!source || source.kind !== "element") {
+        throw new Error("Relationships require an element pin as the source");
       }
-    }
-    const relationship = {
-      id: store.nextId("rel"),
-      boardId: found.id,
-      type: "match" as const,
-      sourcePinId,
-      targetPinIds: uniqueTargetIds,
-      properties: [],
-      exception: "",
-      instruction: "",
-    };
-    const board = await store.mutateBoard(found.id, (b) => ({
-      ...b,
-      relationships: [...b.relationships, relationship],
-    }));
+      if (uniqueTargetIds.length === 0) throw new Error("A relationship needs a target");
+      for (const targetId of uniqueTargetIds) {
+        const target = b.pins.find((pin) => pin.id === targetId);
+        if (!target || target.kind !== "element") {
+          throw new Error("Relationships require element pins as targets");
+        }
+      }
+
+      relationship = b.relationships.find(
+        (candidate) =>
+          candidate.sourcePinId === sourcePinId &&
+          candidate.targetPinIds.length === uniqueTargetIds.length &&
+          candidate.targetPinIds.every((targetId) => uniqueTargetIds.includes(targetId)),
+      );
+      if (relationship) return b;
+
+      relationship = {
+        id: store.nextId("rel"),
+        boardId: found.id,
+        type: "match",
+        sourcePinId,
+        targetPinIds: uniqueTargetIds,
+        properties: [],
+        exception: "",
+        instruction: "",
+      };
+      return { ...b, relationships: [...b.relationships, relationship] };
+    });
     await notifyBoardChanged(board.id);
-    return { board, relationship };
+    return { board, relationship: relationship! };
   },
 
   async "relationship/update"({ relationshipId, patch }) {
     const found = await store.boardForRelationship(relationshipId);
-    const board = await store.mutateBoard(found.id, (b) => ({
-      ...b,
-      relationships: b.relationships.map((r) =>
-        r.id === relationshipId ? { ...r, ...patch } : r,
-      ),
-    }));
+    const board = await store.mutateBoard(found.id, (b) => {
+      assertDraftBoard(b);
+      const relationship = b.relationships.find((candidate) => candidate.id === relationshipId);
+      if (!relationship) throw new Error(`No board contains relationship "${relationshipId}"`);
+
+      const source = b.pins.find((pin) => pin.id === relationship.sourcePinId);
+      if (!source || source.kind !== "element") {
+        throw new Error("Relationships require an element pin as the source");
+      }
+      const targetPinIds = [...new Set(patch.targetPinIds ?? relationship.targetPinIds)].filter(
+        (id) => id !== relationship.sourcePinId,
+      );
+      if (targetPinIds.length === 0) throw new Error("A relationship needs a target");
+      for (const targetId of targetPinIds) {
+        const target = b.pins.find((pin) => pin.id === targetId);
+        if (!target || target.kind !== "element") {
+          throw new Error("Relationships require element pins as targets");
+        }
+      }
+
+      const selectedProperties = new Set(
+        expandProperties(patch.properties ?? relationship.properties),
+      );
+      for (const other of b.relationships) {
+        if (other.id === relationshipId) continue;
+        const sharedTargetId = targetPinIds.find((targetId) =>
+          other.targetPinIds.includes(targetId),
+        );
+        if (!sharedTargetId) continue;
+        const conflict = expandProperties(other.properties).find((property) =>
+          selectedProperties.has(property),
+        );
+        if (conflict) {
+          throw new Error(
+            `Relationship property "${conflict}" is already selected for target "${sharedTargetId}"`,
+          );
+        }
+      }
+
+      return {
+        ...b,
+        relationships: b.relationships.map((candidate) =>
+          candidate.id === relationshipId ? { ...candidate, ...patch, targetPinIds } : candidate,
+        ),
+      };
+    });
     await notifyBoardChanged(board.id);
     return { board };
   },
 
   async "board/clear"({ boardId }) {
-    const current = await store.readBoard(boardId);
-    // Screenshots are the bulk of what a board costs, so they go with it.
-    if (current) await Promise.all(current.pins.map((p) => store.dropScreenshot(p.id)));
-    const board = await store.mutateBoard(boardId, (b) => ({ ...b, pins: [], relationships: [] }));
+    let removedPinIds: string[] = [];
+    const board = await store.mutateBoard(boardId, (b) => {
+      assertDraftBoard(b);
+      // Resolve the asset list from the same queued snapshot that is cleared.
+      // Otherwise a capture finishing between the old read and this mutation
+      // leaves its screenshot behind with no pin pointing to it.
+      removedPinIds = b.pins.map((pin) => pin.id);
+      return { ...b, pins: [], relationships: [] };
+    });
+    // Screenshots and floating positions are pin-owned storage, so they go with it.
+    await Promise.all(removedPinIds.map((pinId) => store.dropScreenshot(pinId)));
     await notifyBoardChanged(boardId);
     return { board };
   },
 
   async "relationship/delete"({ relationshipId }) {
     const found = await store.boardForRelationship(relationshipId);
-    const board = await store.mutateBoard(found.id, (b) => ({
-      ...b,
-      relationships: b.relationships.filter((r) => r.id !== relationshipId),
-    }));
+    const board = await store.mutateBoard(found.id, (b) => {
+      assertDraftBoard(b);
+      return {
+        ...b,
+        relationships: b.relationships.filter((r) => r.id !== relationshipId),
+      };
+    });
     await notifyBoardChanged(board.id);
     return { board };
   },
@@ -570,6 +812,34 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }),
     );
   return true; // keep the channel open for the async reply
+});
+
+/* ------------------------------------------------------- capture lifecycle */
+
+/**
+ * Optional-host content scripts do not survive a full-page navigation and are
+ * not injected automatically on newly opened origins. When global capture is
+ * already on, follow the browser lifecycle so those documents receive the
+ * same loader that `setCaptureMode` would have installed at toggle time.
+ */
+chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  void rearmCaptureTab({ ...tab, id: tab.id ?? tabId }).catch(() => {});
+});
+
+chrome.tabs.onActivated?.addListener(({ tabId }) => {
+  void chrome.tabs
+    .get(tabId)
+    .then(rearmCaptureTab)
+    .catch(() => {});
+});
+
+chrome.tabs.onCreated?.addListener((tab) => {
+  // Loading tabs are handled once by onUpdated. A tab can also be created in a
+  // complete state (for example, session restore), so do not make onUpdated the
+  // only entry point.
+  if (tab.status !== "complete") return;
+  void rearmCaptureTab(tab).catch(() => {});
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -596,9 +866,17 @@ chrome.runtime.onInstalled.addListener(() => {
 async function reinjectOpenTabs(): Promise<void> {
   const script = chrome.runtime.getManifest().content_scripts?.[0];
   const files = script?.js ?? [];
-  const matches = script?.matches ?? [];
-  if (files.length === 0 || matches.length === 0) return;
-  const tabs = await chrome.tabs.query({ url: matches }).catch(() => []);
+  if (files.length === 0) return;
+  /*
+   * The manifest only auto-injects on localhost, but a user can grant optional
+   * access to any HTTP(S) origin and `armTab` injects the same loader there.
+   * Those tabs need reload recovery too. Querying web URLs keeps internal pages
+   * out of the loop; executeScript below remains the permission check and safely
+   * declines origins the user has not granted.
+   */
+  const tabs = await chrome.tabs
+    .query({ url: ["http://*/*", "https://*/*"] })
+    .catch(() => []);
   await Promise.all(
     tabs.map(async (tab) => {
       if (tab.id === undefined) return;
@@ -647,7 +925,15 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== "toggle-capture") return;
   const state = await store.getState();
-  await setCaptureMode(!state.captureMode);
+  const enabling = !state.captureMode;
+  const activeTab = await setCaptureMode(enabling);
+  // The shortcut has no panel-local handler to show an access error. Leaving
+  // the global state armed on an internal or denied page would make every
+  // surface claim capture is active even though the foreground tab cannot be
+  // captured, so roll the optimistic toggle back immediately.
+  if (enabling && (activeTab === "blocked" || activeTab === "unsupported")) {
+    await setCaptureMode(false);
+  }
 });
 
 /** Screenshots are the bulk of storage — drop them with their board. */

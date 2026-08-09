@@ -19,6 +19,33 @@ interface ToolbarProps {
 }
 
 const POSITION_KEY = "toolbarPosition";
+const VIEWPORT_GUTTER = 8;
+
+interface ToolbarPosition {
+  x: number;
+  y: number;
+}
+
+interface ToolbarSize {
+  width: number;
+  height: number;
+}
+
+function clampAxis(value: number, size: number, viewportSize: number): number {
+  const maximum = Math.max(VIEWPORT_GUTTER, viewportSize - size - VIEWPORT_GUTTER);
+  return Math.min(maximum, Math.max(VIEWPORT_GUTTER, value));
+}
+
+export function clampToolbarPosition(
+  position: ToolbarPosition,
+  toolbar: ToolbarSize,
+  viewport: ToolbarSize,
+): ToolbarPosition {
+  return {
+    x: clampAxis(position.x, toolbar.width, viewport.width),
+    y: clampAxis(position.y, toolbar.height, viewport.height),
+  };
+}
 
 /**
  * Top-centre by default, and draggable from the grip. Pinning tends to start at
@@ -35,38 +62,57 @@ export function Toolbar({
   drawColor,
   onDrawColor,
 }: ToolbarProps) {
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [position, setPosition] = useState<ToolbarPosition | null>(null);
   const dragging = useRef<{ dx: number; dy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
+  const clampPosition = useCallback((candidate: ToolbarPosition): ToolbarPosition => {
+    const node = ref.current;
+    if (!node) return candidate;
+    return clampToolbarPosition(
+      candidate,
+      { width: node.offsetWidth, height: node.offsetHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+  }, []);
+
   useEffect(() => {
     void chrome.storage.local.get(POSITION_KEY).then((bag) => {
-      const stored = bag[POSITION_KEY] as { x: number; y: number } | undefined;
-      if (stored) setPosition(stored);
+      const stored = bag[POSITION_KEY] as ToolbarPosition | undefined;
+      if (stored) setPosition(clampPosition(stored));
     });
-  }, []);
+  }, [clampPosition]);
+
+  useEffect(() => {
+    const keepReachable = () => {
+      setPosition((current) => {
+        if (!current) return current;
+        const next = clampPosition(current);
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
+    };
+    window.addEventListener("resize", keepReachable);
+    return () => window.removeEventListener("resize", keepReachable);
+  }, [clampPosition]);
 
   const onGripDown = useCallback((event: React.PointerEvent) => {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
     dragging.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-    (event.target as Element).setPointerCapture(event.pointerId);
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
     event.preventDefault();
   }, []);
 
   const onGripMove = useCallback((event: React.PointerEvent) => {
     const drag = dragging.current;
     if (!drag) return;
-    const width = ref.current?.offsetWidth ?? 0;
-    const height = ref.current?.offsetHeight ?? 0;
-    setPosition({
-      x: Math.min(Math.max(8, event.clientX - drag.dx), window.innerWidth - width - 8),
-      y: Math.min(Math.max(8, event.clientY - drag.dy), window.innerHeight - height - 8),
-    });
-  }, []);
+    setPosition(clampPosition({ x: event.clientX - drag.dx, y: event.clientY - drag.dy }));
+  }, [clampPosition]);
 
-  const onGripUp = useCallback(() => {
+  const endDrag = useCallback((event: React.PointerEvent) => {
     dragging.current = null;
+    const target = event.currentTarget as Element;
+    if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
     setPosition((current) => {
       if (current) void chrome.storage.local.set({ [POSITION_KEY]: current });
       return current;
@@ -87,7 +133,8 @@ export function Toolbar({
         className="pin-toolbar__grip"
         onPointerDown={onGripDown}
         onPointerMove={onGripMove}
-        onPointerUp={onGripUp}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
         aria-label="Drag toolbar"
       >
         <GripIcon size={17} />
@@ -111,7 +158,7 @@ export function Toolbar({
           }}
           title={tool.label}
           aria-label={tool.label}
-          aria-pressed={mode === tool.id}
+          aria-pressed={mode === tool.id && (tool.id !== "draw" || drawTool === "draw")}
         >
           {tool.icon}
         </button>
@@ -156,6 +203,7 @@ export function Toolbar({
             }}
             title={`Draw in ${swatch}`}
             aria-label={`Draw in ${swatch}`}
+            aria-pressed={drawColor === swatch}
           />
         ))}
       </span>

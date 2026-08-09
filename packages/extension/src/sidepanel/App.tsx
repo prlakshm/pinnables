@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Board } from "@pinnables/shared";
-import { send, type Broadcast, type ExtensionState } from "../lib/messages";
+import { send, type Broadcast, type ExtensionState, type TabArmState } from "../lib/messages";
 // Flat variant: same highlight, no gradient. The header renders at 17px, where
 // radial shading has nothing to resolve into but the highlight still reads.
 import wordmarkUrl from "../ui/wordmark-flat.svg";
@@ -25,38 +25,20 @@ type Phase = "idle" | "submitting" | "submitted";
  */
 const SUBMITTED_MS = 1200;
 
-/**
- * Hand the pointer to Cursor directly.
- *
- * MCP cannot push, so the agent has to be told to come and look. Cursor's
- * deeplink is the one channel that goes the other way: it opens the app with a
- * prompt already in the composer, which is the difference between "press
- * submit" and "press submit, switch apps, paste".
- *
- * Only ever called once the board is materialised — a prompt telling Cursor to
- * load a board that never reached disk is worse than no prompt, because it
- * fails inside the agent where the reason is invisible.
- *
- * The anchor is deliberate: assigning `location.href` in a side panel navigates
- * the panel itself, and a synthetic click on a detached anchor hands the URL to
- * the OS without the panel going anywhere.
- */
-function openInCursor(pointer: string): void {
-  const url = `cursor://anysphere.cursor-deeplink/prompt?text=${encodeURIComponent(pointer)}`;
-  const link = document.createElement("a");
-  link.href = url;
-  link.rel = "noreferrer";
-  document.body.append(link);
-  link.click();
-  link.remove();
-}
-
 export function App() {
+  const started = useRef(false);
+  const reloadGeneration = useRef(0);
+  const instructionWrite = useRef<Promise<void>>(Promise.resolve());
+  const phaseRef = useRef<Phase>("idle");
   const [board, setBoard] = useState<Board | null>(null);
   const [state, setState] = useState<ExtensionState | null>(null);
   const [tab, setTab] = useState<Tab>("pins");
   const [phase, setPhase] = useState<Phase>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [captureIssue, setCaptureIssue] = useState<Exclude<TabArmState, "armed" | "injected"> | null>(null);
+  const [instructionDraft, setInstructionDraft] = useState("");
+  const [clearArmed, setClearArmed] = useState(false);
   /**
    * Only ever set when the clipboard write failed. The pointer is the whole
    * interface to the agent and the panel has no board list to recover an id
@@ -65,31 +47,85 @@ export function App() {
   const [uncopied, setUncopied] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    const generation = ++reloadGeneration.current;
     const [{ board: next }, extState] = await Promise.all([
       send("board/get", {}),
       send("state/get", {}),
     ]);
+    // A health check is part of state/get and can make an older request finish
+    // after a newer board broadcast. Only the newest snapshot may reach React.
+    if (generation !== reloadGeneration.current) return;
     setBoard(next);
     setState(extState);
   }, []);
 
   useEffect(() => {
-    void reload();
+    // React StrictMode replays mount effects in development. Without this guard
+    // the second asynchronous reset can land after the user has already pressed
+    // Capture and silently turn their new session off again.
+    if (!started.current) {
+      started.current = true;
+      // A side panel can be opened from Chrome's panel menu without firing the
+      // extension action. Reset here as well so every newly opened panel starts
+      // from the promised, unarmed Capture state.
+      void send("capture/setMode", { enabled: false }).then((next) => {
+        setState(next);
+        void reload();
+      });
+    }
     const listener = (message: Broadcast) => {
+      if (message.kind === "capture-mode" && message.enabled) setCaptureIssue(null);
+      // markReady emits capture and board broadcasts before its response comes
+      // back. Reloading here can replace the submitted board (and a clipboard
+      // fallback pointer) with the next draft before the user ever sees it.
+      if (phaseRef.current !== "idle") {
+        if (message.kind === "capture-mode") {
+          setState((current) => current && { ...current, captureMode: message.enabled });
+        }
+        return;
+      }
       if (message.kind === "board-updated" || message.kind === "capture-mode") void reload();
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, [reload]);
 
+  // This field used to be uncontrolled. Creating the fresh post-submit board
+  // could therefore leave the previous board's text visibly in the textarea;
+  // the next blur then copied that stale instruction into the new board.
+  useEffect(() => {
+    setInstructionDraft(board?.globalInstruction ?? "");
+  }, [board?.id, board?.globalInstruction]);
+
+  // A fresh board starts a fresh flow. Carrying the Relationships tab across
+  // board identity made the first new pin appear to vanish into an empty diff
+  // screen until the user noticed and switched tabs by hand.
+  useEffect(() => {
+    setTab("pins");
+    setClearArmed(false);
+  }, [board?.id]);
+
+  useEffect(() => {
+    if (!clearArmed) return;
+    const timer = setTimeout(() => setClearArmed(false), 4_000);
+    return () => clearTimeout(timer);
+  }, [clearArmed]);
+
   const clearBoard = useCallback(async () => {
     if (!board) return;
+    if (!clearArmed) {
+      setClearArmed(true);
+      return;
+    }
     await send("board/clear", { boardId: board.id });
+    setClearArmed(false);
+    setTab("pins");
     void reload();
-  }, [board, reload]);
+  }, [board, clearArmed, reload]);
 
   const toggleCapture = useCallback(async () => {
-    if (!state) return;
+    if (!state || captureBusy) return;
+    setCaptureBusy(true);
     /*
      * Ask for screenshot access on the way in, from the click itself.
      *
@@ -101,39 +137,72 @@ export function App() {
      *
      * The request has to ride a user gesture, which is what this handler is.
      */
-    /*
-     * Asked first, and never awaited before asking.
-     *
-     * `permissions.request` has to run inside the user gesture, and an `await`
-     * spends it — checking `permissions.contains` first meant the request that
-     * followed threw "must be called during a user gesture", the handler
-     * rejected, and `capture/setMode` was never reached. The button did nothing.
-     * It looked intermittent because the check is skipped once the permission is
-     * held, so it only failed when it mattered.
-     *
-     * `request` already resolves true when the origin is granted, so the check
-     * bought nothing. And a refusal must not block the toggle: capture mode
-     * still works, it just cannot take screenshots, and that is a better answer
-     * than a dead button.
-     */
-    if (!state.captureMode) {
-      try {
-        await chrome.permissions.request({ origins: ["<all_urls>"] });
-      } catch {
-        // Declined, or no gesture left to spend. Either way, still toggle.
+    try {
+      /*
+       * Ask directly inside the button gesture. `request` already resolves true
+       * when access is held, so a preceding async `contains` check only risks
+       * spending the user gesture before the prompt can open.
+       *
+       * A declined request must stop here. The loader can already be resident on
+       * localhost and report "armed" while `captureVisibleTab` still lacks the
+       * permission to take a screenshot; claiming "Capturing" in that state
+       * turns every page click into a silent failure.
+      */
+      if (!state.captureMode) {
+        const granted = await chrome.permissions
+          .request({ origins: ["<all_urls>"] })
+          .catch(() => false);
+        if (!granted) {
+          setCaptureIssue("blocked");
+          return;
+        }
       }
+
+      const next = await send("capture/setMode", { enabled: !state.captureMode });
+      if (next.captureMode && (next.activeTab === "blocked" || next.activeTab === "unsupported")) {
+        setCaptureIssue(next.activeTab);
+        const stopped = await send("capture/setMode", { enabled: false });
+        setState(stopped);
+      } else {
+        setCaptureIssue(null);
+        setState(next);
+      }
+      void reload();
+    } finally {
+      setCaptureBusy(false);
     }
-    const next = await send("capture/setMode", { enabled: !state.captureMode });
-    setState(next);
-    void reload();
-  }, [state, reload]);
+  }, [state, captureBusy, reload]);
+
+  const setInstruction = useCallback(
+    async (instruction: string) => {
+      if (!board) return;
+      const persist = async () => {
+        const { board: next } = await send("board/setInstruction", {
+          boardId: board.id,
+          instruction,
+        });
+        setBoard(next);
+      };
+      const result = instructionWrite.current.then(persist, persist);
+      instructionWrite.current = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      await result;
+    },
+    [board],
+  );
 
   const submit = useCallback(async () => {
     if (!board || phase !== "idle") return;
+    phaseRef.current = "submitting";
     setPhase("submitting");
     setUncopied(null);
     setSubmitError(null);
     try {
+      if (instructionDraft !== board.globalInstruction) {
+        await setInstruction(instructionDraft);
+      }
       const result = await send("board/markReady", { boardId: board.id });
       setBoard(result.board);
       try {
@@ -141,19 +210,16 @@ export function App() {
       } catch {
         setUncopied(result.pointer);
       }
-      // The clipboard is still written first, and on purpose: the deeplink can
-      // fail quietly — no Cursor installed, protocol handler declined, the
-      // wrong app registered — and a pointer already on the clipboard turns
-      // that into a paste rather than a dead end.
-      if (result.materialized) openInCursor(result.pointer);
+      phaseRef.current = "submitted";
       setPhase("submitted");
     } catch {
       // The board is untouched and still on screen, so the press can simply be
       // made again — which is the whole recovery.
       setSubmitError("Couldn’t write the board. Start the local service, then try again.");
+      phaseRef.current = "idle";
       setPhase("idle");
     }
-  }, [board, phase]);
+  }, [board, phase, instructionDraft, setInstruction]);
 
   /**
    * The board clears itself once "Submitted" has been read.
@@ -168,29 +234,50 @@ export function App() {
     const timer = setTimeout(() => {
       void (async () => {
         // A pointer that never reached the clipboard is only recoverable from
-        // this screen, so that board keeps its pins — but the button still has
-        // to come back, or the panel ends on a control nobody can press.
+        // this screen, so keep that board visible. Otherwise reload through
+        // ensureActiveBoard: it reuses a draft already created by a broadcast,
+        // or creates exactly one if submission left the ready board active.
         if (!uncopied) {
-          await send("board/create", { title: "Untitled board" });
           await reload();
+          phaseRef.current = "idle";
+          setPhase("idle");
         }
-        setPhase("idle");
       })();
     }, SUBMITTED_MS);
     return () => clearTimeout(timer);
   }, [phase, uncopied, reload]);
 
-  const setInstruction = useCallback(
-    async (instruction: string) => {
-      if (!board) return;
-      const { board: next } = await send("board/setInstruction", { boardId: board.id, instruction });
-      setBoard(next);
-    },
-    [board],
-  );
+  const startNewBoard = useCallback(async () => {
+    setUncopied(null);
+    await reload();
+    phaseRef.current = "idle";
+    setPhase("idle");
+  }, [reload]);
 
   const pinCount = board?.pins.length ?? 0;
   const relCount = board?.relationships.length ?? 0;
+
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const next: Tab =
+      event.key === "Home"
+        ? "pins"
+        : event.key === "End"
+          ? "relationships"
+          : tab === "pins"
+            ? "relationships"
+            : "pins";
+    setTab(next);
+    requestAnimationFrame(() => document.getElementById(`pin-tab-${next}`)?.focus());
+  };
 
   return (
     <div className="pin-panel">
@@ -203,56 +290,101 @@ export function App() {
           style={{ marginLeft: "auto" }}
           onClick={() => void toggleCapture()}
           aria-pressed={state?.captureMode ?? false}
+          aria-busy={captureBusy}
+          disabled={!state || captureBusy}
         >
           <PinIcon size={14} />
           {state?.captureMode ? "Capturing" : "Capture"}
         </button>
       </header>
 
-      <nav className="pin-panel__tabs">
-        <button className="pin-tab" data-active={tab === "pins"} onClick={() => setTab("pins")}>
-          Pins {pinCount > 0 && <span className="pin-badge">{pinCount}</span>}
-        </button>
-        <button
-          className="pin-tab"
-          data-active={tab === "relationships"}
-          onClick={() => setTab("relationships")}
-        >
-          Relationships {relCount > 0 && <span className="pin-badge">{relCount}</span>}
-        </button>
+      <nav className="pin-panel__tabs" aria-label="Board">
+        <span role="tablist" aria-label="Board views" style={{ display: "contents" }}>
+          <button
+            id="pin-tab-pins"
+            className="pin-tab"
+            role="tab"
+            aria-selected={tab === "pins"}
+            aria-controls="pin-panel-pins"
+            data-active={tab === "pins"}
+            tabIndex={tab === "pins" ? 0 : -1}
+            onClick={() => setTab("pins")}
+            onKeyDown={onTabKeyDown}
+          >
+            Pins {pinCount > 0 && <span className="pin-badge">{pinCount}</span>}
+          </button>
+          <button
+            id="pin-tab-relationships"
+            className="pin-tab"
+            role="tab"
+            aria-selected={tab === "relationships"}
+            aria-controls="pin-panel-relationships"
+            data-active={tab === "relationships"}
+            tabIndex={tab === "relationships" ? 0 : -1}
+            onClick={() => setTab("relationships")}
+            onKeyDown={onTabKeyDown}
+          >
+            Relationships {relCount > 0 && <span className="pin-badge">{relCount}</span>}
+          </button>
+        </span>
 
-        {/*
-          * One click. A confirm step here was protecting the wrong thing — this
-          * gets pressed constantly while setting a board up, and a board of
-          * unsent pins is minutes of work, not hours. It sits on the tab rail
-          * because it acts on exactly what the tabs are counting, and it hides
-          * when there is nothing to clear.
-          */}
+        {/* It sits on the tab rail because it acts on exactly what those tabs
+            count. The first press arms it briefly; the second is the destructive
+            action, which prevents an adjacent-tab miss from erasing the board. */}
         {pinCount + relCount > 0 && (
           <span className="pin-panel__tabs-end">
             <button
               className="pin-tab-action"
+              data-confirm={clearArmed}
               onClick={() => void clearBoard()}
-              title="Remove every pin and relationship on this board"
+              aria-label={clearArmed ? "Confirm clearing every pin and relationship" : "Clear all"}
+              title={
+                clearArmed
+                  ? "Press again to remove every pin and relationship"
+                  : "Remove every pin and relationship on this board"
+              }
             >
-              Clear all
+              {clearArmed ? "Confirm clear" : "Clear all"}
             </button>
           </span>
         )}
       </nav>
 
-      <div className="pin-panel__body">
-        {!board || pinCount === 0 ? (
-          <div className="pin-empty">
-            <PinIcon size={22} />
-            <strong style={{ fontWeight: 500, color: "var(--pin-ink)" }}>No pins yet</strong>
-            <span>
-              Turn on capture, then click any element on your localhost app to pin it. Pins survive
-              navigation, so keep reviewing across routes.
-            </span>
+      <div
+        className="pin-panel__body"
+        role="tabpanel"
+        id={tab === "pins" ? "pin-panel-pins" : "pin-panel-relationships"}
+        aria-labelledby={tab === "pins" ? "pin-tab-pins" : "pin-tab-relationships"}
+      >
+        {captureIssue && (
+          <div className="pin-banner pin-banner--error" role="alert">
+            {captureIssue === "blocked"
+              ? "Pinnables couldn’t access this page. Grant site access, then try Capture again."
+              : "This Chrome page can’t be captured. Switch to an http or https page."}
+          </div>
+        )}
+
+        {!board || !state ? (
+          <div className="pin-empty" role="status" aria-live="polite">
+            <span>Loading board…</span>
           </div>
         ) : tab === "pins" ? (
-          <PinList board={board} onChanged={reload} />
+          pinCount === 0 ? (
+            <div className="pin-empty">
+              <PinIcon size={22} />
+              <strong style={{ fontWeight: 500, color: "var(--pin-ink)" }}>No pins yet</strong>
+              <span>
+                Turn on capture, then click any element in your app to pin it. Pins survive
+                navigation, so keep reviewing across routes.
+              </span>
+            </div>
+          ) : (
+            <PinList
+              board={board}
+              onChanged={reload}
+              onRelationshipCreated={() => setTab("relationships")}
+            />
+          )
         ) : (
           <Relationships board={board} onChanged={reload} />
         )}
@@ -268,22 +400,15 @@ export function App() {
           )}
 
           {submitError && (
-            <div className="pin-banner" role="alert">
+            <div className="pin-banner pin-banner--error" role="alert">
               {submitError}
             </div>
           )}
 
-          <textarea
-            className="pin-field"
-            rows={2}
-            placeholder="Add instructions for every pin…"
-            defaultValue={board.globalInstruction}
-            onBlur={(e) => void setInstruction(e.target.value)}
-          />
-
-          {/* The one case that keeps a screen: the clipboard refused, so the
-              pointer is here and the board stays until it has been taken. */}
-          {uncopied && (
+          {/* A submitted board is immutable. When the clipboard refuses the
+              pointer, keep only the recovery controls on screen so the panel
+              never presents ready-board fields that can no longer save. */}
+          {uncopied ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span className="pin-section-label">Couldn&apos;t copy — paste this into your agent</span>
               <code
@@ -300,28 +425,53 @@ export function App() {
               >
                 {uncopied}
               </code>
+              <button
+                className="pin-btn pin-btn--primary"
+                style={{ alignSelf: "flex-end" }}
+                onClick={() => void startNewBoard()}
+              >
+                Start a new board
+              </button>
             </div>
-          )}
+          ) : (
+            <>
+              <textarea
+                className="pin-field"
+                rows={2}
+                placeholder="Add instructions for every pin…"
+                aria-label="Instructions for every pin"
+                value={instructionDraft}
+                onChange={(e) => setInstructionDraft(e.target.value)}
+                onBlur={() => {
+                  if (instructionDraft !== board.globalInstruction) void setInstruction(instructionDraft);
+                }}
+              />
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, color: "var(--pin-ink-muted)" }}>
-              {pinCount} pin{pinCount === 1 ? "" : "s"} · {relCount} relationship
-              {relCount === 1 ? "" : "s"}
-            </span>
-            {/* One control, reporting its own progress. Disabled while it works
-                and while it says so, which is also what greys it — the panel's
-                black-when-it-will-act rule, spent here on the only press that
-                sends anything. */}
-            <button
-              className="pin-btn pin-btn--primary"
-              style={{ marginLeft: "auto" }}
-              disabled={phase !== "idle"}
-              onClick={() => void submit()}
-            >
-              {phase === "submitted" && <CheckIcon size={14} />}
-              {phase === "idle" ? "Send to agent" : phase === "submitting" ? "Submitting…" : "Submitted"}
-            </button>
-          </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, color: "var(--pin-ink-muted)" }}>
+                  {pinCount} pin{pinCount === 1 ? "" : "s"} · {relCount} relationship
+                  {relCount === 1 ? "" : "s"}
+                </span>
+                {/* One control, reporting its own progress. Disabled while it works
+                    and while it says so, which is also what greys it — the panel's
+                    black-when-it-will-act rule, spent here on the only press that
+                    sends anything. */}
+                <button
+                  className="pin-btn pin-btn--primary"
+                  style={{ marginLeft: "auto" }}
+                  disabled={phase !== "idle"}
+                  onClick={() => void submit()}
+                >
+                  {phase === "submitted" && <CheckIcon size={14} />}
+                  {phase === "idle"
+                    ? "Send to agent"
+                    : phase === "submitting"
+                      ? "Submitting…"
+                      : "Submitted"}
+                </button>
+              </div>
+            </>
+          )}
         </footer>
       )}
     </div>

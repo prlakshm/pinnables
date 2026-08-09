@@ -212,6 +212,7 @@ function lengthMoved(property: string, from: string, to: string): boolean {
 
 /** Computed `box-shadow` in Chrome: `rgba(0, 0, 0, 0.08) 0px 4px 12px 0px`. */
 const SHADOW_SLOTS = ["color", "x", "y", "blur", "spread"] as const;
+const EMPTY_SHADOW = ["rgba(0, 0, 0, 0)", "0px", "0px", "0px", "0px"];
 
 /**
  * Break both shadows into their slots and pair them.
@@ -235,7 +236,10 @@ function shadowTokens(entry: StyleDiffEntry): TokenChange[] | null {
 
 /** Tokenize on whitespace without cutting `rgba(0, 0, 0, 0.08)` at its commas. */
 function splitShadow(value: string): string[] | null {
-  if (value === "none") return null;
+  // `none` is still a complete side of the comparison. Treating it as an
+  // unparsable value threw away the concise y/blur summary exactly when a
+  // shadow was being added or removed.
+  if (value.trim() === "none") return [...EMPTY_SHADOW];
   // More than one shadow layer is beyond what named slots can describe.
   if (value.split(/\),|,(?![^(]*\))/).length > 1 && !/^rgba?\(/.test(value)) return null;
 

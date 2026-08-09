@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Pin } from "@pinnables/shared";
+import { STYLE_INITIAL_VALUES, type Pin } from "@pinnables/shared";
 import { CloseIcon } from "../ui/icons";
 
 /**
@@ -17,19 +17,6 @@ import { CloseIcon } from "../ui/icons";
  * which is why the edit survives the tab closing: it was never an edit to the
  * page, it was a specification of what the page should be.
  */
-
-/** Box-model properties, dropped from capture when they sit at their initial value. */
-const ZERO_BY_DEFAULT = new Set([
-  "margin-top",
-  "margin-right",
-  "margin-bottom",
-  "margin-left",
-  "padding-top",
-  "padding-right",
-  "padding-bottom",
-  "padding-left",
-  "border-width",
-]);
 
 /** Rows under the diagram, in the order DevTools lists them. */
 const METRICS: Array<{ property: string; label?: string }> = [
@@ -55,7 +42,7 @@ const METRICS: Array<{ property: string; label?: string }> = [
 function captured(pin: Pin, property: string): string {
   const value = pin.computedStyles[property];
   if (value !== undefined) return value;
-  return ZERO_BY_DEFAULT.has(property) ? "0px" : "";
+  return STYLE_INITIAL_VALUES[property] ?? "";
 }
 
 /** What should be shown: the requested value if there is one, else the measured one. */
@@ -225,6 +212,7 @@ function EdgeInput({
       data-side={side}
       data-edited={edited}
       title={title}
+      aria-label={title.split(" · ")[0]}
       value={draft}
       spellCheck={false}
       onChange={(e) => setDraft(e.target.value)}
@@ -261,6 +249,7 @@ function MetricRow({
       <input
         className="pin-metric__value"
         data-edited={was !== null}
+        aria-label={name}
         value={draft}
         placeholder="—"
         spellCheck={false}
@@ -276,7 +265,12 @@ function MetricRow({
           <span className="pin-metric__was" title="Captured value">
             {was || "unset"}
           </span>
-          <button className="pin-metric__revert" onClick={onRevert} title="Revert to captured value">
+          <button
+            className="pin-metric__revert"
+            onClick={onRevert}
+            title="Revert to captured value"
+            aria-label={`Revert ${name} to its captured value`}
+          >
             <CloseIcon size={11} />
           </button>
         </span>

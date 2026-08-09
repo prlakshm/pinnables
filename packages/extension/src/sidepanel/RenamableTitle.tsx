@@ -51,6 +51,7 @@ export function RenamableTitle({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const cancelCommit = useRef(false);
 
   const shown = pinLabel(pin, siblings);
 
@@ -85,13 +86,24 @@ export function RenamableTitle({
         className={`pin-rename ${className ?? ""}`}
         style={style}
         value={draft}
+        aria-label={`Rename ${shown}`}
         size={Math.max(draft.length + 1, 3)}
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit(draft)}
+        onBlur={() => {
+          if (cancelCommit.current) {
+            cancelCommit.current = false;
+            return;
+          }
+          void commit(draft);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Escape") {
+            e.preventDefault();
+            cancelCommit.current = true;
+            setEditing(false);
+          }
         }}
       />
     );
@@ -103,6 +115,7 @@ export function RenamableTitle({
       style={style}
       onClick={(e) => {
         e.stopPropagation();
+        cancelCommit.current = false;
         setDraft(shown);
         setEditing(true);
       }}

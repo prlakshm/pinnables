@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { describeDrawings, pinLabel, sortedByOrder, type Board, type Pin } from "@pinnables/shared";
 import { send, type Contract } from "../lib/messages";
-import { ArrowUpRightIcon, CheckIcon, LinkIcon, TrashIcon } from "../ui/icons";
+import { ArrowUpRightIcon, CheckIcon, ChevronIcon, LinkIcon, TrashIcon } from "../ui/icons";
 import { Inspector } from "./Inspector";
 import { RenamableTitle } from "./RenamableTitle";
 
@@ -13,11 +13,22 @@ import { RenamableTitle } from "./RenamableTitle";
  * rows scan, and everything measurable about a pin is one click away when you
  * are actually deciding something.
  */
-export function PinList({ board, onChanged }: { board: Board; onChanged: () => void }) {
+export function PinList({
+  board,
+  onChanged,
+  onRelationshipCreated,
+}: {
+  board: Board;
+  onChanged: () => void;
+  /** Move directly from target picking to the diff the user just created. */
+  onRelationshipCreated?: () => void;
+}) {
   const [expanded, setExpanded] = useState<string | null>(null);
   /** The pin every picked pin will be made to match — `sourcePinId` in the contract. */
   const [source, setSource] = useState<string | null>(null);
   const [targets, setTargets] = useState<Set<string>>(new Set());
+  const [relationshipBusy, setRelationshipBusy] = useState(false);
+  const [relationshipIssue, setRelationshipIssue] = useState<string | null>(null);
 
   const pins = sortedByOrder(board.pins);
 
@@ -29,15 +40,24 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
     });
 
   const confirmRelationship = useCallback(async () => {
-    if (!source || targets.size === 0) return;
-    await send("relationship/create", {
-      sourcePinId: source,
-      targetPinIds: [...targets],
-    });
-    setSource(null);
-    setTargets(new Set());
-    onChanged();
-  }, [source, targets, onChanged]);
+    if (!source || targets.size === 0 || relationshipBusy) return;
+    setRelationshipBusy(true);
+    setRelationshipIssue(null);
+    try {
+      await send("relationship/create", {
+        sourcePinId: source,
+        targetPinIds: [...targets],
+      });
+      setSource(null);
+      setTargets(new Set());
+      onChanged();
+      onRelationshipCreated?.();
+    } catch {
+      setRelationshipIssue("Couldn’t create this relationship. The pins may have changed; try again.");
+    } finally {
+      setRelationshipBusy(false);
+    }
+  }, [source, targets, relationshipBusy, onChanged, onRelationshipCreated]);
 
   return (
     <>
@@ -58,6 +78,12 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
         </div>
       )}
 
+      {relationshipIssue && (
+        <div className="pin-banner pin-banner--error" role="alert">
+          {relationshipIssue}
+        </div>
+      )}
+
       {pins.map((pin) => (
         <PinRow
           key={pin.id}
@@ -72,6 +98,7 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
           onCreateRelationship={() => {
             setSource(pin.id);
             setTargets(new Set());
+            setRelationshipIssue(null);
             setExpanded(null);
           }}
           onChanged={onChanged}
@@ -85,6 +112,7 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
             onClick={() => {
               setSource(null);
               setTargets(new Set());
+              setRelationshipIssue(null);
             }}
           >
             Cancel
@@ -95,11 +123,12 @@ export function PinList({ board, onChanged }: { board: Board; onChanged: () => v
           <button
             className="pin-btn pin-btn--primary"
             style={{ marginLeft: "auto" }}
-            disabled={targets.size === 0}
+            disabled={targets.size === 0 || relationshipBusy}
+            aria-busy={relationshipBusy}
             onClick={() => void confirmRelationship()}
           >
             <CheckIcon size={14} />
-            Match
+            {relationshipBusy ? "Matching…" : "Match"}
           </button>
         </div>
       )}
@@ -135,6 +164,7 @@ function PinRow({
   const [thumb, setThumb] = useState<string | null>(null);
   const [shot, setShot] = useState<string | null>(null);
   const [draft, setDraft] = useState(pin.annotation);
+  const [revealIssue, setRevealIssue] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +189,7 @@ function PinRow({
   }, [expanded, pin.id, pin.updatedAt]);
 
   useEffect(() => setDraft(pin.annotation), [pin.annotation]);
+  useEffect(() => setRevealIssue(null), [expanded, pin.id]);
 
   const title = pinLabel(pin, board.pins);
   const linked = board.relationships.some(
@@ -166,16 +197,7 @@ function PinRow({
   );
   const selectable = pin.kind === "element";
   const pickable = relating && !isSource && selectable;
-  /*
-   * While relating, the card is the control.
-   *
-   * Outside that mode the content area is the expand button and the trailing
-   * action is a separate delete button. In target-picking mode there is only
-   * one possible action, so the content switches to a span and the card owns
-   * the click. That makes the thumbnail, title, empty space, and the visible
-   * "pick" affordance one target without nesting buttons.
-   */
-  const Hit = relating ? "span" : "button";
+  const detailsId = `pin-details-${pin.id}`;
 
   const update = async (patch: Contract["pin/update"]["req"]["patch"]) => {
     await send("pin/update", { pinId: pin.id, patch });
@@ -197,14 +219,16 @@ function PinRow({
       }
       role={pickable ? "button" : undefined}
       tabIndex={pickable ? 0 : undefined}
+      aria-pressed={pickable ? isTarget : undefined}
       aria-label={pickable ? `Select ${title || "pin"} as relationship target` : undefined}
       data-pickable={pickable}
       data-selected={isSource || isTarget}
     >
       <div className="pin-row">
-        <Hit
+        <div
           className="pin-row__hit"
           data-done={pin.status === "done"}
+          data-clickable={!relating}
           onClick={relating ? undefined : onExpand}
           style={relating && !selectable ? { opacity: 0.45 } : undefined}
         >
@@ -236,7 +260,7 @@ function PinRow({
             </span>
             <span className="pin-row__note">{pin.annotation || "No annotation yet"}</span>
           </span>
-        </Hit>
+        </div>
 
         {/* While relating, the trailing slot says what picking this row would do
             — swapping in a delete button mid-flow would put the one destructive
@@ -247,6 +271,10 @@ function PinRow({
               <span className="pin-chip" data-on="true">
                 source
               </span>
+            ) : !selectable ? (
+              <span className="pin-chip" aria-disabled="true">
+                no styles
+              </span>
             ) : (
               /* Picked rows name their role; unpicked ones name the gesture,
                  since "target" on a row you have not chosen would read as a
@@ -256,27 +284,41 @@ function PinRow({
               </span>
             )
           ) : (
-            /* Plain icon button. Colouring it would make every row on the shelf
-               carry a warning, and the row is not dangerous — the click is, and
-               the click is one gesture away from being undone by re-pinning. */
-            <button
-              className="pin-icon-btn"
-              style={{ width: 24, height: 24 }}
-              onClick={async () => {
-                await send("pin/delete", { pinId: pin.id });
-                onChanged();
-              }}
-              aria-label={`Delete ${title || "pin"}`}
-              title="Delete pin"
-            >
-              <TrashIcon size={14} />
-            </button>
+            <>
+              {/* Pointer users can open the wide content target; this explicit
+                  control gives the same action one unambiguous keyboard stop. */}
+              <button
+                className="pin-icon-btn"
+                style={{ width: 24, height: 24 }}
+                onClick={onExpand}
+                aria-label={`${expanded ? "Collapse" : "Expand"} ${title || "pin"}`}
+                aria-expanded={expanded}
+                aria-controls={detailsId}
+                title={expanded ? "Collapse pin details" : "Expand pin details"}
+              >
+                <ChevronIcon size={14} className="pin-row__chevron" />
+              </button>
+              {/* Neutral at rest; the shared danger state appears only once the
+                  destructive control itself is hovered or keyboard-focused. */}
+              <button
+                className="pin-icon-btn pin-icon-btn--danger"
+                style={{ width: 24, height: 24 }}
+                onClick={async () => {
+                  await send("pin/delete", { pinId: pin.id });
+                  onChanged();
+                }}
+                aria-label={`Delete ${title || "pin"}`}
+                title="Delete pin"
+              >
+                <TrashIcon size={14} />
+              </button>
+            </>
           )}
         </span>
       </div>
 
       {expanded && !relating && (
-        <div className="pin-expand">
+        <div className="pin-expand" id={detailsId}>
           {shot && <img className="pin-expand__shot" src={shot} alt={pin.elementText} />}
 
           {pin.kind === "region" ? (
@@ -305,6 +347,7 @@ function PinRow({
             rows={2}
             value={draft}
             placeholder="Add an annotation…"
+            aria-label={`Annotation for ${title || "pin"}`}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => draft !== pin.annotation && void update({ annotation: draft })}
           />
@@ -312,9 +355,22 @@ function PinRow({
           {/* Two actions, both of which take you somewhere: to the code, or into
               picking what this pin should match. */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button className="pin-btn" onClick={() => void send("pin/revealSource", { pinId: pin.id })}>
+            <button
+              className="pin-btn"
+              onClick={() => {
+                void (async () => {
+                  setRevealIssue(null);
+                  try {
+                    const result = await send("pin/revealSource", { pinId: pin.id });
+                    if (!result.ok) setRevealIssue("Couldn’t open this pin on the page.");
+                  } catch {
+                    setRevealIssue("Couldn’t open this pin on the page.");
+                  }
+                })();
+              }}
+            >
               <ArrowUpRightIcon />
-              Go to pin
+              {pin.kind === "region" ? "Go to marks" : "Go to pin"}
             </button>
             {/* Relationships resolve into a style diff, and a region pin has no
                 computed styles to diff — it marks an area, not a component. */}
@@ -330,6 +386,11 @@ function PinRow({
               </button>
             )}
           </div>
+          {revealIssue && (
+            <div className="pin-banner pin-banner--error" role="alert">
+              {revealIssue}
+            </div>
+          )}
         </div>
       )}
     </div>

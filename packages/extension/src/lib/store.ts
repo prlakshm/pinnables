@@ -12,6 +12,7 @@ const KEY_BOARD_IDS = "boardIds";
 const boardKey = (id: string) => `board:${id}`;
 const shotKey = (pinId: string) => `shot:${pinId}`;
 const thumbKey = (pinId: string) => `thumb:${pinId}`;
+const positionKey = (pinId: string) => `pos:${pinId}`;
 
 const DEFAULT_STATE: ExtensionState = {
   captureMode: false,
@@ -32,10 +33,19 @@ export async function getState(): Promise<ExtensionState> {
   return { ...DEFAULT_STATE, ...((await get<Partial<ExtensionState>>(KEY_STATE)) ?? {}) };
 }
 
+let stateMutationQueue: Promise<void> = Promise.resolve();
+
 export async function patchState(patch: Partial<ExtensionState>): Promise<ExtensionState> {
-  const next = { ...(await getState()), ...patch };
-  await set({ [KEY_STATE]: next });
-  return next;
+  const operation = stateMutationQueue.then(async () => {
+    const next = { ...(await getState()), ...patch };
+    await set({ [KEY_STATE]: next });
+    return next;
+  });
+  stateMutationQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }
 
 export async function listBoardIds(): Promise<string[]> {
@@ -79,15 +89,27 @@ export async function createBoard(title: string): Promise<Board> {
 }
 
 /** The active board, created on first use so the user never sees an empty state. */
+let activeBoardEnsureQueue: Promise<void> = Promise.resolve();
+
 export async function ensureActiveBoard(): Promise<Board> {
-  const state = await getState();
-  if (state.activeBoardId) {
-    const existing = await readBoard(state.activeBoardId);
-    if (existing) return existing;
-  }
-  const board = await createBoard("Untitled board");
-  await patchState({ activeBoardId: board.id });
-  return board;
+  const operation = activeBoardEnsureQueue.then(async () => {
+    const state = await getState();
+    if (state.activeBoardId) {
+      const existing = await readBoard(state.activeBoardId);
+      // Submission makes a board immutable. If the panel closes before its
+      // short-lived success timer creates the next sheet, reopening must not
+      // strand the user on a board whose controls can only fail.
+      if (existing?.status === "draft") return existing;
+    }
+    const board = await createBoard("Untitled board");
+    await patchState({ activeBoardId: board.id });
+    return board;
+  });
+  activeBoardEnsureQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }
 
 /**
@@ -154,8 +176,9 @@ export async function getThumbnail(pinId: string): Promise<string | undefined> {
   return get<string>(thumbKey(pinId));
 }
 
+/** Drop every local artifact owned by a pin once its board deletion commits. */
 export async function dropScreenshot(pinId: string): Promise<void> {
-  await chrome.storage.local.remove([shotKey(pinId), thumbKey(pinId)]);
+  await chrome.storage.local.remove([shotKey(pinId), thumbKey(pinId), positionKey(pinId)]);
 }
 
 /* -------------------------------------------------------------- id helpers */

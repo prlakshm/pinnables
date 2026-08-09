@@ -45,7 +45,9 @@ const frame: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  overflow: "hidden",
+  // A shadow is the pixels outside its specimen. Clipping the frame hid the
+  // very blur and offset this preview exists to compare.
+  overflow: "visible",
 };
 
 /**

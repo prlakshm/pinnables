@@ -77,6 +77,7 @@ function boardWith(pin: Pin): Board {
 
 test("opening Pinnables resets capture instead of toggling the previous session", () => {
   const background = source("packages/extension/src/background/index.ts");
+  const app = source("packages/extension/src/sidepanel/App.tsx");
   const actionHandler = background.slice(
     background.indexOf("chrome.action.onClicked"),
     background.indexOf("chrome.commands.onCommand"),
@@ -84,13 +85,31 @@ test("opening Pinnables resets capture instead of toggling the previous session"
 
   assert.match(actionHandler, /await setCaptureMode\(false\)/);
   assert.doesNotMatch(actionHandler, /setCaptureMode\(!state\.captureMode\)/);
+  assert.match(app, /started\.current/);
+  assert.match(app, /send\("capture\/setMode", \{ enabled: false \}\)/);
+});
+
+test("declining screenshot access cannot leave the panel claiming to capture", () => {
+  const app = source("packages/extension/src/sidepanel/App.tsx");
+  const toggle = app.slice(
+    app.indexOf("const toggleCapture"),
+    app.indexOf("const submit"),
+  );
+
+  assert.match(
+    toggle,
+    /const granted = await chrome\.permissions\s*\.request/,
+  );
+  assert.match(toggle, /if \(!granted\)/);
+  assert.match(toggle, /setCaptureIssue\("blocked"\)/);
+  assert.match(toggle, /return;/);
 });
 
 test("re-capturing an existing pin refreshes its recorded element size", () => {
   const background = source("packages/extension/src/background/index.ts");
   const existingMerge = background.slice(
-    background.indexOf("const merged: Pin"),
-    background.indexOf("await store.writeBoard", background.indexOf("const merged: Pin")),
+    background.indexOf("if (existing)"),
+    background.indexOf("const pinId", background.indexOf("if (existing)")),
   );
 
   assert.match(
@@ -219,6 +238,14 @@ test("style diffs preserve default-to-styled changes in both directions", () => 
   );
 });
 
+test("the inspector names omitted CSS defaults instead of showing blank values", () => {
+  const inspector = source("packages/extension/src/sidepanel/Inspector.tsx");
+
+  assert.match(inspector, /STYLE_INITIAL_VALUES/);
+  assert.match(inspector, /STYLE_INITIAL_VALUES\[property\] \?\? ""/);
+  assert.doesNotMatch(inspector, /const ZERO_BY_DEFAULT/);
+});
+
 test("matching a borderless source removes the border without inventing a black one", () => {
   const sourcePin = elementPin({
     computedStyles: { "border-color": "rgb(28, 30, 34)" },
@@ -265,6 +292,19 @@ test("capture-mode changes are broadcast back to the side panel", () => {
   assert.match(setMode, /chrome\.runtime\.sendMessage\(message\)/);
 });
 
+test("the keyboard shortcut cannot leave capture armed on an unsupported tab", () => {
+  const background = source("packages/extension/src/background/index.ts");
+  const commandHandler = background.slice(
+    background.indexOf("chrome.commands.onCommand"),
+    background.indexOf("/** Screenshots are the bulk of storage"),
+  );
+
+  assert.match(commandHandler, /const enabling = !state\.captureMode/);
+  assert.match(commandHandler, /const activeTab = await setCaptureMode\(enabling\)/);
+  assert.match(commandHandler, /activeTab === "blocked" \|\| activeTab === "unsupported"/);
+  assert.match(commandHandler, /await setCaptureMode\(false\)/);
+});
+
 test("re-capturing the same pin invalidates both cached panel images", () => {
   const pinList = source("packages/extension/src/sidepanel/PinList.tsx");
 
@@ -303,6 +343,27 @@ test("failed board materialization cannot return a pointer to a missing brief", 
   assert.match(app, /setSubmitError/);
 });
 
+test("generic agent submission never launches a hard-coded Cursor deeplink", () => {
+  const app = source("packages/extension/src/sidepanel/App.tsx");
+
+  assert.doesNotMatch(app, /cursor:\/\//);
+  assert.doesNotMatch(app, /openInCursor/);
+  assert.match(app, /navigator\.clipboard\.writeText\(result\.pointer\)/);
+});
+
+test("a new board cannot inherit stale text from the previous instruction field", () => {
+  const app = source("packages/extension/src/sidepanel/App.tsx");
+  const instructionField = app.slice(
+    app.indexOf('placeholder="Add instructions for every pin…"') - 120,
+    app.indexOf('placeholder="Add instructions for every pin…"') + 300,
+  );
+
+  assert.match(app, /setInstructionDraft\(board\?\.globalInstruction \?\? ""\)/);
+  assert.match(instructionField, /value=\{instructionDraft\}/);
+  assert.match(instructionField, /onChange=\{\(e\) => setInstructionDraft\(e\.target\.value\)\}/);
+  assert.doesNotMatch(instructionField, /defaultValue=/);
+});
+
 test("a late overlay import obeys the latest capture-mode request", () => {
   const content = source("packages/extension/src/content/index.ts");
 
@@ -315,4 +376,32 @@ test("preview cleanup restores both inline value and important priority", () => 
 
   assert.match(overlay, /getPropertyPriority\(property\)/);
   assert.match(overlay, /setProperty\(property, had, priority\)/);
+});
+
+test("drawing saves share the per-board mutation queue and verify their sender tab", () => {
+  const background = source("packages/extension/src/background/index.ts");
+  const drawingSave = background.slice(
+    background.indexOf('async "drawing/save"'),
+    background.indexOf('async "board/get"'),
+  );
+
+  assert.match(drawingSave, /store\.mutateBoard\(board\.id/);
+  assert.doesNotMatch(drawingSave, /store\.writeBoard/);
+  assert.match(drawingSave, /activeBefore/);
+  assert.match(drawingSave, /activeAfter/);
+});
+
+test("deleting pins or clearing a board drops screenshots after the queued mutation", () => {
+  const background = source("packages/extension/src/background/index.ts");
+  const pinDelete = background.slice(
+    background.indexOf('async "pin/delete"'),
+    background.indexOf('async "pin/reorder"'),
+  );
+  const boardClear = background.slice(
+    background.indexOf('async "board/clear"'),
+    background.indexOf('async "relationship/delete"'),
+  );
+
+  assert.ok(pinDelete.indexOf("store.mutateBoard") < pinDelete.indexOf("store.dropScreenshot"));
+  assert.ok(boardClear.indexOf("store.mutateBoard") < boardClear.indexOf("store.dropScreenshot"));
 });

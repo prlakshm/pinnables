@@ -4,6 +4,48 @@ import { anchorForBox, buildDomPath, buildSelector, documentRect } from "../lib/
 import { InkLayer, usePlacedShapes } from "./InkLayer";
 import type { DrawTool } from "./Toolbar";
 
+export interface DrawingBuffer {
+  read(): DrawShape[];
+  /** Accept an authoritative refresh until this local session makes an edit. */
+  sync(shapes: DrawShape[]): DrawShape[];
+  /** Replace the local truth immediately, before React or the worker replies. */
+  commit(shapes: DrawShape[]): DrawShape[];
+}
+
+/**
+ * A draw session cannot use its last rendered `shapes` prop as an accumulator.
+ * Two pointer-up events can land before the first background round trip and
+ * both would append to the same old list, silently dropping the first stroke.
+ */
+export function createDrawingBuffer(initial: DrawShape[]): DrawingBuffer {
+  let current = [...initial];
+  let dirty = false;
+  return {
+    read: () => current,
+    sync(shapes) {
+      if (!dirty) current = [...shapes];
+      return current;
+    },
+    commit(shapes) {
+      dirty = true;
+      current = [...shapes];
+      return current;
+    },
+  };
+}
+
+/** Page typing wins over single-letter drawing shortcuts. */
+export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  const closest = (target as { closest?: (selector: string) => unknown } | null)?.closest;
+  if (typeof closest !== "function") return false;
+  return Boolean(
+    closest.call(
+      target,
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
+    ),
+  );
+}
+
 /**
  * Drawing on the live page.
  *
@@ -34,8 +76,29 @@ export function DrawLayer({
 }) {
   /** Points in document coordinates, only while the pointer is down. */
   const [draft, setDraft] = useState<Array<{ x: number; y: number }> | null>(null);
+  const draftRef = useRef<Array<{ x: number; y: number }> | null>(null);
+  const buffer = useRef<DrawingBuffer | null>(null);
+  if (!buffer.current) buffer.current = createDrawingBuffer(shapes);
+  const [workingShapes, setWorkingShapes] = useState(() => buffer.current!.read());
   const drawingId = useRef(0);
-  const placed = usePlacedShapes(shapes);
+  const placed = usePlacedShapes(workingShapes);
+
+  /* Board data can arrive after the layer mounts. Once the user edits, local
+     state stays ahead until this draw session ends instead of accepting an
+     intermediate worker response that contains only some rapid strokes. */
+  useEffect(() => {
+    const synced = buffer.current!.sync(shapes);
+    setWorkingShapes((current) => (current === synced ? current : synced));
+  }, [shapes]);
+
+  const commit = useCallback(
+    (next: DrawShape[]) => {
+      const committed = buffer.current!.commit(next);
+      setWorkingShapes(committed);
+      onChange(committed);
+    },
+    [onChange],
+  );
 
   const pointAt = (event: React.PointerEvent) => ({
     x: event.clientX + window.scrollX,
@@ -45,7 +108,9 @@ export function DrawLayer({
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
       if (event.button !== 0 || tool !== "draw") return;
-      setDraft([pointAt(event), pointAt(event)]);
+      const next = [pointAt(event), pointAt(event)];
+      draftRef.current = next;
+      setDraft(next);
       (event.currentTarget as Element).setPointerCapture(event.pointerId);
       event.preventDefault();
     },
@@ -53,7 +118,10 @@ export function DrawLayer({
   );
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
-    setDraft((current) => (current ? [...current, pointAt(event)] : current));
+    if (!draftRef.current) return;
+    const next = [...draftRef.current, pointAt(event)];
+    draftRef.current = next;
+    setDraft(next);
   }, []);
 
   /**
@@ -66,46 +134,46 @@ export function DrawLayer({
       const target = event.currentTarget as Element;
       if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
 
-      setDraft((points) => {
-        if (!points || points.length < 2) return null;
-        const xs = points.map((p) => p.x);
-        const ys = points.map((p) => p.y);
-        const box = {
-          x: Math.min(...xs),
-          y: Math.min(...ys),
-          width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
-          height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
-        };
-        // A tap is not a stroke.
-        if (box.width < 4 && box.height < 4) return null;
+      const points = draftRef.current;
+      draftRef.current = null;
+      setDraft(null);
+      if (!points || points.length < 2) return;
+      const xs = points.map((p) => p.x);
+      const ys = points.map((p) => p.y);
+      const box = {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+        height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+      };
+      // A tap is not a stroke.
+      if (box.width < 4 && box.height < 4) return;
 
-        const { element } = anchorForBox(box);
-        const rect = documentRect(element);
-        drawingId.current += 1;
-        const shape: DrawShape = {
-          id: `shape-${Date.now()}-${drawingId.current}`,
-          kind: "freehand",
-          color,
-          points: points.map((p) => ({
-            x: (p.x - rect.x) / Math.max(1, rect.width),
-            y: (p.y - rect.y) / Math.max(1, rect.height),
-          })),
-          anchor: {
-            selector: buildSelector(element),
-            domPath: buildDomPath(element),
-            rect,
-          },
-        };
-        onChange([...shapes, shape]);
-        return null;
-      });
+      const { element } = anchorForBox(box);
+      const rect = documentRect(element);
+      drawingId.current += 1;
+      const shape: DrawShape = {
+        id: `shape-${Date.now()}-${drawingId.current}`,
+        kind: "freehand",
+        color,
+        points: points.map((p) => ({
+          x: (p.x - rect.x) / Math.max(1, rect.width),
+          y: (p.y - rect.y) / Math.max(1, rect.height),
+        })),
+        anchor: {
+          selector: buildSelector(element),
+          domPath: buildDomPath(element),
+          rect,
+        },
+      };
+      commit([...buffer.current!.read(), shape]);
     },
-    [color, shapes, onChange],
+    [color, commit],
   );
 
   const erase = useCallback(
-    (shapeId: string) => onChange(shapes.filter((s) => s.id !== shapeId)),
-    [shapes, onChange],
+    (shapeId: string) => commit(buffer.current!.read().filter((shape) => shape.id !== shapeId)),
+    [commit],
   );
 
   useEffect(() => {
@@ -116,8 +184,14 @@ export function DrawLayer({
         onDone();
         return;
       }
-      if (event.key.toLowerCase() === "e") onTool(tool === "erase" ? "draw" : "erase");
-      if (event.key.toLowerCase() === "b") onTool("draw");
+      const key = event.key.toLowerCase();
+      if (key !== "e" && key !== "b") return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+      if (isEditableKeyboardTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (key === "e") onTool(tool === "erase" ? "draw" : "erase");
+      if (key === "b") onTool("draw");
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
@@ -148,6 +222,7 @@ export function DrawLayer({
       {draftPath && (
         <svg
           className="pin-ink"
+          data-draft="true"
           width={document.documentElement.scrollWidth}
           height={document.documentElement.scrollHeight}
           aria-hidden

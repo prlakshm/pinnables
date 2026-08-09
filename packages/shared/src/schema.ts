@@ -99,6 +99,13 @@ export const PinSchema = z.object({
   elementSize: z
     .object({ width: z.number(), height: z.number() })
     .default({ width: 0, height: 0 }),
+  /**
+   * The visible screenshot's offset and size inside `elementSize`, in CSS px.
+   * Omitted by older pins whose screenshot covered the full element.
+   */
+  screenshotFrame: z
+    .object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
+    .optional(),
   screenshotPath: z.string(),
   thumbnailPath: z.string(),
   selector: z.string(),

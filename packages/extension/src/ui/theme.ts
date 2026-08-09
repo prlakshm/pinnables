@@ -4,9 +4,9 @@
  * Values are sampled from the brand palette artboard in Paper, not eyeballed.
  * The rotating per-selection hue set that used to live here is retired — see
  * `brand/palettes/warm-rose.md` for the values and the reasoning, kept because
- * the system may be worth returning to. Selection is now one grey and one blue,
- * which is a simpler promise: the overlay never competes with the page, and
- * colour carries state rather than identity.
+ * the system may be worth returning to. Selection is now neutral ink, which is
+ * a simpler promise: the overlay never competes with the page, and colour is
+ * reserved for authored marks, destructive intent, and warnings.
  */
 
 export type Scheme = "light" | "dark";

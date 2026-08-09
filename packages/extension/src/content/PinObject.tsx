@@ -1,11 +1,69 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Board, Pin } from "@pinnables/shared";
 import { CloseIcon, LinkIcon } from "../ui/icons";
 import { defaultEdgeFor, nearestEdge, type AnchorEdge } from "../ui/theme";
 import { Composer } from "./Composer";
 import type { FloatPosition } from "./Overlay";
+import {
+  clampFloatingPosition,
+  placeCapturedFrame,
+  type OverlayFootprint,
+} from "./overlay-geometry";
 
 export type { AnchorEdge };
+
+/**
+ * Estimate the target border box when it is not on the current route to be
+ * measured live. Computed width/height and `elementSize` differ by a stable box
+ * model offset, so applying the property delta preserves padding and borders
+ * without pretending a screenshot itself can reflow.
+ */
+export function previewedBorderBoxSize(
+  pin: Pin,
+  preview?: Record<string, string>,
+): { width: number; height: number } | null {
+  if (!preview || (!("width" in preview) && !("height" in preview))) return null;
+  const px = (value: string | undefined): number | null => {
+    if (!value || !/^-?\d+(?:\.\d+)?px$/.test(value.trim())) return null;
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const dimension = (property: "width" | "height") => {
+    const captured = pin.elementSize[property];
+    const before = px(pin.computedStyles[property]);
+    const after = px(preview[property]);
+    if (before === null || after === null) return captured;
+    return Math.max(1, captured + after - before);
+  };
+  return { width: dimension("width"), height: dimension("height") };
+}
+
+/** Scale every absolute corner length while preserving shorthand/ellipse form. */
+export function scaleBorderRadius(value: string, scale: number): string {
+  if (!Number.isFinite(scale) || scale === 1) return value;
+  return value.replace(/(-?\d*\.?\d+)px/g, (_token, number: string) => {
+    const next = Math.round(Number.parseFloat(number) * scale * 1_000) / 1_000;
+    return `${next}px`;
+  });
+}
+
+/** Include absolutely positioned chrome that does not contribute to layout. */
+function visualFootprint(node: HTMLElement): OverlayFootprint {
+  const root = node.getBoundingClientRect();
+  let left = 0;
+  let top = 0;
+  let right = root.width;
+  let bottom = root.height;
+
+  node.querySelectorAll<HTMLElement>(".pin-object__label").forEach((child) => {
+    const rect = child.getBoundingClientRect();
+    left = Math.min(left, rect.left - root.left);
+    top = Math.min(top, rect.top - root.top);
+    right = Math.max(right, rect.right - root.left);
+    bottom = Math.max(bottom, rect.bottom - root.top);
+  });
+  return { left, top, right, bottom };
+}
 
 interface PinObjectProps {
   pin: Pin;
@@ -21,6 +79,8 @@ interface PinObjectProps {
   primary: boolean;
   selectionCount: number;
   connecting: boolean;
+  /** Direction cue shown only on the pin where the connector drag began. */
+  connectionRole?: "source";
   /**
    * The source values this pin's element would take, when it is the target of a
    * relationship with properties selected.
@@ -37,6 +97,7 @@ interface PinObjectProps {
   onCommit: (text: string) => Promise<void>;
   onRelate: () => void;
   onAnchorDown: (pinId: string, edge: AnchorEdge, event: React.PointerEvent) => void;
+  onAnchorKeyboardActivate: (pinId: string, edge: AnchorEdge) => void;
   onAnchorEnter: (pinId: string, edge: AnchorEdge) => void;
   onAnchorLeave: () => void;
 }
@@ -58,6 +119,7 @@ export function PinObject({
   primary,
   selectionCount,
   connecting,
+  connectionRole,
   preview,
   renderedSize,
   onSelect,
@@ -67,6 +129,7 @@ export function PinObject({
   onCommit,
   onRelate,
   onAnchorDown,
+  onAnchorKeyboardActivate,
   onAnchorEnter,
   onAnchorLeave,
 }: PinObjectProps) {
@@ -78,10 +141,42 @@ export function PinObject({
   const card = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    setShot(null);
     void chrome.storage.local.get(`shot:${pin.id}`).then((bag) => {
-      setShot((bag[`shot:${pin.id}`] as string | undefined) ?? null);
+      if (!cancelled) setShot((bag[`shot:${pin.id}`] as string | undefined) ?? null);
     });
-  }, [pin.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [pin.id, pin.updatedAt]);
+
+  const clampPosition = useCallback((candidate: FloatPosition): FloatPosition => {
+    const node = ref.current;
+    if (!node) return candidate;
+    return clampFloatingPosition(candidate, visualFootprint(node), {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    const keepReachable = () => {
+      const next = clampPosition(position);
+      if (next.x === position.x && next.y === position.y) return;
+      onMove(next);
+      onMoveEnd(next);
+    };
+    const frame = requestAnimationFrame(keepReachable);
+    const observer = new ResizeObserver(keepReachable);
+    if (ref.current) observer.observe(ref.current);
+    window.addEventListener("resize", keepReachable);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", keepReachable);
+    };
+  }, [clampPosition, position, selected, onMove, onMoveEnd]);
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
@@ -103,10 +198,10 @@ export function PinObject({
     (event: React.PointerEvent) => {
       const drag = dragging.current;
       if (drag) {
-        const next = {
-          x: Math.max(4, event.clientX - drag.dx),
-          y: Math.max(4, event.clientY - drag.dy),
-        };
+        const next = clampPosition({
+          x: event.clientX - drag.dx,
+          y: event.clientY - drag.dy,
+        });
         drag.at = next;
         onMove(next);
         return;
@@ -114,7 +209,7 @@ export function PinObject({
       const rect = card.current?.getBoundingClientRect();
       if (rect) setNearEdge(nearestEdge(rect, { x: event.clientX, y: event.clientY }));
     },
-    [onMove],
+    [clampPosition, onMove],
   );
 
   /**
@@ -196,19 +291,28 @@ export function PinObject({
    * live element instead, so the page component and this surface always use the
    * same measured border-box.
    */
-  const surface = renderedSize ?? captured;
+  const surface = renderedSize ?? previewedBorderBoxSize(pin, preview) ?? captured;
   const fit =
     surface && surface.width > 0 && surface.height > 0
       ? Math.min(1, MAX_SHOT.height / surface.height)
       : null;
-  const shotStyle =
-    fit !== null && surface
-      ? { width: Math.round(surface.width * fit), height: Math.round(surface.height * fit) }
-      : undefined;
   const boxStyle =
     fit !== null && surface
       ? { width: Math.round(surface.width * fit), height: Math.round(surface.height * fit) }
       : undefined;
+  const shotPlacement =
+    boxStyle && captured.width > 0 && captured.height > 0
+      ? placeCapturedFrame(captured, boxStyle, pin.screenshotFrame)
+      : null;
+  const shotStyle: React.CSSProperties | undefined = shotPlacement
+    ? {
+        position: shotPlacement.partial ? "absolute" : undefined,
+        left: shotPlacement.partial ? shotPlacement.x : undefined,
+        top: shotPlacement.partial ? shotPlacement.y : undefined,
+        width: shotPlacement.width,
+        height: shotPlacement.height,
+      }
+    : undefined;
   const cropped = boxStyle !== undefined && boxStyle.width > MAX_SHOT.width;
   const frameStyle = boxStyle
     ? {
@@ -246,7 +350,7 @@ export function PinObject({
     return Object.keys(out).length > 0 ? out : undefined;
   })();
 
-  const radiusPx = (() => {
+  const radiusValue = (() => {
     if (pin.kind !== "element") return null;
     /*
      * The preview wins over what was captured.
@@ -257,21 +361,28 @@ export function PinObject({
      * of truth for the same curve is what put a crescent at the corners once
      * already.
      */
-    const value = preview?.["border-radius"] ?? pin.computedStyles["border-radius"];
-    const px = value === undefined ? 0 : Number.parseFloat(value);
-    if (!Number.isFinite(px)) return null;
-    return px * (fit ?? 1);
+    return preview?.["border-radius"] ?? pin.computedStyles["border-radius"] ?? "0px";
   })();
+  const firstRadiusPx = radiusValue === null ? 0 : Number.parseFloat(radiusValue) * (fit ?? 1);
   const shape =
-    radiusPx === null
+    radiusValue === null
       ? undefined
       : ({
-          "--pin-card-radius": `${radiusPx}px`,
+          "--pin-card-radius": scaleBorderRadius(radiusValue, fit ?? 1),
           // The label follows the card's corners so the two read as one object,
           // but capped well short of it — past about 8px on a 28px bar the
           // curves eat the ends and crowd the text against them.
-          "--pin-label-radius": `${Math.min(radiusPx, 8)}px`,
+          "--pin-label-radius": `${Math.min(Number.isFinite(firstRadiusPx) ? firstRadiusPx : 0, 8)}px`,
         } as React.CSSProperties);
+
+  const previewShadow = preview?.["box-shadow"];
+  const cardShadow = previewShadow
+    ? selected
+      ? preview["box-shadow"] === "none"
+        ? "0 0 0 3px var(--pin-measure-glow)"
+        : `0 0 0 3px var(--pin-measure-glow), ${previewShadow}`
+      : previewShadow
+    : undefined;
 
   /**
    * One anchor, on one edge.
@@ -343,12 +454,33 @@ export function PinObject({
         className="pin-object__card"
         data-pulse={pulse}
         ref={card}
-        style={preview?.["box-shadow"] ? { boxShadow: preview["box-shadow"] } : undefined}
+        style={cardShadow ? { boxShadow: cardShadow } : undefined}
       >
-        <div
+        {connectionRole === "source" && (
+          <span
+            className="pin-chip pin-object__connection-role"
+            data-on="true"
+            data-no-drag
+            role="status"
+            aria-label="Relationship source"
+          >
+            source
+          </span>
+        )}
+        <button
+          type="button"
           className="pin-object__inner"
           style={{ ...frameStyle, ...previewFrame }}
           data-cropped={cropped}
+          aria-label={`Select pinned ${label || "item"}`}
+          aria-pressed={selected}
+          onClick={(event) => {
+            // Pointer selection happens on pointerdown so dragging stays
+            // immediate. A zero-detail click is keyboard activation.
+            if (event.detail === 0) {
+              onSelect(event.metaKey || event.ctrlKey || event.shiftKey);
+            }
+          }}
         >
           {shot ? (
             <img
@@ -368,17 +500,37 @@ export function PinObject({
           ) : (
             <div className="pin-object__shot" style={{ width: 180, height: 90 }} />
           )}
-        </div>
+        </button>
 
         {showAnchor && (
-          <span
+          <button
+            type="button"
             className="pin-anchor"
             data-edge={anchorEdge}
             data-no-drag
-            title="Drag to another pin to connect them"
+            title={
+              connectionRole === "source"
+                ? `Cancel relationship from ${label || "this pin"}`
+                : connecting
+                  ? `Connect to ${label || "this pin"}`
+                  : `Start relationship from ${label || "this pin"}`
+            }
+            aria-label={
+              connectionRole === "source"
+                ? `Cancel relationship from ${label || "this pin"}`
+                : connecting
+                  ? `Connect to ${label || "this pin"}`
+                  : `Start relationship from ${label || "this pin"}`
+            }
+            aria-pressed={connectionRole === "source"}
             onPointerDown={(event) => {
               event.stopPropagation();
               onAnchorDown(pin.id, anchorEdge, event);
+            }}
+            onClick={(event) => {
+              // Pointerup completes the drag flow. Enter/Space emits a
+              // zero-detail click and advances the keyboard connector flow.
+              if (event.detail === 0) onAnchorKeyboardActivate(pin.id, anchorEdge);
             }}
             onPointerEnter={() => onAnchorEnter(pin.id, anchorEdge)}
             onPointerLeave={onAnchorLeave}

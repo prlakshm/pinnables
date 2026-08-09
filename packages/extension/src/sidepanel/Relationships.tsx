@@ -1,9 +1,11 @@
+import { useEffect, useRef, useState } from "react";
 import {
   computeBlockedChanges,
   computeStyleDiff,
   groupOf,
   describeChange,
   expandProperties,
+  pinLabel,
   rawPropertiesFor,
   STYLE_ALLOWLIST,
   STYLE_GROUPS,
@@ -16,9 +18,23 @@ import {
 import { ChangePair, hasPreview } from "./ChangePreview";
 import { RenamableTitle } from "./RenamableTitle";
 import { send } from "../lib/messages";
-import { LinkIcon, TrashIcon } from "../ui/icons";
+import { CheckIcon, LinkIcon, TrashIcon } from "../ui/icons";
 
 const GROUP_NAMES = Object.keys(STYLE_GROUPS);
+
+/** Compose a group/row toggle from the latest local selection, not stale props. */
+export function applySelectionToggle(
+  selected: ReadonlySet<string>,
+  properties: readonly string[],
+  on: boolean,
+): Set<string> {
+  const next = new Set(selected);
+  for (const property of properties) {
+    if (on) next.add(property);
+    else next.delete(property);
+  }
+  return next;
+}
 
 /**
  * The differentiator, and the only screen here that no competitor has.
@@ -71,44 +87,60 @@ function RelationshipCard({
    * twice: a chip is on when every property beneath it is on, and ticking a row
    * can complete its chip without either control knowing the other exists.
    */
-  const selected = new Set(expandProperties(relationship.properties));
+  const incomingProperties = expandProperties(relationship.properties);
+  const incomingKey = incomingProperties.join("\u0000");
+  const [selected, setSelected] = useState(() => new Set(incomingProperties));
+  const [writeIssue, setWriteIssue] = useState<string | null>(null);
+  const selectionRef = useRef(selected);
+  const incomingRef = useRef(incomingProperties);
+  incomingRef.current = incomingProperties;
+  const pendingWrites = useRef(0);
+  const writeRevision = useRef(0);
+  const writeQueue = useRef<Promise<void>>(Promise.resolve());
 
-  /** Every difference between the pins, regardless of what is selected. */
-  const rows = source
-    ? relationship.targetPinIds.flatMap((targetId) => {
-        const target = byId.get(targetId);
-        if (!target) return [];
-        // No applicability threaded here: `computeStyleDiff` already dropped
-        // everything the guard rejects, so every entry that reaches this line
-        // is applicable by construction and passing the guard's verdict would
-        // only imply a variation that cannot occur. The blocked ones come back
-        // separately below, carrying their own.
-        return computeStyleDiff(source, target, GROUP_NAMES).map((entry) => ({
-          key: `${targetId}:${entry.property}`,
-          entry: describeChange(entry),
-          raw: rawPropertiesFor(entry.property),
-        }));
-      })
-    : [];
+  // External edits become the new baseline once our own serialized writes have
+  // settled. Intermediate reloads must not roll an optimistic second click back
+  // to the first patch while that second patch is still queued.
+  useEffect(() => {
+    if (pendingWrites.current > 0) return;
+    const next = new Set(incomingProperties);
+    selectionRef.current = next;
+    setSelected(next);
+  }, [incomingKey]);
 
   /**
-   * The differences that exist and cannot be acted on — a width the flex row
-   * decides, a border colour on a card that draws no border. They are not in
-   * the diff, because the agent must not be handed instructions that do
-   * nothing, and the preview must not try to apply them. They are still true
-   * about these two pins, so the panel says so rather than leaving the reader
-   * to wonder why "size" is greyed out.
+   * Keep each target's diff intact.
+   *
+   * A flatMap made two targets with the same drift read as duplicate rows with
+   * no owner. The target is part of the fact, so it stays attached until render;
+   * the flattened views below are only for aggregate chip state.
    */
-  const blocked = source
+  const targetDiffs = source
     ? relationship.targetPinIds.flatMap((targetId) => {
         const target = byId.get(targetId);
         if (!target) return [];
-        return computeBlockedChanges(source, target, GROUP_NAMES).map((entry) => ({
-          key: `${targetId}:${entry.property}`,
-          entry,
-        }));
+        return [
+          {
+            target,
+            rows: computeStyleDiff(source, target, GROUP_NAMES).map((entry) => ({
+              key: `${targetId}:${entry.property}`,
+              entry: describeChange(entry),
+              raw: rawPropertiesFor(entry.property),
+            })),
+            blocked: computeBlockedChanges(source, target, GROUP_NAMES).map((entry) => ({
+              key: `${targetId}:${entry.property}`,
+              entry,
+            })),
+          },
+        ];
       })
     : [];
+
+  /** Every difference between the pins, regardless of what is selected. */
+  const rows = targetDiffs.flatMap((target) => target.rows);
+
+  /** Differences that exist but cannot be acted on. */
+  const blocked = targetDiffs.flatMap((target) => target.blocked);
 
   /*
    * Ordered for the eye, never filtered for the agent.
@@ -124,19 +156,46 @@ function RelationshipCard({
   const differingRaw = new Set(rows.flatMap((r) => r.raw));
   const groupRaw = (group: string) => expandProperties([group]).filter((p) => differingRaw.has(p));
 
-  const write = (next: Set<string>) =>
-    send("relationship/update", {
-      relationshipId: relationship.id,
-      patch: { properties: [...next] },
-    }).then(onChanged);
+  const write = (next: Set<string>) => {
+    const properties = [...next];
+    const revision = ++writeRevision.current;
+    pendingWrites.current += 1;
+
+    const persist = async () => {
+      try {
+        await send("relationship/update", {
+          relationshipId: relationship.id,
+          patch: { properties },
+        });
+        if (revision === writeRevision.current) setWriteIssue(null);
+      } catch {
+        // Only the newest requested selection owns the visible controls. If it
+        // fails, restore the latest server snapshot instead of leaving a black
+        // chip that was never persisted.
+        if (revision === writeRevision.current) {
+          const baseline = new Set(incomingRef.current);
+          selectionRef.current = new Set(incomingRef.current);
+          setSelected(baseline);
+          setWriteIssue("Couldn’t apply that selection. It may conflict with another relationship.");
+        }
+        throw new Error("Relationship update failed");
+      } finally {
+        pendingWrites.current -= 1;
+        if (pendingWrites.current === 0) onChanged();
+      }
+    };
+
+    // Both branches keep the queue moving: a failed intermediate write must not
+    // strand the newer, complete selection behind it.
+    writeQueue.current = writeQueue.current.then(persist, persist);
+    void writeQueue.current.catch(() => {});
+  };
 
   const toggle = (raw: readonly string[], on: boolean) => {
-    const next = new Set(selected);
-    for (const property of raw) {
-      if (on) next.add(property);
-      else next.delete(property);
-    }
-    void write(next);
+    const next = applySelectionToggle(selectionRef.current, raw, on);
+    selectionRef.current = next;
+    setSelected(next);
+    write(next);
   };
 
   const line = (pin: Pin | undefined, role: string, lead: boolean) => {
@@ -194,14 +253,34 @@ function RelationshipCard({
     const at = STYLE_ALLOWLIST.indexOf(first);
     return at === -1 ? Number.MAX_SAFE_INTEGER : at;
   };
-  const ordered = [
-    ...rows.map((r) => ({ ...r, blocked: false as const })),
-    ...blocked.map((b) => ({ ...b, raw: [] as string[], blocked: true as const })),
-  ].sort((a, b) => rank(a.entry.property) - rank(b.entry.property));
+  const targetSections = targetDiffs
+    .map(({ target, rows: targetRows, blocked: targetBlocked }) => ({
+      target,
+      ordered: [
+        ...targetRows.map((row) => ({ ...row, blocked: false as const })),
+        ...targetBlocked.map((row) => ({ ...row, raw: [] as string[], blocked: true as const })),
+      ].sort((a, b) => rank(a.entry.property) - rank(b.entry.property)),
+    }))
+    .filter((section) => section.ordered.length > 0);
+  const multipleTargets = relationship.targetPinIds.length > 1;
+  const hasShadowRows = targetSections.some(({ ordered }) =>
+    ordered.some((row) => !row.blocked && row.entry.kind === "shadow"),
+  );
 
-  const anyMatched = GROUP_NAMES.some(
+  const matchedDisabledGroups = GROUP_NAMES.filter(
     (group) => groupRaw(group).length === 0 && !blockedGroups.has(group),
   );
+  const blockedDisabledGroups = GROUP_NAMES.filter(
+    (group) => groupRaw(group).length === 0 && blockedGroups.has(group),
+  );
+  const disabledNote =
+    matchedDisabledGroups.length > 0 && blockedDisabledGroups.length > 0
+      ? "Faded groups already match. Amber groups have differences that can’t be applied."
+      : blockedDisabledGroups.length > 0
+        ? "Amber groups have differences that can’t be applied."
+        : matchedDisabledGroups.length > 0
+          ? "Faded groups already match."
+          : null;
 
   return (
     <div className="pin-card">
@@ -216,7 +295,7 @@ function RelationshipCard({
           {/* The same button the shelf rows use — two deletes on two screens
               were two different shapes before. */}
           <button
-            className="pin-icon-btn"
+            className="pin-icon-btn pin-icon-btn--danger"
             style={{ width: 28, height: 28, flex: "0 0 auto" }}
             onClick={async () => {
               await send("relationship/delete", { relationshipId: relationship.id });
@@ -231,19 +310,39 @@ function RelationshipCard({
 
         <div>
           <span className="pin-section-label">Apply changes</span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+          <div className="pin-group-grid">
             {GROUP_NAMES.map((group) => {
               const raw = groupRaw(group);
-              const on = raw.length > 0 && raw.every((p) => selected.has(p));
+              const blockedOnly = raw.length === 0 && blockedGroups.has(group);
+              const selectedCount = raw.filter((property) => selected.has(property)).length;
+              const on = raw.length > 0 && selectedCount === raw.length;
+              const partial = selectedCount > 0 && !on;
               return (
                 <button
                   key={group}
                   className="pin-chip"
                   data-on={on}
+                  data-partial={partial}
+                  data-blocked={blockedOnly}
+                  aria-pressed={partial ? "mixed" : on}
+                  aria-label={
+                    blockedOnly
+                      ? `${group}: differences cannot be applied`
+                      : raw.length === 0
+                        ? `${group}: already matches`
+                        : undefined
+                  }
                   disabled={raw.length === 0}
                   onClick={() => toggle(raw, !on)}
-                  title={raw.length === 0 ? "Already the same on both" : `Match on ${group}`}
+                  title={
+                    blockedOnly
+                      ? "Differences cannot be applied"
+                      : raw.length === 0
+                        ? "Already matches"
+                        : `Match on ${group}`
+                  }
                 >
+                  {on && <CheckIcon size={11} />}
                   {group}
                 </button>
               );
@@ -251,7 +350,12 @@ function RelationshipCard({
           </div>
           {/* Under the chips, where it explains something already on screen —
               above them it was a caption for a row you had not read yet. */}
-          {anyMatched && <p className="pin-note-line">Disabled properties already match.</p>}
+          {disabledNote && <p className="pin-note-line">{disabledNote}</p>}
+          {multipleTargets && (
+            <p className="pin-note-line">
+              Selected source styles apply to every target in this relationship.
+            </p>
+          )}
         </div>
 
         {/*
@@ -269,20 +373,44 @@ function RelationshipCard({
           order — the ones that cannot be applied say so in their own row rather
           than being counted behind a toggle.
         */}
-        {ordered.length > 0 && (
-          <div className="pin-changes">
-            {ordered.map((row) =>
-              row.blocked ? (
-                <BlockedRow key={row.key} change={row.entry} />
-              ) : (
-                <ChangeRow
-                  key={row.key}
-                  detail={row.entry}
-                  on={row.raw.every((p) => selected.has(p))}
-                  onToggle={(next) => toggle(row.raw, next)}
-                />
-              ),
-            )}
+        {targetSections.length > 0 && (
+          <div className="pin-changes" data-has-shadow={hasShadowRows}>
+            {targetSections.map(({ target, ordered }) => {
+              const headingId = `pin-change-target-${relationship.id}-${target.id}`;
+              return (
+                <section
+                  className="pin-change-group"
+                  key={target.id}
+                  aria-labelledby={multipleTargets ? headingId : undefined}
+                >
+                  {multipleTargets && (
+                    <h3 className="pin-change-target" id={headingId}>
+                      <span>Target</span>
+                      {pinLabel(target, board.pins)}
+                    </h3>
+                  )}
+                  {ordered.map((row) =>
+                    row.blocked ? (
+                      <BlockedRow key={row.key} change={row.entry} />
+                    ) : (
+                      <ChangeRow
+                        key={row.key}
+                        detail={row.entry}
+                        on={row.raw.every((p) => selected.has(p))}
+                        allTargets={multipleTargets}
+                        onToggle={(next) => toggle(row.raw, next)}
+                      />
+                    ),
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        )}
+
+        {writeIssue && (
+          <div className="pin-banner pin-banner--error" role="alert">
+            {writeIssue}
           </div>
         )}
 
@@ -290,6 +418,7 @@ function RelationshipCard({
           className="pin-field"
           rows={2}
           placeholder="Add an annotation…"
+          aria-label={`Relationship annotation for ${source ? pinLabel(source, board.pins) : "source"}`}
           defaultValue={relationship.exception}
           onBlur={(e) => {
             if (e.target.value === relationship.exception) return;
@@ -314,10 +443,12 @@ function RelationshipCard({
  * read as a fragment here.
  */
 function BlockedRow({ change }: { change: BlockedChange }) {
+  const exact = `${change.property}: ${change.from} → ${change.to}`;
   return (
     <div
       className="pin-change pin-change--blocked"
-      title={`${change.property}: ${change.from} → ${change.to}`}
+      title={exact}
+      aria-label={`${exact}. Can't apply: ${change.applicability.reason}`}
     >
       <span />
       <span className="pin-change__name">{change.property}</span>
@@ -338,10 +469,12 @@ function BlockedRow({ change }: { change: BlockedChange }) {
 function ChangeRow({
   detail,
   on,
+  allTargets,
   onToggle,
 }: {
   detail: DiffDetail;
   on: boolean;
+  allTargets: boolean;
   onToggle: (next: boolean) => void;
 }) {
   /*
@@ -360,13 +493,24 @@ function ChangeRow({
    */
   const from = detail.summary ? null : detail.from;
   const visual = hasPreview(detail.kind);
+  const shadow = detail.kind === "shadow";
+  const exact = `${detail.property}: ${detail.from} → ${detail.to}`;
 
   return (
-    <label className={`pin-change${visual ? " pin-change--stacked" : ""}`} data-on={on}>
+    <label
+      className={`pin-change${visual ? " pin-change--stacked" : ""}${shadow ? " pin-change--shadow" : ""}`}
+      data-on={on}
+      title={exact}
+    >
       <input
         type="checkbox"
         className="pin-change__box"
         checked={on}
+        aria-label={
+          allTargets
+            ? `Match ${detail.property} on every target: ${detail.from} → ${detail.to}`
+            : `Match ${exact}`
+        }
         onChange={() => onToggle(!on)}
       />
       <span className="pin-change__name">{detail.property}</span>
