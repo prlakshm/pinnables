@@ -73,3 +73,12 @@ export async function readProject(projectId: string): Promise<Project | null> {
     throw err;
   }
 }
+
+export async function writeProject(project: Project): Promise<void> {
+  const dir = join(pinnablesHome(), "projects");
+  await mkdir(dir, { recursive: true });
+  const target = join(dir, `${project.id}.json`);
+  const temp = `${target}.${process.pid}.tmp`;
+  await writeFile(temp, `${JSON.stringify(project, null, 2)}\n`, "utf8");
+  await rename(temp, target);
+}

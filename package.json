@@ -9,6 +9,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
+    "init:project": "tsx scripts/init-project.mts",
     "typecheck": "tsc --build --force"
   },
   "devDependencies": {
