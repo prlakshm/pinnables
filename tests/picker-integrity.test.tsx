@@ -77,7 +77,8 @@ test("picker press interception protects the page before its handlers run", () =
   assert.match(picker, /addEventListener\("mousedown", onPickerMouseDown, true\)/);
   assert.match(picker, /event\.preventDefault\(\)/);
   assert.match(picker, /event\.stopImmediatePropagation\(\)/);
-  assert.match(picker, /void capture\(target\)/);
+  // Shift adds to the selection, Cursor-style; a plain click replaces it.
+  assert.match(picker, /void capture\(target, \{ kind: "select", additive: event\.shiftKey \}\)/);
   assert.match(picker, /if \(!isCapturablePageElement\(target\)\) return/);
 });
 

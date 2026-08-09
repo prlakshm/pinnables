@@ -36,6 +36,7 @@ function elementPin(id: string, computedStyles: Record<string, string> = {}): Pi
     computedStyles,
     styleEdits: {},
     annotation: "",
+    liveSends: [],
     captureState: "default",
     status: "todo",
     createdAt: "2026-08-08T00:00:00.000Z",
@@ -196,7 +197,6 @@ test("child-list changes rebind live targets without observing preview style att
     /observe\(document\.documentElement,\s*\{\s*childList:\s*true,\s*subtree:\s*true\s*\}\)/s,
   );
   assert.doesNotMatch(observerBlock, /attributes:\s*true/);
-  assert.match(overlay, /\[board\?\.pins, route, domRevision\]/);
   assert.match(overlay, /\[board, route, previews, domRevision, capturing\]/);
 });
 
@@ -232,38 +232,6 @@ test("a same-id recapture invalidates and safely reloads the floating screenshot
   assert.match(shotEffect, /if \(!cancelled\) setShot/);
   assert.match(shotEffect, /return \(\) => \{\s*cancelled = true/);
   assert.match(shotEffect, /\[pin\.id, pin\.updatedAt\]/);
-});
-
-test("a selected default shadow preview keeps a valid selection ring", () => {
-  const pinObject = source("packages/extension/src/content/PinObject.tsx");
-  assert.match(pinObject, /preview\["box-shadow"\] === "none"/);
-
-  const pin = elementPin("target");
-  const html = renderToStaticMarkup(
-    <PinObject
-      pin={pin}
-      board={{ ...relationshipBoard(elementPin("source"), pin), relationships: [] }}
-      position={{ x: 20, y: 20 }}
-      pulse={false}
-      selected
-      primary={false}
-      selectionCount={1}
-      connecting={false}
-      preview={{ "box-shadow": "none" }}
-      onSelect={() => {}}
-      onMove={() => {}}
-      onMoveEnd={() => {}}
-      onDismiss={() => {}}
-      onCommit={async () => {}}
-      onRelate={() => {}}
-      onAnchorDown={() => {}}
-      onAnchorEnter={() => {}}
-      onAnchorLeave={() => {}}
-    />,
-  );
-
-  assert.match(html, /box-shadow:0 0 0 3px var\(--pin-measure-glow\)/);
-  assert.doesNotMatch(html, /box-shadow:[^;&quot;]*, none/);
 });
 
 test("position storage is scoped to board identity and exact pin ids", async () => {
@@ -334,17 +302,20 @@ test("board refreshes prune ids and hiding a pin removes it from active flows", 
   const overlay = source("packages/extension/src/content/Overlay.tsx");
   const pruneEffect = overlay.slice(
     overlay.indexOf("const positionScope"),
-    overlay.indexOf("Keep each floating pin"),
+    overlay.indexOf("Live position, per frame"),
   );
   assert.match(pruneEffect, /setSelected\(\(previous\) => retainExistingPinIds/);
-  assert.match(pruneEffect, /setDismissed/);
+  // Both halves of the focus context prune with the board, like selection.
+  assert.match(pruneEffect, /setLiveSelected\(\(previous\) => retainExistingPinIds/);
+  assert.match(pruneEffect, /setFocusCards\(\(previous\) => retainExistingPinIds/);
   assert.match(pruneEffect, /validIds\.has\(current\.fromPinId\)/);
 
   const dismiss = overlay.slice(
     overlay.indexOf("const dismissPin"),
     overlay.indexOf("const selectPin"),
   );
-  assert.match(dismiss, /setSelected\(\(previous\) => previous\.filter\(\(id\) => id !== pinId\)\)/);
+  // Dismissing a card removes it from the focus context; the pin survives.
+  assert.match(dismiss, /setFocusCards\(\(previous\) => previous\.filter\(\(id\) => id !== pinId\)\)/);
   assert.match(dismiss, /current\?\.fromPinId === pinId \? null : current/);
   assert.match(overlay, /onDismiss=\{\(\) => dismissPin\(pin\.id\)\}/);
 });
@@ -380,7 +351,7 @@ test("a fit-sized partial capture is scrolled fully into view and remeasured", a
   assert.match(captureBlock, /measured = measureElement\(element\)/);
 });
 
-test("a partial screenshot occupies only its true position inside a life-size pin", async () => {
+test("a partial screenshot crops the pin to the photographed region", async () => {
   const geometry = await import("../packages/extension/src/content/overlay-geometry.ts");
 
   assert.deepEqual(
@@ -402,22 +373,16 @@ test("a partial screenshot occupies only its true position inside a life-size pi
 
   const pinObject = source("packages/extension/src/content/PinObject.tsx");
   assert.match(pinObject, /placeCapturedFrame\(captured, boxStyle, pin\.screenshotFrame\)/);
-  assert.match(pinObject, /position: shotPlacement\.partial \? "absolute" : undefined/);
+  /*
+   * Dead paper is never painted. A partial placement used to absolutely
+   * position the photographed pixels inside a life-size frame and fill the
+   * rest with flat background — the "outer box" around the pin. The frame now
+   * collapses to exactly the photographed region instead.
+   */
+  assert.match(pinObject, /if \(shotPlacement\?\.partial\) \{/);
+  assert.match(pinObject, /shotPlacement = \{ x: 0, y: 0, \.\.\.boxStyle, partial: false \}/);
+  assert.doesNotMatch(pinObject, /position: shotPlacement\.partial/);
   assert.doesNotMatch(pinObject, /const shotStyle =\s*fit/);
-});
-
-test("cross-route width and height previews resize the floating pin too", async () => {
-  const pinObject = await import("../packages/extension/src/content/PinObject.tsx");
-  const pin = elementPin("target", { width: "220px", height: "96px" });
-
-  assert.deepEqual(
-    pinObject.previewedBorderBoxSize(pin, { width: "316px", height: "152px" }),
-    { width: 316, height: 152 },
-  );
-  assert.equal(pinObject.previewedBorderBoxSize(pin, { "border-radius": "12px" }), null);
-
-  const pinObjectSource = source("packages/extension/src/content/PinObject.tsx");
-  assert.match(pinObjectSource, /renderedSize \?\? previewedBorderBoxSize\(pin, preview\) \?\? captured/);
 });
 
 test("floating pins preserve multi-corner and elliptical radii", async () => {
@@ -459,8 +424,14 @@ test("the page capture listener cannot start a duplicate capture while one is in
     overlay.indexOf("useEffect(() => {", overlay.indexOf("const capture = useCallback")),
     overlay.indexOf("/* -------------------------------------------------------- deselect on out */"),
   );
-  assert.match(clickEffect, /if \(!capturing\) void capture\(target\)/);
-  assert.match(clickEffect, /\[state\.enabled, mode, capture, capturing, stale, connecting\]/);
+  assert.match(
+    clickEffect,
+    /if \(!capturing\) void capture\(target, \{ kind: "select", additive: event\.shiftKey \}\)/,
+  );
+  assert.match(
+    clickEffect,
+    /\[state\.enabled, mode, capture, capturing, stale, connecting, liveConnect\]/,
+  );
 });
 
 test("the detached multi-select composer owns selection during capture-phase pointerdown", async () => {
@@ -532,7 +503,7 @@ test("an element reveal keeps its outline attached during smooth scrolling", () 
 test("relationship connections stay neutral and leave red to destructive or authored marks", () => {
   const overlay = source("packages/extension/src/content/Overlay.tsx");
   const wires = overlay.slice(
-    overlay.indexOf("{!drawing && (wires.length > 0 || draft)"),
+    overlay.indexOf("{!drawing && (wires.length > 0 || draft || liveDraft)"),
     overlay.indexOf("{highlight && !drawing"),
   );
   assert.match(wires, /fill="var\(--pin-ink\)"/);

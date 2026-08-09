@@ -38,7 +38,7 @@ export function App() {
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureIssue, setCaptureIssue] = useState<Exclude<TabArmState, "armed" | "injected"> | null>(null);
   const [instructionDraft, setInstructionDraft] = useState("");
-  const [clearArmed, setClearArmed] = useState(false);
+  const [undoClear, setUndoClear] = useState<{ boardId: string } | null>(null);
   /**
    * Only ever set when the clipboard write failed. The pointer is the whole
    * interface to the agent and the panel has no board list to recover an id
@@ -102,26 +102,37 @@ export function App() {
   // screen until the user noticed and switched tabs by hand.
   useEffect(() => {
     setTab("pins");
-    setClearArmed(false);
   }, [board?.id]);
 
   useEffect(() => {
-    if (!clearArmed) return;
-    const timer = setTimeout(() => setClearArmed(false), 4_000);
+    if (!undoClear) return;
+    const timer = setTimeout(() => setUndoClear(null), 6_000);
     return () => clearTimeout(timer);
-  }, [clearArmed]);
+  }, [undoClear]);
 
+  /*
+   * One click clears; the toast is the safety. Pre-confirmation punished every
+   * intentional clear to guard against the rare mistaken one — undo inverts
+   * that, costing nothing up front and everything only when actually needed.
+   */
   const clearBoard = useCallback(async () => {
     if (!board) return;
-    if (!clearArmed) {
-      setClearArmed(true);
-      return;
-    }
     await send("board/clear", { boardId: board.id });
-    setClearArmed(false);
+    setUndoClear({ boardId: board.id });
     setTab("pins");
     void reload();
-  }, [board, clearArmed, reload]);
+  }, [board, reload]);
+
+  const undoClearNow = useCallback(async () => {
+    if (!undoClear) return;
+    setUndoClear(null);
+    try {
+      await send("board/undoClear", { boardId: undoClear.boardId });
+    } catch {
+      // The slot was overwritten or new pins exist — nothing to restore.
+    }
+    void reload();
+  }, [undoClear, reload]);
 
   const toggleCapture = useCallback(async () => {
     if (!state || captureBusy) return;
@@ -329,22 +340,17 @@ export function App() {
         </span>
 
         {/* It sits on the tab rail because it acts on exactly what those tabs
-            count. The first press arms it briefly; the second is the destructive
-            action, which prevents an adjacent-tab miss from erasing the board. */}
+            count. One press clears; the undo toast below is what makes a
+            single-click destructive action acceptable. */}
         {pinCount + relCount > 0 && (
           <span className="pin-panel__tabs-end">
             <button
               className="pin-tab-action"
-              data-confirm={clearArmed}
               onClick={() => void clearBoard()}
-              aria-label={clearArmed ? "Confirm clearing every pin and relationship" : "Clear all"}
-              title={
-                clearArmed
-                  ? "Press again to remove every pin and relationship"
-                  : "Remove every pin and relationship on this board"
-              }
+              aria-label="Clear all"
+              title="Remove every pin and relationship on this board"
             >
-              {clearArmed ? "Confirm clear" : "Clear all"}
+              Clear all
             </button>
           </span>
         )}
@@ -473,6 +479,15 @@ export function App() {
             </>
           )}
         </footer>
+      )}
+
+      {undoClear && (
+        <div className="pin-toast" role="status">
+          <span>Board cleared.</span>
+          <button className="pin-toast__undo" onClick={() => void undoClearNow()}>
+            Undo
+          </button>
+        </div>
       )}
     </div>
   );

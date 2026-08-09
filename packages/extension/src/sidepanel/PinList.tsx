@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { describeDrawings, pinLabel, sortedByOrder, type Board, type Pin } from "@pinnables/shared";
 import { send, type Contract } from "../lib/messages";
-import { ArrowUpRightIcon, CheckIcon, ChevronIcon, LinkIcon, TrashIcon } from "../ui/icons";
+import { ArrowUpRightIcon, CheckIcon, LinkIcon, PinIcon, TrashIcon } from "../ui/icons";
 import { Inspector } from "./Inspector";
 import { RenamableTitle } from "./RenamableTitle";
 
@@ -230,6 +230,21 @@ function PinRow({
           data-done={pin.status === "done"}
           data-clickable={!relating}
           onClick={relating ? undefined : onExpand}
+          // The chevron used to be the keyboard stop for expansion; with the
+          // trailing slot now summoning, the wide target carries it itself.
+          role={relating ? undefined : "button"}
+          tabIndex={relating ? undefined : 0}
+          aria-expanded={relating ? undefined : expanded}
+          aria-controls={relating ? undefined : detailsId}
+          onKeyDown={
+            relating
+              ? undefined
+              : (event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onExpand();
+                }
+          }
           style={relating && !selectable ? { opacity: 0.45 } : undefined}
         >
           {thumb ? (
@@ -258,7 +273,12 @@ function PinRow({
                 </span>
               )}
             </span>
-            <span className="pin-row__note">{pin.annotation || "No annotation yet"}</span>
+            <span className="pin-row__note">
+              {pin.annotation ||
+                (pin.liveSends.length > 0
+                  ? `${pin.liveSends.length} message${pin.liveSends.length === 1 ? "" : "s"} sent to agent`
+                  : "No annotation yet")}
+            </span>
           </span>
         </div>
 
@@ -285,21 +305,32 @@ function PinRow({
             )
           ) : (
             <>
-              {/* Pointer users can open the wide content target; this explicit
-                  control gives the same action one unambiguous keyboard stop. */}
+              {/*
+                * The pin icon summons: press it and the captured component
+                * appears on the page as the focus context. Expansion moved to
+                * the row body itself — the wide target — because "open the
+                * details" and "put it on screen" are different intents and the
+                * chevron was spending the trailing slot on the lesser one.
+                */}
               <button
                 className="pin-icon-btn"
                 style={{ width: 24, height: 24 }}
-                onClick={onExpand}
-                aria-label={`${expanded ? "Collapse" : "Expand"} ${title || "pin"}`}
-                aria-expanded={expanded}
-                aria-controls={detailsId}
-                title={expanded ? "Collapse pin details" : "Expand pin details"}
+                onClick={() => {
+                  void (async () => {
+                    setRevealIssue(null);
+                    try {
+                      const result = await send("pin/summon", { pinId: pin.id });
+                      if (!result.ok) setRevealIssue("Couldn’t open this pin on the page.");
+                    } catch {
+                      setRevealIssue("Couldn’t open this pin on the page.");
+                    }
+                  })();
+                }}
+                aria-label={`Show ${title || "pin"} on the page`}
+                title="Show the pinned capture on the page"
               >
-                <ChevronIcon size={14} className="pin-row__chevron" />
+                <PinIcon size={14} />
               </button>
-              {/* Neutral at rest; the shared danger state appears only once the
-                  destructive control itself is hovered or keyboard-focused. */}
               <button
                 className="pin-icon-btn pin-icon-btn--danger"
                 style={{ width: 24, height: 24 }}
@@ -386,11 +417,14 @@ function PinRow({
               </button>
             )}
           </div>
-          {revealIssue && (
-            <div className="pin-banner pin-banner--error" role="alert">
-              {revealIssue}
-            </div>
-          )}
+        </div>
+      )}
+
+      {/* Below the row, not inside the expansion — the summon button lives on
+          the collapsed row, so its failure must be visible there too. */}
+      {revealIssue && (
+        <div className="pin-banner pin-banner--error" role="alert">
+          {revealIssue}
         </div>
       )}
     </div>

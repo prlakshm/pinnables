@@ -316,15 +316,12 @@
   background: var(--pin-paper-sunk);
   color: var(--pin-ink);
 }
-/* Destructive controls stay neutral in a list and disclose their meaning only
-   when the user reaches the control itself. */
+/* Destructive controls hover exactly like every other icon button — the same
+   gray circle. The trash glyph already names the action; a red flash on the
+   way in read as an alarm about a click that had not happened yet. */
 .pin-icon-btn--danger:is(:hover, :focus-visible) {
-  background: var(--pin-red-tint);
-  color: var(--pin-red);
-}
-.pin-tab-action[data-confirm="true"] {
-  color: var(--pin-red);
-  background: var(--pin-red-tint);
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
 }
 /*
  * The active tool: an ink disc with an inverted glyph, filling the whole button.
@@ -366,14 +363,6 @@
   border-color: var(--pin-rule);
   color: var(--pin-ink-faint);
   cursor: default;
-}
-/* A real difference that the browser cannot safely apply is not the same as a
-   match. Amber is already the product's blocked/warning semantic, so it names
-   that exception without borrowing the host product's accent. */
-.pin-chip[data-blocked="true"] {
-  background: var(--pin-amber-soft);
-  border-color: color-mix(in srgb, var(--pin-amber) 28%, var(--pin-rule));
-  color: var(--pin-amber);
 }
 /*
  * Three states, two full steps apart: faint for a chip with nothing to decide,
@@ -701,6 +690,188 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-anchor[data-edge="right"] { right: -6px; top: 50%; margin-top: -5.5px; }
 .pin-anchor[data-edge="top"] { top: -6px; left: 50%; margin-left: -5.5px; }
 .pin-anchor[data-edge="bottom"] { bottom: -6px; left: 50%; margin-left: -5.5px; }
+
+/* -------------------------------------------------------------- live focus */
+
+/*
+ * The selection, worn by the live component itself. Same family as the picker
+ * highlight — gray, tracing the element's own corners — but persistent: this
+ * is "the thing we are talking about", not "the thing under the cursor". The
+ * outline never takes the pointer; only its anchor does.
+ */
+.pin-live-outline {
+  position: fixed;
+  border: 2px solid var(--pin-ink-muted);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.pin-live-outline__label {
+  position: absolute;
+  top: calc(-18px - var(--pin-label-gap));
+  left: -2px;
+  border-radius: 3px 3px 0 0;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--pin-ink-muted);
+  color: var(--pin-paper);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.pin-live-outline[data-label="inside"] .pin-live-outline__label {
+  top: 2px;
+  border-radius: 0 0 3px 3px;
+}
+.pin-live-outline .pin-anchor {
+  pointer-events: auto;
+}
+
+/*
+ * The chat dialog, anchored under the selection. The same paper-and-ink card
+ * language as the floating composer — this is that composer, moved to where
+ * the component actually is.
+ */
+.pin-live-dialog {
+  position: fixed;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: var(--pin-radius);
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  pointer-events: auto;
+}
+.pin-live-dialog__head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.pin-live-dialog__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pin-ink);
+  white-space: nowrap;
+}
+.pin-live-dialog__src {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+}
+.pin-live-dialog__context {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+}
+.pin-live-dialog__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.pin-live-dialog__msg {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pin-ink);
+  background: var(--pin-paper-soft);
+  border-radius: var(--pin-radius-sm);
+  padding: 5px 8px;
+}
+/* Delivered messages recede — they are history, not the draft. */
+.pin-live-dialog__msg--sent {
+  color: var(--pin-ink-muted);
+}
+.pin-live-dialog__msg--sent::after {
+  content: " ✓ sent";
+  font-size: 10px;
+  color: var(--pin-ink-faint);
+}
+.pin-live-dialog__input {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-paper);
+  color: var(--pin-ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 8px;
+}
+.pin-live-dialog__input:focus-visible {
+  outline: none;
+  border-color: var(--pin-rule-strong);
+}
+.pin-live-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pin-live-dialog__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pin-ink-muted);
+}
+.pin-live-dialog__status[data-state="failed"],
+.pin-live-dialog__status[data-state="offline"] {
+  color: var(--pin-ink);
+}
+/* The working pulse: a small ink dot breathing — activity without color. */
+.pin-live-dialog__pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--pin-ink);
+  animation: pin-live-pulse 1.2s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+@keyframes pin-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+/* The pin riding the cursor while picking a relationship target. */
+.pin-connect-ghost {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  padding: 3px;
+  max-width: 140px;
+}
+.pin-connect-ghost img {
+  display: block;
+  max-width: 132px;
+  max-height: 88px;
+  border-radius: 3px;
+}
+.pin-connect-ghost span {
+  display: block;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+  white-space: nowrap;
+}
 
 /* ---------------------------------------------------------------- pin object */
 
@@ -1154,6 +1325,8 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   height: 100%;
   min-height: 0;
   background: var(--pin-paper);
+  /* The undo toast positions against the panel, not the viewport. */
+  position: relative;
 }
 
 .pin-panel__header {
@@ -1224,9 +1397,40 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   border-radius: var(--pin-radius-sm);
   transition: background 120ms ease, color 120ms ease;
 }
+/* The same neutral hover as every quiet control. Clearing is undoable now, so
+   the control does not need to shout before it is even pressed. */
 .pin-tab-action:is(:hover, :focus-visible) {
-  background: var(--pin-red-tint);
-  color: var(--pin-red);
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
+}
+
+/*
+ * The undo toast. One line, pinned to the bottom of the panel, gone in a few
+ * seconds — it exists so a single click can be allowed to clear the board
+ * without that click ever being unrecoverable.
+ */
+.pin-toast {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--pin-radius);
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  font-size: 12px;
+  box-shadow: var(--pin-shadow);
+}
+.pin-toast__undo {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--pin-on-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .pin-panel__body {
@@ -1685,25 +1889,6 @@ button[aria-expanded="true"] .pin-row__chevron {
 }
 .pin-change--more:hover { color: var(--pin-ink); }
 
-/*
- * A row that explains itself instead of offering something.
- *
- * Three columns: the checkbox slot stays empty rather than collapsing, so the
- * property names still line up with the rows above — the reader should see one
- * list with a quiet tail, not two lists that happen to be adjacent. Default
- * cursor, because nothing here responds to a click.
- */
-.pin-change--blocked {
-  grid-template-columns: 15px 74px 1fr;
-  background: color-mix(in srgb, var(--pin-amber-soft) 72%, transparent);
-  cursor: default;
-}
-.pin-change--blocked:hover {
-  background: color-mix(in srgb, var(--pin-amber-soft) 72%, transparent);
-}
-.pin-change--blocked .pin-change__name { color: var(--pin-amber); }
-.pin-change__caption--lead { text-align: left; }
-
 .pin-section-label {
   font-size: 11px;
   font-weight: 500;
@@ -1712,6 +1897,7 @@ button[aria-expanded="true"] .pin-row__chevron {
   color: var(--pin-ink-muted);
   padding: 6px 2px 2px;
 }
+
 
 .pin-banner {
   display: flex;

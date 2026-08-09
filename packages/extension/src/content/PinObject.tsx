@@ -12,32 +12,6 @@ import {
 
 export type { AnchorEdge };
 
-/**
- * Estimate the target border box when it is not on the current route to be
- * measured live. Computed width/height and `elementSize` differ by a stable box
- * model offset, so applying the property delta preserves padding and borders
- * without pretending a screenshot itself can reflow.
- */
-export function previewedBorderBoxSize(
-  pin: Pin,
-  preview?: Record<string, string>,
-): { width: number; height: number } | null {
-  if (!preview || (!("width" in preview) && !("height" in preview))) return null;
-  const px = (value: string | undefined): number | null => {
-    if (!value || !/^-?\d+(?:\.\d+)?px$/.test(value.trim())) return null;
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  const dimension = (property: "width" | "height") => {
-    const captured = pin.elementSize[property];
-    const before = px(pin.computedStyles[property]);
-    const after = px(preview[property]);
-    if (before === null || after === null) return captured;
-    return Math.max(1, captured + after - before);
-  };
-  return { width: dimension("width"), height: dimension("height") };
-}
-
 /** Scale every absolute corner length while preserving shorthand/ellipse form. */
 export function scaleBorderRadius(value: string, scale: number): string {
   if (!Number.isFinite(scale) || scale === 1) return value;
@@ -81,13 +55,6 @@ interface PinObjectProps {
   connecting: boolean;
   /** Direction cue shown only on the pin where the connector drag began. */
   connectionRole?: "source";
-  /**
-   * The source values this pin's element would take, when it is the target of a
-   * relationship with properties selected.
-   */
-  preview?: Record<string, string>;
-  /** The live page element's border-box after relationship styles are applied. */
-  renderedSize?: { width: number; height: number };
   onSelect: (additive: boolean) => void;
   /** Live, per frame — state only, never storage. */
   onMove: (position: FloatPosition) => void;
@@ -120,8 +87,6 @@ export function PinObject({
   selectionCount,
   connecting,
   connectionRole,
-  preview,
-  renderedSize,
   onSelect,
   onMove,
   onMoveEnd,
@@ -280,89 +245,59 @@ export function PinObject({
    * one is scaled down whole, which is what it needed anyway.
    */
   const MAX_SHOT = { width: 420, height: 260 };
-  const captured = pin.elementSize;
   /*
-   * The page is the authority for size.
+   * The pin is a receipt: the original capture, at its captured size, always.
    *
-   * Padding does not necessarily enlarge a border-box, flex layout can override
-   * an authored width, and responsive CSS can change a component long after it
-   * was captured. Reconstructing its geometry from individual CSS deltas made
-   * the floating frame disagree with the real target. OverlayRoot watches the
-   * live element instead, so the page component and this surface always use the
-   * same measured border-box.
+   * It once tracked the live element's box through relationship previews, and
+   * that machinery was the source of every sizing disagreement between the
+   * card and the component it pictured. The page is where live changes show;
+   * the pin only remembers what was pinned.
    */
-  const surface = renderedSize ?? previewedBorderBoxSize(pin, preview) ?? captured;
+  const captured = pin.elementSize;
   const fit =
-    surface && surface.width > 0 && surface.height > 0
-      ? Math.min(1, MAX_SHOT.height / surface.height)
+    captured.width > 0 && captured.height > 0
+      ? Math.min(1, MAX_SHOT.height / captured.height)
       : null;
-  const boxStyle =
-    fit !== null && surface
-      ? { width: Math.round(surface.width * fit), height: Math.round(surface.height * fit) }
+  let boxStyle =
+    fit !== null
+      ? { width: captured.width * fit, height: captured.height * fit }
       : undefined;
-  const shotPlacement =
+  let shotPlacement =
     boxStyle && captured.width > 0 && captured.height > 0
       ? placeCapturedFrame(captured, boxStyle, pin.screenshotFrame)
       : null;
+  /*
+   * Never paint paper where no pixels were photographed.
+   *
+   * A partial screenshotFrame means part of the element was off-screen at
+   * capture. Placing the image inside a full-element frame filled the rest
+   * with a flat background — the "outer box" of dead space around the pin.
+   * Cropping the frame to the photographed region shows only honest pixels;
+   * the element's full geometry still lives in `elementSize` for the agent.
+   */
+  if (shotPlacement?.partial) {
+    boxStyle = {
+      width: Math.max(1, shotPlacement.width),
+      height: Math.max(1, shotPlacement.height),
+    };
+    shotPlacement = { x: 0, y: 0, ...boxStyle, partial: false };
+  }
   const shotStyle: React.CSSProperties | undefined = shotPlacement
-    ? {
-        position: shotPlacement.partial ? "absolute" : undefined,
-        left: shotPlacement.partial ? shotPlacement.x : undefined,
-        top: shotPlacement.partial ? shotPlacement.y : undefined,
-        width: shotPlacement.width,
-        height: shotPlacement.height,
-      }
+    ? { width: shotPlacement.width, height: shotPlacement.height }
     : undefined;
   const cropped = boxStyle !== undefined && boxStyle.width > MAX_SHOT.width;
   const frameStyle = boxStyle
     ? {
         width: Math.min(boxStyle.width, MAX_SHOT.width),
         height: boxStyle.height,
-        background:
-          preview?.["background-color"] ?? pin.computedStyles["background-color"] ?? undefined,
+        // Only ever visible behind a still-loading image; every settled state
+        // covers the frame with photographed pixels edge to edge.
+        background: pin.computedStyles["background-color"] ?? undefined,
       }
     : undefined;
 
-  /*
-   * Border and shadow, previewed on the card itself.
-   *
-   * The shot is a photograph, so anything that reflows content — padding, gap,
-   * font size — cannot be shown on it without lying. Border and shadow are
-   * different: they are drawn *around* the element, so drawing them around the
-   * frame is the same change, not an impression of it. Radius goes through
-   * `--pin-card-radius` above rather than here.
-   *
-   * Lengths are scaled by `fit` for the same reason the shot is: a 2px border
-   * on a card shown at 60% is 1.2px, and an unscaled one would read as heavier
-   * than the change actually is.
-   */
-  const previewFrame = (() => {
-    if (!preview) return undefined;
-    const scale = fit ?? 1;
-    const px = (value: string) => `${Number.parseFloat(value) * scale}px`;
-    const out: React.CSSProperties = {};
-    if (preview["border-style"]) out.borderStyle = preview["border-style"];
-    if (preview["border-width"]) out.borderWidth = px(preview["border-width"]);
-    if (preview["border-color"]) out.borderColor = preview["border-color"];
-    // The measured page rect already includes the border. Keep it inside that
-    // rect so selecting a border never manufactures a second outer box.
-    if (out.borderWidth) out.boxSizing = "border-box";
-    return Object.keys(out).length > 0 ? out : undefined;
-  })();
-
-  const radiusValue = (() => {
-    if (pin.kind !== "element") return null;
-    /*
-     * The preview wins over what was captured.
-     *
-     * Radius rides the existing `--pin-card-radius` plumbing rather than being
-     * set on the frame directly — that variable already drives the card, the
-     * clipped shot and the clamped label corner together, and a second source
-     * of truth for the same curve is what put a crescent at the corners once
-     * already.
-     */
-    return preview?.["border-radius"] ?? pin.computedStyles["border-radius"] ?? "0px";
-  })();
+  const radiusValue =
+    pin.kind !== "element" ? null : (pin.computedStyles["border-radius"] ?? "0px");
   const firstRadiusPx = radiusValue === null ? 0 : Number.parseFloat(radiusValue) * (fit ?? 1);
   const shape =
     radiusValue === null
@@ -374,15 +309,6 @@ export function PinObject({
           // curves eat the ends and crowd the text against them.
           "--pin-label-radius": `${Math.min(Number.isFinite(firstRadiusPx) ? firstRadiusPx : 0, 8)}px`,
         } as React.CSSProperties);
-
-  const previewShadow = preview?.["box-shadow"];
-  const cardShadow = previewShadow
-    ? selected
-      ? preview["box-shadow"] === "none"
-        ? "0 0 0 3px var(--pin-measure-glow)"
-        : `0 0 0 3px var(--pin-measure-glow), ${previewShadow}`
-      : previewShadow
-    : undefined;
 
   /**
    * One anchor, on one edge.
@@ -454,7 +380,6 @@ export function PinObject({
         className="pin-object__card"
         data-pulse={pulse}
         ref={card}
-        style={cardShadow ? { boxShadow: cardShadow } : undefined}
       >
         {connectionRole === "source" && (
           <span
@@ -470,7 +395,7 @@ export function PinObject({
         <button
           type="button"
           className="pin-object__inner"
-          style={{ ...frameStyle, ...previewFrame }}
+          style={frameStyle}
           data-cropped={cropped}
           aria-label={`Select pinned ${label || "item"}`}
           aria-pressed={selected}
@@ -488,9 +413,10 @@ export function PinObject({
               src={shot}
               style={{
                 ...shotStyle,
-                // A screenshot cannot reflow, but it must remain the component
-                // surface rather than a smaller card inside a larger preview.
-                // The live page beside it carries the exact reflowed result.
+                // The bitmap is drawn at exactly the frame's size — life size,
+                // or uniformly scaled by the height cap. `fill` with explicit
+                // dimensions stops the UA from letterboxing on sub-pixel
+                // disagreements between the frame and the bitmap's own ratio.
                 objectFit: "fill",
                 maxWidth: "none",
                 maxHeight: "none",

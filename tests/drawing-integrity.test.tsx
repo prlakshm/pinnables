@@ -152,14 +152,15 @@ test("drawing screenshots retain ink while hiding extension chrome and masking s
   assert.doesNotMatch(css, /\[data-drawing-snapshot="true"\][^{]*>\s*\.pin-ink\s*\{/);
 });
 
-test("Go to pin restores a floating pin the user previously hid", () => {
+test("Go to pin selects the live element as the focus context", () => {
   const overlay = source("packages/extension/src/content/Overlay.tsx");
   const reveal = overlay.slice(
     overlay.indexOf("/* --------------------------------------------------------- reveal a pin */"),
-    overlay.indexOf("if (!state.enabled && !highlight) return null"),
+    overlay.indexOf("/* -------------------------------------------------------------- summoning */"),
   );
 
   assert.match(reveal, /handledReveal\.current === request/);
   assert.match(reveal, /claimRevealRequest\(handledReveal, request\)/);
-  assert.match(reveal, /setDismissed\(\(previous\) =>[\s\S]*delete\(state\.reveal!\.pinId\)/);
+  // Arriving from the shelf opens the conversation on the live element itself.
+  assert.match(reveal, /setLiveSelected\(\[request\.pinId\]\)/);
 });

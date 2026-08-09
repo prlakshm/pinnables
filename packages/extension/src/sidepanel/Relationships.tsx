@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  computeBlockedChanges,
   computeStyleDiff,
-  groupOf,
   describeChange,
   expandProperties,
   pinLabel,
@@ -10,7 +8,6 @@ import {
   STYLE_ALLOWLIST,
   STYLE_GROUPS,
   type Board,
-  type BlockedChange,
   type DiffDetail,
   type Pin,
   type Relationship,
@@ -18,7 +15,7 @@ import {
 import { ChangePair, hasPreview } from "./ChangePreview";
 import { RenamableTitle } from "./RenamableTitle";
 import { send } from "../lib/messages";
-import { CheckIcon, LinkIcon, TrashIcon } from "../ui/icons";
+import { LinkIcon, PinIcon, TrashIcon } from "../ui/icons";
 
 const GROUP_NAMES = Object.keys(STYLE_GROUPS);
 
@@ -127,20 +124,18 @@ function RelationshipCard({
               entry: describeChange(entry),
               raw: rawPropertiesFor(entry.property),
             })),
-            blocked: computeBlockedChanges(source, target, GROUP_NAMES).map((entry) => ({
-              key: `${targetId}:${entry.property}`,
-              entry,
-            })),
           },
         ];
       })
     : [];
 
-  /** Every difference between the pins, regardless of what is selected. */
+  /**
+   * Every actionable difference between the pins, regardless of what is
+   * selected. Inapplicable differences (a border colour on a source that draws
+   * no border) are simply absent — a property the agent could not act on is
+   * not a choice worth a row.
+   */
   const rows = targetDiffs.flatMap((target) => target.rows);
-
-  /** Differences that exist but cannot be acted on. */
-  const blocked = targetDiffs.flatMap((target) => target.blocked);
 
   /*
    * Ordered for the eye, never filtered for the agent.
@@ -226,22 +221,6 @@ function RelationshipCard({
   };
 
   /*
-   * "Already match" has to mean it, and it did not.
-   *
-   * A chip is disabled when `groupRaw` finds nothing to apply — but that happens
-   * for two unrelated reasons. The group genuinely matches, or every difference
-   * in it is *blocked*: real, visible, and impossible to write to the target.
-   * `size` is the second case whenever both cards are flex-stretched — the
-   * widths differ, you can see they differ, and the card claimed they matched
-   * while a disclosure two lines below said "2 that can't be applied".
-   *
-   * So the sentence is now earned per group: a group counts as matching only
-   * when nothing differs *and* nothing was blocked in it.
-   */
-  const blockedGroups = new Set(
-    blocked.map(({ entry }) => groupOf(entry.property)).filter((g): g is string => g !== null),
-  );
-  /*
    * Canonical order, so the table does not reshuffle as selections change.
    *
    * `STYLE_ALLOWLIST` is the order the properties are captured in, which is the
@@ -254,33 +233,19 @@ function RelationshipCard({
     return at === -1 ? Number.MAX_SAFE_INTEGER : at;
   };
   const targetSections = targetDiffs
-    .map(({ target, rows: targetRows, blocked: targetBlocked }) => ({
+    .map(({ target, rows: targetRows }) => ({
       target,
-      ordered: [
-        ...targetRows.map((row) => ({ ...row, blocked: false as const })),
-        ...targetBlocked.map((row) => ({ ...row, raw: [] as string[], blocked: true as const })),
-      ].sort((a, b) => rank(a.entry.property) - rank(b.entry.property)),
+      ordered: [...targetRows].sort((a, b) => rank(a.entry.property) - rank(b.entry.property)),
     }))
     .filter((section) => section.ordered.length > 0);
   const multipleTargets = relationship.targetPinIds.length > 1;
   const hasShadowRows = targetSections.some(({ ordered }) =>
-    ordered.some((row) => !row.blocked && row.entry.kind === "shadow"),
+    ordered.some((row) => row.entry.kind === "shadow"),
   );
 
-  const matchedDisabledGroups = GROUP_NAMES.filter(
-    (group) => groupRaw(group).length === 0 && !blockedGroups.has(group),
-  );
-  const blockedDisabledGroups = GROUP_NAMES.filter(
-    (group) => groupRaw(group).length === 0 && blockedGroups.has(group),
-  );
-  const disabledNote =
-    matchedDisabledGroups.length > 0 && blockedDisabledGroups.length > 0
-      ? "Faded groups already match. Amber groups have differences that can’t be applied."
-      : blockedDisabledGroups.length > 0
-        ? "Amber groups have differences that can’t be applied."
-        : matchedDisabledGroups.length > 0
-          ? "Faded groups already match."
-          : null;
+  const disabledNote = GROUP_NAMES.some((group) => groupRaw(group).length === 0)
+    ? "Faded groups already match."
+    : null;
 
   return (
     <div className="pin-card">
@@ -292,6 +257,21 @@ function RelationshipCard({
               <div key={id}>{line(byId.get(id), "target", false)}</div>
             ))}
           </div>
+          {/* Summon the whole cluster: every involved capture lands on the
+              page with its wires, ones already on screen included. */}
+          <button
+            className="pin-icon-btn"
+            style={{ width: 28, height: 28, flex: "0 0 auto" }}
+            onClick={() => {
+              void send("relationship/summon", { relationshipId: relationship.id }).catch(
+                () => {},
+              );
+            }}
+            aria-label="Show this relationship on the page"
+            title="Show every involved pin on the page, connected"
+          >
+            <PinIcon size={15} />
+          </button>
           {/* The same button the shelf rows use — two deletes on two screens
               were two different shapes before. */}
           <button
@@ -313,7 +293,6 @@ function RelationshipCard({
           <div className="pin-group-grid">
             {GROUP_NAMES.map((group) => {
               const raw = groupRaw(group);
-              const blockedOnly = raw.length === 0 && blockedGroups.has(group);
               const selectedCount = raw.filter((property) => selected.has(property)).length;
               const on = raw.length > 0 && selectedCount === raw.length;
               const partial = selectedCount > 0 && !on;
@@ -323,26 +302,12 @@ function RelationshipCard({
                   className="pin-chip"
                   data-on={on}
                   data-partial={partial}
-                  data-blocked={blockedOnly}
                   aria-pressed={partial ? "mixed" : on}
-                  aria-label={
-                    blockedOnly
-                      ? `${group}: differences cannot be applied`
-                      : raw.length === 0
-                        ? `${group}: already matches`
-                        : undefined
-                  }
+                  aria-label={raw.length === 0 ? `${group}: already matches` : undefined}
                   disabled={raw.length === 0}
                   onClick={() => toggle(raw, !on)}
-                  title={
-                    blockedOnly
-                      ? "Differences cannot be applied"
-                      : raw.length === 0
-                        ? "Already matches"
-                        : `Match on ${group}`
-                  }
+                  title={raw.length === 0 ? "Already matches" : `Match on ${group}`}
                 >
-                  {on && <CheckIcon size={11} />}
                   {group}
                 </button>
               );
@@ -389,19 +354,15 @@ function RelationshipCard({
                       {pinLabel(target, board.pins)}
                     </h3>
                   )}
-                  {ordered.map((row) =>
-                    row.blocked ? (
-                      <BlockedRow key={row.key} change={row.entry} />
-                    ) : (
-                      <ChangeRow
-                        key={row.key}
-                        detail={row.entry}
-                        on={row.raw.every((p) => selected.has(p))}
-                        allTargets={multipleTargets}
-                        onToggle={(next) => toggle(row.raw, next)}
-                      />
-                    ),
-                  )}
+                  {ordered.map((row) => (
+                    <ChangeRow
+                      key={row.key}
+                      detail={row.entry}
+                      on={row.raw.every((p) => selected.has(p))}
+                      allTargets={multipleTargets}
+                      onToggle={(next) => toggle(row.raw, next)}
+                    />
+                  ))}
                 </section>
               );
             })}
@@ -429,32 +390,6 @@ function RelationshipCard({
           }}
         />
       </div>
-    </div>
-  );
-}
-
-/**
- * A difference the guard rejected, shown as an explanation rather than an option.
- *
- * No checkbox: the row exists precisely because there is nothing to apply, and
- * a control that cannot be acted on is worse than no control. The values move
- * to the tooltip — they are why this looks like a change, not what you would do
- * about it — and the reason takes their place, uncapitalised in the data and
- * read as a fragment here.
- */
-function BlockedRow({ change }: { change: BlockedChange }) {
-  const exact = `${change.property}: ${change.from} → ${change.to}`;
-  return (
-    <div
-      className="pin-change pin-change--blocked"
-      title={exact}
-      aria-label={`${exact}. Can't apply: ${change.applicability.reason}`}
-    >
-      <span />
-      <span className="pin-change__name">{change.property}</span>
-      <span className="pin-change__caption pin-change__caption--lead">
-        can&apos;t apply — {change.applicability.reason}
-      </span>
     </div>
   );
 }

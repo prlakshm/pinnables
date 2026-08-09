@@ -165,6 +165,9 @@ export function DrawLayer({
           domPath: buildDomPath(element),
           rect,
         },
+        // Ownership is stamped by the overlay's save path, which knows the
+        // current selection; a raw stroke starts page-level.
+        ownerPinId: null,
       };
       commit([...buffer.current!.read(), shape]);
     },

@@ -110,6 +110,7 @@ function elementPin(id: string, order: number): Pin {
     computedStyles: {},
     styleEdits: {},
     annotation: "",
+    liveSends: [],
     captureState: "default",
     status: "todo",
     createdAt: "2026-08-08T00:00:00.000Z",
@@ -208,22 +209,46 @@ test("pin deletion keeps saved storage until its queued board mutation resolves"
   assertPinStoragePresent(survivor.id);
 });
 
-test("board clear keeps every pin's saved storage until its queued mutation resolves", async () => {
+test("board clear stashes for undo and purges only the previous stash", async () => {
   const first = elementPin("pin-first", 1);
   const second = elementPin("pin-second", 2);
   installBoard(board([first, second]));
-  const held = await holdBoardMutation();
 
-  const clearing = dispatch<{ board: Board }>({ type: "board/clear", boardId: BOARD_ID });
-  await letHandlerReachBoardQueue();
+  const cleared = await dispatch<{ board: Board }>({ type: "board/clear", boardId: BOARD_ID });
+  assert.equal(cleared.ok, true);
+  assert.equal((memory[BOARD_KEY] as Board).pins.length, 0);
+  // The cleared pins' artifacts survive the clear — they are what undo needs.
+  assert.equal(memory[`shot:${first.id}`], `full:${first.id}`);
+  assert.equal(memory[`shot:${second.id}`], `full:${second.id}`);
 
+  const undone = await dispatch<{ board: Board }>({ type: "board/undoClear", boardId: BOARD_ID });
+  assert.equal(undone.ok, true);
+  assert.equal((memory[BOARD_KEY] as Board).pins.length, 2);
+  assert.equal(memory.clearedBoardStash, undefined);
   assertPinStoragePresent(first.id);
   assertPinStoragePresent(second.id);
+});
 
-  held.release.resolve();
-  const [response] = await Promise.all([clearing, held.mutation]);
+test("a second clear purges the unrestored stash and undo refuses newer pins", async () => {
+  const first = elementPin("pin-first", 1);
+  installBoard(board([first]));
 
-  assert.equal(response.ok, true);
+  await dispatch<{ board: Board }>({ type: "board/clear", boardId: BOARD_ID });
+
+  // A new pin lands after the clear; undo must not erase it.
+  const newer = elementPin("pin-newer", 2);
+  await mutateBoard(BOARD_ID, (current) => ({ ...current, pins: [newer] }));
+  memory[`shot:${newer.id}`] = `full:${newer.id}`;
+  memory[`thumb:${newer.id}`] = `thumb:${newer.id}`;
+  memory[`pos:${newer.id}`] = { x: 20, y: 40 };
+
+  const refused = await dispatch<{ board: Board }>({ type: "board/undoClear", boardId: BOARD_ID });
+  assert.equal(refused.ok, false);
+  assert.equal((memory[BOARD_KEY] as Board).pins[0].id, newer.id);
+
+  // The next clear takes the single stash slot; the first board's artifacts
+  // are only dropped now, when nothing can restore them anymore.
+  await dispatch<{ board: Board }>({ type: "board/clear", boardId: BOARD_ID });
   assertPinStorageRemoved(first.id);
-  assertPinStorageRemoved(second.id);
+  assert.equal(memory[`shot:${newer.id}`], `full:${newer.id}`);
 });

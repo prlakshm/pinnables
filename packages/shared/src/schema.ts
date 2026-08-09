@@ -64,6 +64,26 @@ export const DrawShapeSchema = z.object({
    * fractions of the anchor element's box, and the mark follows that element.
    */
   anchor: DrawAnchorSchema.nullable().default(null),
+  /**
+   * The pin whose live conversation this stroke was drawn during, or null for
+   * a page-level mark. Ownership is decided at draw time — a stroke made while
+   * a component is selected illustrates what is being said about it, so it
+   * travels with that pin's live send and is cleared once the message goes.
+   * Deciding this later, at send time, would be inference; at draw time it is
+   * a fact.
+   */
+  ownerPinId: z.string().nullable().default(null),
+});
+
+/**
+ * One message already delivered to the agent, live, outside the board submit.
+ * Kept apart from `annotation` so a later "Send to agent" can tell instruction
+ * from history — re-issuing a delivered message as a fresh order would make
+ * the agent do the work twice.
+ */
+export const LiveSendSchema = z.object({
+  text: z.string(),
+  at: z.string(),
 });
 
 export const BoardStatusSchema = z.enum(["draft", "ready", "in-progress", "done"]);
@@ -132,6 +152,8 @@ export const PinSchema = z.object({
    */
   styleEdits: z.record(z.string(), z.string()).default({}),
   annotation: z.string(),
+  /** Messages already delivered live — see `LiveSendSchema`. */
+  liveSends: z.array(LiveSendSchema).default([]),
   captureState: z.string(),
   status: PinStatusSchema,
   createdAt: z.string(),
@@ -183,6 +205,7 @@ export type Viewport = z.infer<typeof ViewportSchema>;
 export type PinStatus = z.infer<typeof PinStatusSchema>;
 export type PinKind = z.infer<typeof PinKindSchema>;
 export type DrawShape = z.infer<typeof DrawShapeSchema>;
+export type LiveSend = z.infer<typeof LiveSendSchema>;
 export type DrawAnchor = z.infer<typeof DrawAnchorSchema>;
 export type BoardStatus = z.infer<typeof BoardStatusSchema>;
 export type Pin = z.infer<typeof PinSchema>;

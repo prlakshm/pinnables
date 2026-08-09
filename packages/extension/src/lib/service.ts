@@ -51,3 +51,31 @@ export async function materializeBoard(
     body: JSON.stringify({ board, screenshots }),
   });
 }
+
+export interface AgentMessageStatus {
+  state: "working" | "done" | "failed";
+  detail: string | null;
+}
+
+/**
+ * One live message → one headless agent run, spawned by the service. The whole
+ * board travels so the service can render full pin context without a second
+ * round trip; screenshots ride as data URLs like materialize.
+ */
+export async function sendAgentMessage(payload: {
+  text: string;
+  board: Board;
+  pinIds: string[];
+  relationshipId?: string;
+  drawingSummary?: string;
+  screenshots: Record<string, string>;
+}): Promise<{ messageId: string }> {
+  return request<{ messageId: string }>("/messages", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function agentMessageStatus(messageId: string): Promise<AgentMessageStatus> {
+  return request<AgentMessageStatus>(`/messages/${encodeURIComponent(messageId)}`);
+}

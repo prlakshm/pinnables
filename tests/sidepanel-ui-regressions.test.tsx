@@ -44,6 +44,7 @@ function elementPin(
     computedStyles,
     styleEdits: {},
     annotation: "",
+    liveSends: [],
     captureState: "default",
     status: "todo",
     createdAt: "2026-08-08T00:00:00.000Z",
@@ -91,18 +92,23 @@ const relationship: Relationship = {
   instruction: "",
 };
 
-test("pin rows avoid nested buttons and expose a dedicated keyboard expand control", () => {
+test("pin rows expand from the row itself and summon from the trailing slot", () => {
   const html = renderToStaticMarkup(
     <PinList board={board(undefined, [sourcePin])} onChanged={() => {}} />,
   );
 
-  assert.match(html, /<div class="pin-row__hit"/);
-  assert.match(html, /<button[^>]*aria-label="Expand Revenue"[^>]*aria-expanded="false"/);
+  // The wide row target carries expansion, keyboard included.
+  assert.match(html, /<div class="pin-row__hit"[^>]*role="button"/);
+  assert.match(html, /<div class="pin-row__hit"[^>]*tabindex="0"/);
+  assert.match(html, /<div class="pin-row__hit"[^>]*aria-expanded="false"/);
   assert.match(html, /aria-controls="pin-details-pin-source"/);
   assert.doesNotMatch(html, /<button class="pin-row__hit"/);
+  // The trailing slot puts the capture on the page — no chevron.
+  assert.match(html, /aria-label="Show Revenue on the page"/);
+  assert.doesNotMatch(html, /pin-row__chevron/);
 });
 
-test("relationship group toggles expose pressed state and a visible selected check", () => {
+test("relationship group toggles expose pressed state without a check glyph", () => {
   const html = renderToStaticMarkup(<Relationships board={board(relationship)} onChanged={() => {}} />);
   const radius = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].find(
     (match) => match[2].replace(/<[^>]+>/g, "").trim() === "radius",
@@ -110,7 +116,8 @@ test("relationship group toggles expose pressed state and a visible selected che
 
   assert.ok(radius, "radius group button should render");
   assert.match(radius[1], /aria-pressed="true"/);
-  assert.match(radius[2], /<svg/);
+  // The black fill already names the selected state; the checkmark was noise.
+  assert.doesNotMatch(radius[2], /<svg/);
 
   const css = source("packages/extension/src/ui/ui.css");
   assert.match(css, /\.pin-group-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
@@ -203,7 +210,7 @@ test("relationship lists containing shadow rows do not clip the preview", () => 
   assert.match(css, /\.pin-changes\[data-has-shadow="true"\]\s*\{[^}]*overflow:\s*visible/);
 });
 
-test("blocked-only groups explain why they are disabled", () => {
+test("inapplicable differences are absent rather than explained", () => {
   const blockedSource = elementPin("pin-blocked-source", "Borderless source", 1, {
     "border-width": "0px",
     "border-style": "none",
@@ -226,30 +233,16 @@ test("blocked-only groups explain why they are disabled", () => {
       onChanged={() => {}}
     />,
   );
-  const border = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].find(
-    (match) => match[2].replace(/<[^>]+>/g, "").trim() === "border",
-  );
-  const layout = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].find(
-    (match) => match[2].replace(/<[^>]+>/g, "").trim() === "layout",
-  );
 
-  assert.ok(border, "border group button should render");
-  assert.ok(layout, "layout group button should render");
-  assert.match(border[1], /disabled=""/);
-  assert.match(border[1], /data-blocked="true"/);
-  assert.match(border[1], /title="Differences cannot be applied"/);
-  assert.match(layout[1], /title="Already matches"/);
-  assert.match(
-    html,
-    />Faded groups already match\. Amber groups have differences that can’t be applied\.<\/p>/,
-  );
-  assert.doesNotMatch(html, /Disabled properties already match/);
+  // A border colour the source cannot draw is not a choice — no row, no amber
+  // chip, no "can't apply" caption. The property simply does not appear.
+  assert.doesNotMatch(html, /can(&#x27;|')t apply/);
+  assert.doesNotMatch(html, /data-blocked/);
+  assert.doesNotMatch(html, /border-color/);
 
   const css = source("packages/extension/src/ui/ui.css");
-  assert.match(
-    css,
-    /\.pin-chip\[data-blocked="true"\][\s\S]*background:\s*var\(--pin-amber-soft\)[\s\S]*color:\s*var\(--pin-amber\)/,
-  );
+  assert.doesNotMatch(css, /data-blocked/);
+  assert.doesNotMatch(css, /pin-change--blocked/);
 });
 
 test("pin and relationship trash controls share the danger modifier", () => {
@@ -270,8 +263,11 @@ test("pin and relationship trash controls share the danger modifier", () => {
   );
 
   const css = source("packages/extension/src/ui/ui.css");
-  assert.match(css, /\.pin-icon-btn--danger:is\(:hover, :focus-visible\)[\s\S]*var\(--pin-red-tint\)/);
-  assert.match(css, /\.pin-icon-btn--danger:is\(:hover, :focus-visible\)[\s\S]*var\(--pin-red\)/);
+  // Trash hovers gray like every other icon button — no red pre-warning.
+  const dangerStart = css.indexOf(".pin-icon-btn--danger:is(:hover, :focus-visible)");
+  const danger = css.slice(dangerStart, css.indexOf("}", dangerStart) + 1);
+  assert.match(danger, /var\(--pin-paper-sunk\)/);
+  assert.doesNotMatch(danger, /var\(--pin-red/);
 });
 
 test("bulk clear uses the same danger semantics only on hover or keyboard focus", () => {
@@ -392,8 +388,6 @@ test("hard failures use red while offline and blocked guidance stays amber", () 
   assert.match(app, /captureIssue[\s\S]*className="pin-banner pin-banner--error"/);
   assert.match(app, /submitError[\s\S]*className="pin-banner pin-banner--error"/);
   assert.match(css, /\.pin-banner--error\s*\{[\s\S]*var\(--pin-red-tint\)[\s\S]*var\(--pin-red\)/);
-  assert.match(css, /\.pin-change--blocked[\s\S]*background:[^;]*var\(--pin-amber-soft\)/);
-  assert.match(css, /\.pin-change--blocked \.pin-change__name \{ color: var\(--pin-amber\); \}/);
 });
 
 test("picker labels use readable semantic ink on both scheme surfaces", () => {
@@ -430,13 +424,23 @@ test("multi-target relationships say that selections apply to every target", () 
   assert.match(html, /aria-label="Match border-radius on every target:/);
 });
 
-test("clear all requires an intentional second press", () => {
+test("clear all is one click with an undo toast instead of a pre-confirm", () => {
   const app = source("packages/extension/src/sidepanel/App.tsx");
+  const css = source("packages/extension/src/ui/ui.css");
 
-  assert.match(app, /const \[clearArmed, setClearArmed\] = useState\(false\)/);
-  assert.match(app, /if \(!clearArmed\) \{[\s\S]*setClearArmed\(true\)[\s\S]*return/);
-  assert.match(app, /clearArmed \? "Confirm clear" : "Clear all"/);
-  assert.match(app, /aria-label=\{clearArmed \? "Confirm clearing every pin and relationship"/);
+  assert.doesNotMatch(app, /clearArmed/);
+  assert.match(app, /await send\("board\/clear", \{ boardId: board\.id \}\)/);
+  assert.match(app, /setUndoClear\(\{ boardId: board\.id \}\)/);
+  assert.match(app, /send\("board\/undoClear", \{ boardId: undoClear\.boardId \}\)/);
+  assert.match(app, /className="pin-toast"/);
+
+  // The control hovers gray like every quiet action — red pre-warning went
+  // with the confirm step it belonged to.
+  const hover = css.slice(
+    css.indexOf(".pin-tab-action:is(:hover, :focus-visible)"),
+    css.indexOf("}", css.indexOf(".pin-tab-action:is(:hover, :focus-visible)")) + 1,
+  );
+  assert.doesNotMatch(hover, /pin-red/);
 });
 
 test("late side-panel reloads cannot overwrite newer board state", () => {

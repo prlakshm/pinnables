@@ -43,6 +43,12 @@ export function renderBoardManifest(board: Board): string {
       lines.push(`requested values for ${edits.join(", ")} — see \`get_pin_context\``);
     }
     lines.push(`> ${pin.annotation}`);
+    // History, not instruction: these already reached an agent as live
+    // messages. Listed so the board reads coherently, marked so nobody
+    // implements them a second time.
+    for (const sent of pin.liveSends) {
+      lines.push(`> (already delivered live ${sent.at}) ${sent.text}`);
+    }
     lines.push("");
   }
 
@@ -174,6 +180,12 @@ export function renderPinContext(
     lines.push("```html");
     lines.push(pin.outerHtml);
     lines.push("```");
+  }
+
+  if (pin.liveSends.length > 0) {
+    lines.push("", "## Already delivered live");
+    lines.push("Sent to an agent as they were written — history, not new work.");
+    for (const sent of pin.liveSends) lines.push(`- (${sent.at}) ${sent.text}`);
   }
 
   const related = board.relationships.filter(

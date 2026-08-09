@@ -1,4 +1,5 @@
 import {
+  BoardSchema,
   SCHEMA_VERSION,
   expandProperties,
   type Board,
@@ -14,7 +15,12 @@ import {
   type TabArmState,
 } from "../lib/messages";
 import * as store from "../lib/store";
-import { isServiceOnline, materializeBoard } from "../lib/service";
+import {
+  agentMessageStatus,
+  isServiceOnline,
+  materializeBoard,
+  sendAgentMessage,
+} from "../lib/service";
 import { bitmapCropRect, visibleElementFrame } from "../lib/crop";
 
 /**
@@ -246,6 +252,24 @@ async function deliverReveal(tabId: number, message: Broadcast): Promise<boolean
   return false;
 }
 
+/** Bring the active tab to `url` when needed, then deliver one broadcast to it. */
+async function deliverToPage(url: string, message: Broadcast): Promise<boolean> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return false;
+
+  if (tab.url !== url) {
+    try {
+      await chrome.tabs.update(tab.id, { url });
+    } catch {
+      return false;
+    }
+    if (!(await waitForDestination(tab.id, url))) return false;
+  } else if (tab.status === "loading" && !(await waitForDestination(tab.id, url))) {
+    return false;
+  }
+  return deliverReveal(tab.id, message);
+}
+
 /** Arms every tab, and reports what happened to the one in front. */
 async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
   await store.patchState({ captureMode: enabled });
@@ -273,6 +297,10 @@ async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
 function assertDraftBoard(board: Board): void {
   if (board.status !== "draft") throw new Error("Board changes require a draft board");
 }
+
+/** Single undo slot for "Clear all" — see the board/clear handler. */
+const CLEAR_STASH_KEY = "clearedBoardStash";
+
 
 const handlers: Handlers = {
   async "state/get"() {
@@ -394,6 +422,7 @@ const handlers: Handlers = {
         computedStyles: element.computedStyles,
         styleEdits: {},
         annotation: "",
+        liveSends: [],
         captureState: element.viewport.width < 640 ? "mobile" : "default",
         status: "todo",
         createdAt: now,
@@ -518,6 +547,7 @@ const handlers: Handlers = {
         computedStyles: {},
         styleEdits: {},
         annotation: "",
+        liveSends: [],
         captureState: viewport.width < 640 ? "mobile" : "default",
         status: "todo",
         createdAt: now,
@@ -650,28 +680,76 @@ const handlers: Handlers = {
   async "pin/revealSource"({ pinId }) {
     const board = await store.boardForPin(pinId);
     const pin = board.pins.find((p) => p.id === pinId)!;
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return { ok: false };
+    return {
+      ok: await deliverToPage(pin.url, {
+        kind: "reveal-pin",
+        pinId,
+        selector: pin.selector,
+        domPath: pin.domPath,
+        elementText: pin.elementText,
+      }),
+    };
+  },
 
-    if (tab.url !== pin.url) {
-      try {
-        await chrome.tabs.update(tab.id, { url: pin.url });
-      } catch {
-        return { ok: false };
-      }
-      if (!(await waitForDestination(tab.id, pin.url))) return { ok: false };
-    } else if (tab.status === "loading" && !(await waitForDestination(tab.id, pin.url))) {
-      return { ok: false };
+  async "pin/summon"({ pinId }) {
+    const board = await store.boardForPin(pinId);
+    const pin = board.pins.find((p) => p.id === pinId)!;
+    return { ok: await deliverToPage(pin.url, { kind: "summon-pins", pinIds: [pinId] }) };
+  },
+
+  async "relationship/summon"({ relationshipId }) {
+    const board = await store.boardForRelationship(relationshipId);
+    const relationship = board.relationships.find((r) => r.id === relationshipId)!;
+    const pinIds = [relationship.sourcePinId, ...relationship.targetPinIds];
+    // The source's page hosts the cluster; a cross-route relationship still
+    // opens somewhere real rather than nowhere.
+    const anchor = board.pins.find((p) => p.id === relationship.sourcePinId);
+    if (!anchor) return { ok: false };
+    return { ok: await deliverToPage(anchor.url, { kind: "summon-pins", pinIds }) };
+  },
+
+  async "agent/send"({ text, pinIds, relationshipId, drawingSummary }) {
+    if (pinIds.length === 0) throw new Error("A live message needs at least one pin");
+    const board = await store.boardForPin(pinIds[0]);
+
+    const screenshots: Record<string, string> = {};
+    for (const pinId of pinIds) {
+      const shot = await store.getScreenshot(pinId);
+      if (shot) screenshots[pinId] = shot;
     }
 
-    const delivered = await deliverReveal(tab.id, {
-      kind: "reveal-pin",
-      pinId,
-      selector: pin.selector,
-      domPath: pin.domPath,
-      elementText: pin.elementText,
+    const { messageId } = await sendAgentMessage({
+      text,
+      board,
+      pinIds,
+      relationshipId,
+      drawingSummary,
+      screenshots,
     });
-    return { ok: delivered };
+
+    /*
+     * Delivery recorded only after the service accepted it. `liveSends` is
+     * what stops a later board submit from re-issuing this as new work — an
+     * agent quietly doing the same change twice is a failure nobody sees.
+     */
+    const now = new Date().toISOString();
+    await store.mutateBoard(board.id, (b) => {
+      assertDraftBoard(b);
+      return {
+        ...b,
+        pins: b.pins.map((pin) =>
+          pinIds.includes(pin.id)
+            ? { ...pin, liveSends: [...pin.liveSends, { text, at: now }], updatedAt: now }
+            : pin,
+        ),
+      };
+    });
+    await notifyBoardChanged(board.id);
+    return { messageId };
+  },
+
+  async "agent/status"({ messageId }) {
+    return agentMessageStatus(messageId);
   },
 
   async "relationship/create"({ sourcePinId, targetPinIds }) {
@@ -769,17 +847,54 @@ const handlers: Handlers = {
   },
 
   async "board/clear"({ boardId }) {
-    let removedPinIds: string[] = [];
+    /*
+     * One undo slot. The board being cleared is stashed whole, and its
+     * screenshots are deliberately *not* dropped — they are what undo needs.
+     * The previous stash's artifacts are purged instead: its pins are gone
+     * from every board, so nothing can reach them anymore. Pin ids are unique
+     * per capture, so the old stash can never name a screenshot the new one
+     * still wants.
+     */
+    const bag = await chrome.storage.local.get(CLEAR_STASH_KEY);
+    const previous = (bag[CLEAR_STASH_KEY] as { board?: Board } | undefined)?.board;
+
+    let stashed: Board | null = null;
     const board = await store.mutateBoard(boardId, (b) => {
       assertDraftBoard(b);
-      // Resolve the asset list from the same queued snapshot that is cleared.
+      // Resolve the stash from the same queued snapshot that is cleared.
       // Otherwise a capture finishing between the old read and this mutation
       // leaves its screenshot behind with no pin pointing to it.
-      removedPinIds = b.pins.map((pin) => pin.id);
+      stashed = b;
       return { ...b, pins: [], relationships: [] };
     });
-    // Screenshots and floating positions are pin-owned storage, so they go with it.
-    await Promise.all(removedPinIds.map((pinId) => store.dropScreenshot(pinId)));
+    await chrome.storage.local.set({
+      [CLEAR_STASH_KEY]: { board: stashed, clearedAt: new Date().toISOString() },
+    });
+    if (previous) {
+      await Promise.all(previous.pins.map((pin) => store.dropScreenshot(pin.id)));
+    }
+    await notifyBoardChanged(boardId);
+    return { board };
+  },
+
+  async "board/undoClear"({ boardId }) {
+    const bag = await chrome.storage.local.get(CLEAR_STASH_KEY);
+    const stashed = (bag[CLEAR_STASH_KEY] as { board?: unknown } | undefined)?.board;
+    const parsed = stashed ? BoardSchema.safeParse(stashed) : null;
+    if (!parsed?.success || parsed.data.id !== boardId) {
+      throw new Error("There is nothing to restore for this board");
+    }
+    const restored = parsed.data;
+    const board = await store.mutateBoard(boardId, (b) => {
+      assertDraftBoard(b);
+      // Undo restores, never destroys: pins captured after the clear win over
+      // the stash, and the toast has simply outlived its moment.
+      if (b.pins.length > 0) {
+        throw new Error("New pins were added since the clear; undo is no longer available");
+      }
+      return { ...b, pins: restored.pins, relationships: restored.relationships };
+    });
+    await chrome.storage.local.remove(CLEAR_STASH_KEY);
     await notifyBoardChanged(boardId);
     return { board };
   },

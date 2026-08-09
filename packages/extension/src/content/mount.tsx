@@ -16,21 +16,25 @@ export interface OverlayState {
   /** Bumped to force a re-read of board state from the worker. */
   revision: number;
   reveal: RevealMessage | null;
+  /** The shelf asked for these pins' captures on screen — the focus context. */
+  summon: SummonMessage | null;
 }
 
 type RevealMessage = Extract<Broadcast, { kind: "reveal-pin" }>;
+type SummonMessage = Extract<Broadcast, { kind: "summon-pins" }>;
 
 export interface OverlayApi {
   setEnabled(enabled: boolean): void;
   refresh(): void;
   reveal(message: RevealMessage): void;
+  summon(message: SummonMessage): void;
   destroy(): void;
   subscribe(listener: () => void): () => void;
   snapshot(): OverlayState;
 }
 
 function createApi(teardown: () => void): OverlayApi {
-  let state: OverlayState = { enabled: false, revision: 0, reveal: null };
+  let state: OverlayState = { enabled: false, revision: 0, reveal: null, summon: null };
   const listeners = new Set<() => void>();
 
   const commit = (next: Partial<OverlayState>) => {
@@ -39,9 +43,11 @@ function createApi(teardown: () => void): OverlayApi {
   };
 
   return {
-    setEnabled: (enabled) => commit({ enabled, reveal: enabled ? state.reveal : null }),
+    setEnabled: (enabled) =>
+      commit({ enabled, reveal: enabled ? state.reveal : null, summon: enabled ? state.summon : null }),
     refresh: () => commit({ revision: state.revision + 1 }),
     reveal: (message) => commit({ reveal: message, revision: state.revision + 1 }),
+    summon: (message) => commit({ summon: message, revision: state.revision + 1 }),
     destroy: teardown,
     subscribe: (listener) => {
       listeners.add(listener);

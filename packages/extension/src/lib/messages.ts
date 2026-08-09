@@ -118,6 +118,46 @@ export interface Contract {
    * cleared by a worker that went to sleep is not a state that can exist.
    */
   "board/clear": { req: { boardId: string }; res: { board: Board } };
+
+  /**
+   * Put back what the last clear removed. Clearing is a single click now, so
+   * this is the safety net: the worker stashes the cleared board and holds its
+   * screenshots until the next clear overwrites the slot. Fails once new pins
+   * exist — undo must never destroy work that happened after the clear.
+   */
+  "board/undoClear": { req: { boardId: string }; res: { board: Board } };
+
+  /**
+   * Deliver one message to an agent right now — spawn-per-message, via the
+   * local service. The worker gathers the pins' context and screenshots; the
+   * service writes them to disk and starts a headless agent run. The returned
+   * id is what `agent/status` polls. Throws when the service is offline, which
+   * the dialog reports as "no agent connected" rather than pretending.
+   */
+  "agent/send": {
+    req: {
+      text: string;
+      pinIds: string[];
+      relationshipId?: string;
+      /** Marks the strokes flushed with this message — see DrawShape.ownerPinId. */
+      drawingSummary?: string;
+    };
+    res: { messageId: string };
+  };
+
+  /** Where a live message stands. Every state is verifiable, never guessed. */
+  "agent/status": {
+    req: { messageId: string };
+    res: { state: "working" | "done" | "failed"; detail: string | null };
+  };
+
+  /**
+   * Put a pin's capture (or a relationship's whole cluster) on screen as the
+   * single focus context. Navigates the active tab to the pin's page first
+   * when needed — same delivery machinery as pin/revealSource.
+   */
+  "pin/summon": { req: { pinId: string }; res: { ok: boolean } };
+  "relationship/summon": { req: { relationshipId: string }; res: { ok: boolean } };
 }
 
 export type RequestType = keyof Contract;
@@ -190,7 +230,13 @@ export async function send<K extends RequestType>(
 export type Broadcast =
   | { kind: "capture-mode"; enabled: boolean }
   | { kind: "board-updated"; boardId: string }
-  | { kind: "reveal-pin"; pinId: string; selector: string; domPath: string; elementText: string };
+  | { kind: "reveal-pin"; pinId: string; selector: string; domPath: string; elementText: string }
+  /**
+   * Show these pins' captures as the one focus context on screen. Carries the
+   * whole cluster at once so a relationship summon is a single state change,
+   * not a race of per-pin messages.
+   */
+  | { kind: "summon-pins"; pinIds: string[] };
 
 export function broadcastToTab(tabId: number, message: Broadcast): void {
   chrome.tabs.sendMessage(tabId, message).catch(() => {

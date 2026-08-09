@@ -113,5 +113,10 @@ function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond
 
   if (message.kind === "reveal-pin") {
     void ensureOverlay().then((o) => o.reveal(message));
+    return;
+  }
+
+  if (message.kind === "summon-pins") {
+    void ensureOverlay().then((o) => o.summon(message));
   }
 }

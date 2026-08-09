@@ -51,6 +51,7 @@ function elementPin(overrides: Partial<Pin> = {}): Pin {
     },
     styleEdits: {},
     annotation: "",
+    liveSends: [],
     captureState: "default",
     status: "todo",
     createdAt: "2026-08-08T00:00:00.000Z",
@@ -172,11 +173,15 @@ test("the floating identity label gives the component and source file separate w
   assert.match(labelRule, /\.pin-object__src\s*\{[\s\S]*text-overflow:\s*ellipsis/);
 });
 
-test("floating pins measure relationship-driven size from the live page element", () => {
+test("floating pins render the original capture, never a live-tracked size", () => {
   const overlay = source("packages/extension/src/content/Overlay.tsx");
+  const pinObject = source("packages/extension/src/content/PinObject.tsx");
 
-  assert.match(overlay, /new ResizeObserver/);
-  assert.match(overlay, /renderedSize=\{liveSizes\[pin\.id\]\}/);
+  // The pin is a receipt of what was pinned. Live-size tracking made the card
+  // disagree with its own screenshot, so it must stay gone.
+  assert.doesNotMatch(overlay, /renderedSize=/);
+  assert.doesNotMatch(pinObject, /renderedSize/);
+  assert.doesNotMatch(pinObject, /previewedBorderBoxSize/);
 });
 
 test("the floating pin does not draw a second permanent outline over the component", () => {
