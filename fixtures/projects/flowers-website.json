@@ -2,7 +2,7 @@
   "id": "flowers-website",
   "name": "Flowers Website",
   "origins": ["http://localhost:5181"],
-  "repositoryPath": null,
+  "repositoryPath": "examples/flowers-website",
   "createdAt": "2026-08-09T00:00:00.000Z",
   "lastOpenedAt": "2026-08-09T00:00:00.000Z"
 }

@@ -110,5 +110,23 @@ plus one constraint is something it can apply.
 packages/shared/      schema, style allowlist + diff, storage, markdown rendering
 packages/mcp-server/  the four tools over stdio
 fixtures/             a sample board — 5 pins, 4 routes, 1 relationship
+examples/
+  acme-app/           demo target for the dashboard-cards board (port 5173)
+  flowers-website/    Bloom & Petal flowers shop for localhost Pinnables (port 5181)
 scripts/smoke.mts     drives the server over a real MCP client session
 ```
+
+## Flowers website (localhost:5181)
+
+The flowers demo app lives at `examples/flowers-website/`. Pinnables MCP is configured at the repo
+root in `.cursor/mcp.json`.
+
+```bash
+npm install && npm run build
+npm run init:project -- flowers-website http://localhost:5181 examples/flowers-website
+cd examples/flowers-website && npm install
+npm run dev:flowers   # from repo root — opens http://localhost:5181
+```
+
+Open the **pinnables repo root** in Cursor so the MCP server resolves. Then start pinning feedback
+once the Chrome extension ships; until then, boards live under `~/.pinnables/boards/`.
