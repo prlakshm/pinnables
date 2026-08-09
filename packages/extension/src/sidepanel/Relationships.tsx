@@ -40,7 +40,18 @@ export function applySelectionToggle(
  * styles, so "make this match that" resolves into concrete before → after
  * values the agent can apply rather than interpret.
  */
-export function Relationships({ board, onChanged }: { board: Board; onChanged: () => void }) {
+export function Relationships({
+  board,
+  onChanged,
+  focusRelationshipId,
+  onFocusConsumed,
+}: {
+  board: Board;
+  onChanged: () => void;
+  /** Scroll this card into view once it exists, then report it consumed. */
+  focusRelationshipId?: string | null;
+  onFocusConsumed?: () => void;
+}) {
   if (board.relationships.length === 0) {
     return (
       <div className="pin-empty">
@@ -57,7 +68,14 @@ export function Relationships({ board, onChanged }: { board: Board; onChanged: (
   return (
     <>
       {board.relationships.map((rel) => (
-        <RelationshipCard key={rel.id} board={board} relationship={rel} onChanged={onChanged} />
+        <RelationshipCard
+          key={rel.id}
+          board={board}
+          relationship={rel}
+          focused={focusRelationshipId === rel.id}
+          onFocusConsumed={onFocusConsumed}
+          onChanged={onChanged}
+        />
       ))}
     </>
   );
@@ -66,12 +84,33 @@ export function Relationships({ board, onChanged }: { board: Board; onChanged: (
 function RelationshipCard({
   board,
   relationship,
+  focused,
+  onFocusConsumed,
   onChanged,
 }: {
   board: Board;
   relationship: Relationship;
+  focused?: boolean;
+  onFocusConsumed?: () => void;
   onChanged: () => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * A just-created relationship announces itself: scrolled into view with a
+   * brief settle pulse, then it is an ordinary card. Consumed exactly once so
+   * a later board refresh cannot replay the scroll under the user's cursor.
+   */
+  useEffect(() => {
+    if (!focused) return;
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    cardRef.current?.setAttribute("data-fresh", "true");
+    const timer = window.setTimeout(() => {
+      cardRef.current?.removeAttribute("data-fresh");
+      onFocusConsumed?.();
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [focused, onFocusConsumed]);
   const byId = new Map(board.pins.map((p) => [p.id, p]));
   const source = byId.get(relationship.sourcePinId);
 
@@ -248,7 +287,7 @@ function RelationshipCard({
     : null;
 
   return (
-    <div className="pin-card">
+    <div className="pin-card" ref={cardRef}>
       <div style={{ padding: "10px 11px", display: "flex", flexDirection: "column", gap: 9 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, flex: 1 }}>

@@ -708,6 +708,17 @@ const handlers: Handlers = {
     return { ok: await deliverToPage(anchor.url, { kind: "summon-pins", pinIds }) };
   },
 
+  async "relationship/open"({ relationshipId, atPinId }) {
+    const board = await store.boardForRelationship(relationshipId);
+    const pin = board.pins.find((candidate) => candidate.id === atPinId);
+    if (!pin) return { ok: false };
+    // Same recomposition the creation broadcast uses, aimed at the pin's own
+    // page — where this pin stops being a capture and becomes the live target.
+    return {
+      ok: await deliverToPage(pin.url, { kind: "focus-relationship", relationshipId }),
+    };
+  },
+
   async "agent/send"({ text, pinIds, relationshipId, drawingSummary }) {
     if (pinIds.length === 0) throw new Error("A live message needs at least one pin");
     const board = await store.boardForPin(pinIds[0]);
@@ -791,6 +802,18 @@ const handlers: Handlers = {
       return { ...b, relationships: [...b.relationships, relationship] };
     });
     await notifyBoardChanged(board.id);
+
+    /*
+     * Creating a relationship is the moment the user wants to see it: the
+     * panel jumps to its diff card, and the page composes source-capture plus
+     * live targets. One broadcast for both surfaces, from the one place every
+     * creation path funnels through.
+     */
+    const focus: Broadcast = { kind: "focus-relationship", relationshipId: relationship!.id };
+    chrome.runtime.sendMessage(focus).catch(() => {});
+    const anchor = board.pins.find((pin) => pin.id === sourcePinId);
+    if (anchor) void deliverToPage(anchor.url, focus);
+
     return { board, relationship: relationship! };
   },
 

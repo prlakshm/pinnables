@@ -55,6 +55,12 @@ interface PinObjectProps {
   connecting: boolean;
   /** Direction cue shown only on the pin where the connector drag began. */
   connectionRole?: "source";
+  /**
+   * Set when this capture's component lives on another page. The chip names
+   * the honest limitation — a capture cannot update live — and pressing it
+   * goes where the live one is.
+   */
+  awayRoute?: { route: string; onOpen: () => void };
   onSelect: (additive: boolean) => void;
   /** Live, per frame — state only, never storage. */
   onMove: (position: FloatPosition) => void;
@@ -87,6 +93,7 @@ export function PinObject({
   selectionCount,
   connecting,
   connectionRole,
+  awayRoute,
   onSelect,
   onMove,
   onMoveEnd,
@@ -391,6 +398,18 @@ export function PinObject({
           >
             source
           </span>
+        )}
+        {awayRoute && (
+          <button
+            type="button"
+            className="pin-chip pin-object__away"
+            data-no-drag
+            onClick={awayRoute.onOpen}
+            title={`This component lives on ${awayRoute.route} — a capture here can’t update live`}
+            aria-label={`Go to ${awayRoute.route} for live updates`}
+          >
+            go to {awayRoute.route} for live updates ↗
+          </button>
         )}
         <button
           type="button"

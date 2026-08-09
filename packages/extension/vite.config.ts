@@ -22,6 +22,17 @@ export default defineConfig({
   plugins: [react(), crx({ manifest })],
   build: {
     target: "esnext",
+    /*
+     * No modulepreload. Vite's preload helper injects
+     * `<link rel="modulepreload" href="/assets/mount.js">` into whatever page
+     * the content script is running on — the *host page's* head, resolved
+     * against the *host page's* origin. Any SPA server that answers unknown
+     * paths with index.html then serves HTML where a module was promised,
+     * printing MIME errors into the console of the very app the user is
+     * reviewing, and a strict CSP can fail the overlay outright. The dynamic
+     * import itself resolves against the extension and needs no warm-up.
+     */
+    modulePreload: false,
     rollupOptions: {
       output: {
         /*

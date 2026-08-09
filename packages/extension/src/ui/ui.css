@@ -705,136 +705,150 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   box-sizing: border-box;
   pointer-events: none;
 }
-.pin-live-outline__label {
+/*
+ * The identity plate above the selection — the same black bar the floating
+ * cards wear, so a live component and its capture answer "what is this" in
+ * one language. The reference carries name, source, and close; the rest of a
+ * multi-selection carry the compact name plate.
+ */
+.pin-live-label {
   position: absolute;
-  top: calc(-18px - var(--pin-label-gap));
-  left: -2px;
-  border-radius: 3px 3px 0 0;
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 5px;
-  background: var(--pin-ink-muted);
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - var(--pin-label-gap)));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name close" "source close";
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  padding: 5px 4px 5px 11px;
+  border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
+  background: var(--pin-ink);
   color: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  pointer-events: auto;
+}
+.pin-live-label[data-full="false"] {
+  width: max-content;
+  max-width: 100%;
+  grid-template-areas: "name";
+  grid-template-columns: minmax(0, 1fr);
+  padding: 3px 9px;
+}
+.pin-live-outline[data-label="inside"] .pin-live-label {
+  transform: translateY(2px);
+  border-radius: 0 0 var(--pin-radius-sm) var(--pin-radius-sm);
+}
+.pin-live-label__name {
+  grid-area: name;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pin-live-label[data-full="false"] .pin-live-label__name {
+  font-size: 11px;
+  font-weight: 500;
+}
+.pin-live-label__src {
+  grid-area: source;
   font-family: var(--pin-mono);
   font-size: 10px;
-  letter-spacing: -0.01em;
+  color: color-mix(in srgb, var(--pin-paper) 72%, transparent);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.pin-live-outline[data-label="inside"] .pin-live-outline__label {
-  top: 2px;
-  border-radius: 0 0 3px 3px;
+.pin-live-label__close {
+  grid-area: close;
+  width: 20px;
+  height: 20px;
+  align-self: center;
+  color: color-mix(in srgb, var(--pin-paper) 80%, transparent);
+}
+.pin-live-label__close:hover {
+  background: color-mix(in srgb, var(--pin-paper) 18%, transparent);
+  color: var(--pin-paper);
 }
 .pin-live-outline .pin-anchor {
   pointer-events: auto;
 }
 
 /*
- * The chat dialog, anchored under the selection. The same paper-and-ink card
- * language as the floating composer — this is that composer, moved to where
- * the component actually is.
+ * The annotation bar under the selection is `.pin-note` itself — the exact
+ * pill v1 docked under a floating card, now docked under the live component.
+ * Below the toolbar so mode switching always stays reachable.
  */
-.pin-live-dialog {
+.pin-live-note {
   position: fixed;
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 9px 10px;
-  border-radius: var(--pin-radius);
-  border: 1px solid var(--pin-rule);
-  background: var(--pin-paper);
-  box-shadow: var(--pin-shadow);
+  z-index: 3;
   pointer-events: auto;
 }
-.pin-live-dialog__head {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  min-width: 0;
-}
-.pin-live-dialog__name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--pin-ink);
-  white-space: nowrap;
-}
-.pin-live-dialog__src {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--pin-mono);
-  font-size: 10px;
+.pin-note__rel[data-state] {
   color: var(--pin-ink-muted);
 }
-.pin-live-dialog__context {
-  display: inline-flex;
+/*
+ * The chord hint: two destinations, emphasis on what Enter does right now.
+ * It occupies the same quiet-line slot the pill has always used.
+ */
+.pin-note__hint {
+  display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 14px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--pin-rule);
   font-size: 11px;
-  color: var(--pin-ink-muted);
 }
-.pin-live-dialog__thread {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 120px;
+.pin-note__hint span {
+  color: var(--pin-ink-faint);
+  transition: color 120ms ease;
+}
+.pin-note__hint span[data-on="true"] {
+  color: var(--pin-ink);
+}
+.pin-note__hint strong {
+  font-weight: 600;
+}
+/* The chord chip fills while its modifier is held. */
+.pin-kbd[data-on="true"] {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+/*
+ * The conversation so far, under the input — a chat keeps its history below
+ * the line being typed. Staged notes in ink, delivered ones receding with
+ * their check, all inside the same pill.
+ */
+.pin-note__history {
+  border-top: 1px solid var(--pin-rule);
+  max-height: 132px;
   overflow-y: auto;
 }
-.pin-live-dialog__msg {
+.pin-note__history-item {
+  padding: 6px 14px;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--pin-ink);
-  background: var(--pin-paper-soft);
-  border-radius: var(--pin-radius-sm);
-  padding: 5px 8px;
 }
-/* Delivered messages recede — they are history, not the draft. */
-.pin-live-dialog__msg--sent {
+.pin-note__history-item + .pin-note__history-item {
+  border-top: 1px solid color-mix(in srgb, var(--pin-rule) 55%, transparent);
+}
+.pin-note__history-item[data-sent="true"] {
   color: var(--pin-ink-muted);
 }
-.pin-live-dialog__msg--sent::after {
+.pin-note__history-item[data-sent="true"]::after {
   content: " ✓ sent";
   font-size: 10px;
   color: var(--pin-ink-faint);
 }
-.pin-live-dialog__input {
-  width: 100%;
-  resize: none;
-  border: 1px solid var(--pin-rule);
-  border-radius: var(--pin-radius-sm);
-  background: var(--pin-paper);
-  color: var(--pin-ink);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.45;
-  padding: 6px 8px;
-}
-.pin-live-dialog__input:focus-visible {
-  outline: none;
-  border-color: var(--pin-rule-strong);
-}
-.pin-live-dialog__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.pin-live-dialog__status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--pin-ink-muted);
-}
-.pin-live-dialog__status[data-state="failed"],
-.pin-live-dialog__status[data-state="offline"] {
+.pin-note__rel[data-state="failed"] {
   color: var(--pin-ink);
 }
 /* The working pulse: a small ink dot breathing — activity without color. */
-.pin-live-dialog__pulse {
+.pin-live-pulse {
   width: 7px;
   height: 7px;
   border-radius: 999px;
@@ -966,6 +980,27 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   box-shadow: 0 0 0 1px var(--pin-paper);
 }
 
+/*
+ * The off-page chip: same seat and halo as the source chip, but pressable.
+ * It names the capture's honest limitation and offers the fix — route in
+ * mono, because routes are code facts everywhere else in the product.
+ */
+.pin-object__away {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  box-shadow: 0 0 0 1px var(--pin-paper);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+.pin-object__away:hover {
+  background: var(--pin-on-fill);
+  border-color: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+
 @keyframes pin-pulse {
   0% { box-shadow: 0 0 0 0 var(--pin-measure-glow), var(--pin-shadow); }
   100% { box-shadow: 0 0 0 18px transparent, var(--pin-shadow); }
@@ -1068,6 +1103,7 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   overflow: hidden;
 }
 .pin-note:has(.pin-note__saved),
+.pin-note:has(.pin-note__history),
 .pin-note:has(.pin-note__rel) {
   border-radius: var(--pin-radius-lg);
 }
@@ -1159,11 +1195,16 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   height: 26px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: var(--pin-ink);
-  color: var(--pin-paper);
+  /* Quiet at rest — the arrow is an offer, not an alarm. It takes the ink
+     fill only when the pointer commits to it. */
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
   transition: background 120ms ease, color 120ms ease;
 }
-.pin-note__send:hover:not(:disabled) { background: var(--pin-ink-lift); }
+.pin-note__send:hover:not(:disabled) {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
 /* Light grey on grey — the same "will not act" state as a disabled Capture or
    Ready for agent, so the three read as one control in three places. */
 .pin-note__send:disabled {
@@ -1896,6 +1937,12 @@ button[aria-expanded="true"] .pin-row__chevron {
   text-transform: uppercase;
   color: var(--pin-ink-muted);
   padding: 6px 2px 2px;
+}
+
+/* A just-created relationship settles in with the same ring the pins use for
+   capture feedback — momentary, then it is an ordinary card. */
+.pin-card[data-fresh="true"] {
+  animation: pin-pulse 700ms ease-out 1;
 }
 
 

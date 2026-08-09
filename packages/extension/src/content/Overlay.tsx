@@ -26,11 +26,12 @@ import {
   routeForLocation,
 } from "../lib/capture";
 import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
+import { CloseIcon } from "../ui/icons";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type DrawTool, type ToolMode } from "./Toolbar";
 import { PinObject } from "./PinObject";
 import { Composer } from "./Composer";
-import { SelectionDialog } from "./SelectionDialog";
+import { resetChordHint, SelectionDialog } from "./SelectionDialog";
 import { DrawLayer } from "./DrawLayer";
 import {
   createDrawingSaveCoordinator,
@@ -351,9 +352,14 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const hoverAnchor = useRef<{ pinId: string; edge: AnchorEdge } | null>(null);
   const handledReveal = useRef<typeof state.reveal>(null);
   const handledSummon = useRef<typeof state.summon>(null);
+  const handledFocusRelationship = useRef<typeof state.focusRelationship>(null);
+  /** A creation waiting for its board refresh; user action abandons it. */
+  const pendingFocusRelationship = useRef<string | null>(null);
   const revealCleanup = useRef<(() => void) | null>(null);
   const stateBoardId = useRef<string | null>(null);
   const positionBoardId = useRef<string | null>(null);
+  /** Synchronous capture lock — see the guard inside `capture`. */
+  const captureBusy = useRef(false);
   /** The element the live-connect pointer is currently over, when capturable. */
   const liveConnectTarget = useRef<Element | null>(null);
   /** The source element during live connect, so it can't target itself. */
@@ -378,6 +384,22 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   }, [scheme]);
 
   useEffect(() => watchScheme(setScheme), []);
+
+  // Each capture session gets one fresh chord lesson in the annotation bar.
+  useEffect(() => {
+    if (state.enabled) resetChordHint();
+  }, [state.enabled]);
+
+  /*
+   * Arming always begins visible. If anything ever aborts a capture between
+   * hide and restore — a crash, a torn-down context — the stuck-invisible
+   * overlay must not survive into the next session.
+   */
+  useEffect(() => {
+    if (!state.enabled) return;
+    const host = document.getElementById(OVERLAY_HOST_ID);
+    if (host) host.style.visibility = "";
+  }, [state.enabled]);
 
   useEffect(() => {
     const read = () => setRoute(routeForLocation());
@@ -804,17 +826,24 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     [guard],
   );
 
-  /** Every overlay relationship gesture shares one visible success/failure path. */
+  /**
+   * Every overlay relationship gesture shares one visible success/failure
+   * path. Returns whether the relationship exists, because callers reshape
+   * the focus context on the answer — rewiring the screen around a
+   * relationship that was never written would be a lie about the board.
+   */
   const createRelationship = useCallback(
-    async (sourcePinId: string, targetPinIds: string[]) => {
+    async (sourcePinId: string, targetPinIds: string[]): Promise<boolean> => {
       try {
         await send("relationship/create", { sourcePinId, targetPinIds });
         setOperationError((current) =>
           current?.title === "Relationship wasn’t created" ? null : current,
         );
         api.refresh();
+        return true;
       } catch (err) {
         reportRelationshipFailure(err);
+        return false;
       }
     },
     [api, reportRelationshipFailure],
@@ -902,11 +931,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       void createRelationship(from, [target.pinId]);
     };
 
+    // The browser fires pointercancel instead of pointerup when it takes the
+    // gesture over (scroll, focus loss). That is a cancellation, never a drop
+    // — an armed pointerup arriving later must not connect to whatever the
+    // cursor happens to rest on.
+    const onCancel = () => setConnecting(null);
+
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
+    window.addEventListener("pointercancel", onCancel, { once: true });
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
     };
   }, [connecting, createRelationship]);
 
@@ -1018,12 +1055,21 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const capture = useCallback(
     async (element: Element, intent: CaptureIntent = { kind: "select", additive: false }) => {
       if (!isCapturablePageElement(element)) return;
+      /*
+       * Synchronous re-entrancy guard. The `capturing` state commits a frame
+       * too late to stop two captures racing from adjacent pointerdowns — and
+       * overlapped captures each snapshotted the other's hidden host as their
+       * "restore" value, leaving the entire overlay permanently invisible
+       * while its document-level listeners kept pinning. A ref is checked and
+       * set before the first await, so a second capture cannot start at all.
+       */
+      if (captureBusy.current) return;
+      captureBusy.current = true;
       setCapturing(true);
       setCaptureError(null);
       setHighlight(null);
       let unmask: (() => void) | null = null;
       const host = document.getElementById(OVERLAY_HOST_ID);
-      const hadVisibility = host?.style.visibility ?? "";
       /*
        * Our own overlay is not part of the component.
        *
@@ -1081,11 +1127,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
            * The drop that created this capture also creates the relationship,
            * and the focus follows the conversation: the dialog moves to the
            * target, while the source stays on screen as a capture card —
-           * pinned, because it is now wired to something live.
+           * pinned, because it is now wired to something live. When the write
+           * fails, the target is still pinned and selected, but the screen
+           * must not stage a relationship that does not exist.
            */
-          await createRelationship(intent.sourcePinId, [pin.id]);
+          const related = await createRelationship(intent.sourcePinId, [pin.id]);
           setLiveSelected([pin.id]);
-          setFocusCards([intent.sourcePinId]);
+          setFocusCards(related ? [intent.sourcePinId] : []);
           setSelected([]);
         } else {
           // Every click pins. Selecting is the conversation; the shelf entry
@@ -1109,8 +1157,12 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           console.error("[pinnables] capture failed", err);
         }
       } finally {
-        if (host) host.style.visibility = hadVisibility;
+        // Visible, unconditionally. With re-entry impossible the host was
+        // always visible before this capture, and "restore what was there"
+        // is the pattern that once wrote `hidden` back as the baseline.
+        if (host) host.style.visibility = "";
         unmask?.();
+        captureBusy.current = false;
         setCapturing(false);
       }
     },
@@ -1196,11 +1248,21 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       if (element) void capture(element, { kind: "target", sourcePinId: fromPinId });
     };
 
+    // A taken-over gesture cancels; it never captures whatever sits under the
+    // cursor when a stray pointerup finally lands.
+    const onCancel = () => {
+      liveConnectTarget.current = null;
+      liveConnectSource.current = null;
+      setLiveConnect(null);
+    };
+
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
+    window.addEventListener("pointercancel", onCancel, { once: true });
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
     };
     // Keyed on the gesture, not the cursor — the handlers read fresh state.
   }, [liveConnect?.fromPinId, capture]);
@@ -1285,6 +1347,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         .composedPath()
         .some((n) => n instanceof Element && n.id === OVERLAY_HOST_ID);
       if (!insideOurs && !isCapturablePageElement(target)) {
+        pendingFocusRelationship.current = null;
         setLiveSelected([]);
         setFocusCards([]);
       }
@@ -1329,18 +1392,23 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       }
       if (liveSelected.length > 0 || focusCards.length > 0 || selected.length > 0) {
         event.preventDefault();
+        pendingFocusRelationship.current = null;
         setLiveSelected([]);
         setFocusCards([]);
         setSelected([]);
         return;
       }
-      if (mode !== "browse") {
+      /*
+       * Escape never changes the tool anymore. It used to fall through to
+       * browse mode, which silently disarmed the picker — the next click did
+       * nothing, with the only evidence a small toolbar icon. Leaving a mode
+       * is the toolbar's job; Escape only dismisses what is dismissable, and
+       * exits capture only from browse, where an exit is the one thing left.
+       */
+      if (mode === "browse") {
         event.preventDefault();
-        setMode("browse");
-        return;
+        void send("capture/setMode", { enabled: false }).catch(guard);
       }
-      event.preventDefault();
-      void send("capture/setMode", { enabled: false }).catch(guard);
     };
 
     document.addEventListener("keydown", onKey, true);
@@ -1488,31 +1556,76 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     );
     if (valid.length === 0) return;
 
+    pendingFocusRelationship.current = null;
     setLiveSelected([]);
     setSelected([]);
     setFocusCards(valid);
 
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    for (const pinId of valid) {
-      if (positions[pinId]) continue;
-      const pin = board.pins.find((candidate) => candidate.id === pinId);
-      const found = pin && pin.route === route ? refindElement(pin) : null;
-      if (!found || !pin) continue;
-      const rect = found.element.getBoundingClientRect();
-      const fit = Math.min(1, 260 / Math.max(1, pin.elementSize.height || 1));
-      persistPosition(
-        pinId,
-        placeFloatingPinBeside(
-          { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
-          {
-            width: Math.max(200, Math.min(420, Math.round(pin.elementSize.width * fit))),
-            height: Math.round((pin.elementSize.height || 120) * fit) + 64,
-          },
-          viewport,
-        ),
-      );
-    }
-  }, [state.summon, board, route, positions, persistPosition]);
+    /*
+     * Positions come from storage directly, not the `positions` state — the
+     * async state load can still be in flight when a summon lands, and seating
+     * a card that already had a remembered spot would overwrite it.
+     */
+    void chrome.storage.local.get(valid.map(posKey)).then((bag) => {
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      for (const pinId of valid) {
+        if (bag[posKey(pinId)]) continue;
+        const pin = board.pins.find((candidate) => candidate.id === pinId);
+        const found = pin && pin.route === route ? refindElement(pin) : null;
+        if (!found || !pin) continue;
+        const rect = found.element.getBoundingClientRect();
+        const fit = Math.min(1, 260 / Math.max(1, pin.elementSize.height || 1));
+        persistPosition(
+          pinId,
+          placeFloatingPinBeside(
+            { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+            {
+              width: Math.max(200, Math.min(420, Math.round(pin.elementSize.width * fit))),
+              height: Math.round((pin.elementSize.height || 120) * fit) + 64,
+            },
+            viewport,
+          ),
+        );
+      }
+    });
+  }, [state.summon, board, route, persistPosition]);
+
+  /**
+   * A relationship was just created — somewhere. The page composes the scene
+   * the panel path cannot compose itself: the source up as a capture card,
+   * every target on this route live-selected (labels on each, the bar between
+   * them), and targets on other routes as capture cards, since there is no
+   * live element here to select.
+   */
+  useEffect(() => {
+    const request = state.focusRelationship;
+    if (!request) return;
+    // Claimed immediately; the id waits in the pending slot until the board
+    // refresh carries the relationship. Waiting *unclaimed* meant a slow
+    // refresh could replay the request after the user had already pressed
+    // Escape — resurrecting a context they had just dismissed.
+    if (!claimRevealRequest(handledFocusRelationship, request)) return;
+    pendingFocusRelationship.current = request.relationshipId;
+  }, [state.focusRelationship]);
+
+  useEffect(() => {
+    const relationshipId = pendingFocusRelationship.current;
+    if (!relationshipId || !board) return;
+    const relationship = board.relationships.find((rel) => rel.id === relationshipId);
+    if (!relationship) return;
+    pendingFocusRelationship.current = null;
+
+    const targets = relationship.targetPinIds.filter((pinId) =>
+      board.pins.some((pin) => pin.id === pinId && pin.kind === "element"),
+    );
+    const live = targets.filter(
+      (pinId) => board.pins.find((pin) => pin.id === pinId)?.route === route,
+    );
+    const cardTargets = targets.filter((pinId) => !live.includes(pinId));
+    setSelected([]);
+    setLiveSelected(live);
+    setFocusCards([relationship.sourcePinId, ...cardTargets]);
+  }, [board, route, state.focusRelationship]);
 
   /* ------------------------------------------------------------ live dialog */
 
@@ -1526,10 +1639,14 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
   /** The relationship this selection is the on-screen target of, if any. */
   const targetContext = useMemo(() => {
-    if (!board || liveSelected.length !== 1) return null;
+    if (!board || liveSelected.length === 0) return null;
+    // Every live-selected pin must be a target and the source must be on
+    // screen — a bar between three targets saying "target of X" has to be
+    // true of all three, not the first that happens to match.
     const relationship = board.relationships.find(
       (rel) =>
-        rel.targetPinIds.includes(liveSelected[0]) && focusCards.includes(rel.sourcePinId),
+        focusCards.includes(rel.sourcePinId) &&
+        liveSelected.every((pinId) => rel.targetPinIds.includes(pinId)),
     );
     if (!relationship) return null;
     const source = board.pins.find((pin) => pin.id === relationship.sourcePinId);
@@ -1582,7 +1699,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const relateLiveSelection = useCallback(async () => {
     const [source, ...targets] = liveSelected;
     if (!source || targets.length === 0) return;
-    await createRelationship(source, targets);
+    if (!(await createRelationship(source, targets))) return;
     setFocusCards([source]);
     setLiveSelected(targets);
   }, [liveSelected, createRelationship]);
@@ -1686,7 +1803,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     return { from: edgePoint(from, edge), to: liveConnect.cursor };
   })();
 
-  /** The chat dialog sits under the union of the selection, like the group composer. */
+  /** The annotation bar sits under the selection, like the group composer. */
   const dialogPlacement = (() => {
     if (drawing || liveSelectedPins.length === 0) return null;
     const rects = liveSelected
@@ -1696,10 +1813,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     const left = Math.min(...rects.map((rect) => rect.left));
     const right = Math.max(...rects.map((rect) => rect.right));
     const bottom = Math.max(...rects.map((rect) => rect.bottom));
-    return placeGroupComposer(
-      { left, right, bottom },
-      { width: window.innerWidth, height: window.innerHeight },
-    );
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const placed = placeGroupComposer({ left, right, bottom }, viewport);
+    if (rects.length > 1) return placed;
+    /*
+     * A lone selection reads as one block: label, component, bar — all
+     * starting on the same left edge. Centering is for the multi-select case,
+     * where the bar belongs to the group rather than any one component.
+     */
+    const gutter = 12;
+    return {
+      ...placed,
+      x: Math.min(Math.max(rects[0].left, gutter), viewport.width - gutter - placed.width),
+    };
   })();
 
   return (
@@ -1785,18 +1911,26 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         * attached to the real thing.
         */}
       {!drawing &&
-        liveSelected.map((pinId) => {
+        liveSelected.map((pinId, index) => {
           const live = liveRects[pinId];
           if (!live) return null;
+          const pin = pins.find((candidate) => candidate.id === pinId);
           const edge = defaultEdgeFor(live.rect, {
             width: window.innerWidth,
             height: window.innerHeight,
           });
+          /*
+           * The reference wears the full identity bar — name, source, close —
+           * in the same black plate the floating cards use, so "what is this"
+           * reads identically whether the thing is live or a capture. Later
+           * selections carry the compact name plate.
+           */
+          const full = index === 0;
           return (
             <div
               key={pinId}
               className="pin-live-outline"
-              data-label={live.rect.top < 22 ? "inside" : "above"}
+              data-label={live.rect.top < 60 ? "inside" : "above"}
               style={{
                 left: live.rect.left,
                 top: live.rect.top,
@@ -1805,7 +1939,25 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
                 borderRadius: live.radius,
               }}
             >
-              <span className="pin-live-outline__label">{live.label}</span>
+              <div className="pin-live-label" data-full={full}>
+                <span className="pin-live-label__name">{live.label}</span>
+                {full && (
+                  <span className="pin-live-label__src" title={pin?.sourceFile ?? pin?.route}>
+                    {pin?.sourceFile ?? pin?.route ?? ""}
+                  </span>
+                )}
+                {full && (
+                  <button
+                    className="pin-icon-btn pin-live-label__close"
+                    data-no-drag
+                    onClick={() => setLiveSelected([])}
+                    title="Deselect — the pin stays on the shelf"
+                    aria-label="Deselect component"
+                  >
+                    <CloseIcon size={13} />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 className="pin-anchor"
@@ -1849,6 +2001,39 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           selectionCount={selected.length}
           connecting={connecting !== null}
           connectionRole={connecting?.fromPinId === pin.id ? "source" : undefined}
+          awayRoute={
+            pin.route !== route
+              ? {
+                  route: pin.route,
+                  onOpen: () => {
+                    /*
+                     * Prefer reopening the relationship that put this card on
+                     * screen — on its own page the pin becomes the live
+                     * target. A card with no relationship falls back to the
+                     * plain reveal, which navigates and selects it.
+                     */
+                    const relationship = board?.relationships.find(
+                      (rel) =>
+                        (rel.targetPinIds.includes(pin.id) &&
+                          focusCards.includes(rel.sourcePinId)) ||
+                        (rel.sourcePinId === pin.id &&
+                          rel.targetPinIds.some(
+                            (targetId) =>
+                              focusCards.includes(targetId) || liveSelected.includes(targetId),
+                          )),
+                    );
+                    if (relationship) {
+                      void send("relationship/open", {
+                        relationshipId: relationship.id,
+                        atPinId: pin.id,
+                      }).catch(() => {});
+                    } else {
+                      void send("pin/revealSource", { pinId: pin.id }).catch(() => {});
+                    }
+                  },
+                }
+              : undefined
+          }
           onSelect={(additive) => selectPin(pin.id, additive)}
           onMove={(next) => moveTo(pin.id, next)}
           onMoveEnd={(next) => persistPosition(pin.id, next)}

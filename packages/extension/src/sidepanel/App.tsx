@@ -39,6 +39,8 @@ export function App() {
   const [captureIssue, setCaptureIssue] = useState<Exclude<TabArmState, "armed" | "injected"> | null>(null);
   const [instructionDraft, setInstructionDraft] = useState("");
   const [undoClear, setUndoClear] = useState<{ boardId: string } | null>(null);
+  /** The relationship card to scroll to after a creation, then forget. */
+  const [focusRelationshipId, setFocusRelationshipId] = useState<string | null>(null);
   /**
    * Only ever set when the clipboard write failed. The pointer is the whole
    * interface to the agent and the panel has no board list to recover an id
@@ -75,6 +77,15 @@ export function App() {
     }
     const listener = (message: Broadcast) => {
       if (message.kind === "capture-mode" && message.enabled) setCaptureIssue(null);
+      /*
+       * A fresh relationship is the thing the user wants to see next,
+       * whichever surface created it — the tab flips and the card scrolls
+       * into view once the board reload carries it.
+       */
+      if (message.kind === "focus-relationship") {
+        setTab("relationships");
+        setFocusRelationshipId(message.relationshipId);
+      }
       // markReady emits capture and board broadcasts before its response comes
       // back. Reloading here can replace the submitted board (and a clipboard
       // fallback pointer) with the next draft before the user ever sees it.
@@ -392,7 +403,12 @@ export function App() {
             />
           )
         ) : (
-          <Relationships board={board} onChanged={reload} />
+          <Relationships
+            board={board}
+            onChanged={reload}
+            focusRelationshipId={focusRelationshipId}
+            onFocusConsumed={() => setFocusRelationshipId(null)}
+          />
         )}
       </div>
 

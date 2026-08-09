@@ -82,6 +82,24 @@ test("picker press interception protects the page before its handlers run", () =
   assert.match(picker, /if \(!isCapturablePageElement\(target\)\) return/);
 });
 
+test("overlapping captures cannot leave the overlay invisible", () => {
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  const capture = overlay.slice(
+    overlay.indexOf("const capture = useCallback"),
+    overlay.indexOf("const beginLiveConnect"),
+  );
+
+  // A synchronous lock before the first await — the async `capturing` state
+  // commits too late to stop two captures racing from adjacent pointerdowns.
+  assert.match(capture, /if \(captureBusy\.current\) return;\s*captureBusy\.current = true/);
+  // Restore is unconditional visibility, never a snapshot: overlapped captures
+  // once wrote each other's "hidden" back as the overlay's resting state.
+  assert.match(capture, /host\.style\.visibility = ""/);
+  assert.doesNotMatch(capture, /hadVisibility/);
+  // Arming a session always begins visible, whatever a crash left behind.
+  assert.match(overlay, /if \(!state\.enabled\) return;\s*const host = document\.getElementById\(OVERLAY_HOST_ID\);\s*if \(host\) host\.style\.visibility = ""/);
+});
+
 test("a capture failure is announced in the overlay instead of only logged", () => {
   const overlay = source("packages/extension/src/content/Overlay.tsx");
   const capture = overlay.slice(

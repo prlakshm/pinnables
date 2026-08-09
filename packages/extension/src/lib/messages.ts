@@ -158,6 +158,16 @@ export interface Contract {
    */
   "pin/summon": { req: { pinId: string }; res: { ok: boolean } };
   "relationship/summon": { req: { relationshipId: string }; res: { ok: boolean } };
+
+  /**
+   * Follow a relationship to one of its pins' own pages — the off-page target
+   * chip. Navigates there and recomposes the relationship's focus context, so
+   * the pin that was a stale capture here becomes the live selection there.
+   */
+  "relationship/open": {
+    req: { relationshipId: string; atPinId: string };
+    res: { ok: boolean };
+  };
 }
 
 export type RequestType = keyof Contract;
@@ -236,7 +246,13 @@ export type Broadcast =
    * whole cluster at once so a relationship summon is a single state change,
    * not a race of per-pin messages.
    */
-  | { kind: "summon-pins"; pinIds: string[] };
+  | { kind: "summon-pins"; pinIds: string[] }
+  /**
+   * A relationship was just created, whichever surface did it. The panel
+   * opens the Relationships tab scrolled to this card; the page puts the
+   * source up as a capture and live-selects the targets on its route.
+   */
+  | { kind: "focus-relationship"; relationshipId: string };
 
 export function broadcastToTab(tabId: number, message: Broadcast): void {
   chrome.tabs.sendMessage(tabId, message).catch(() => {

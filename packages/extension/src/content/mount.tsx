@@ -18,23 +18,33 @@ export interface OverlayState {
   reveal: RevealMessage | null;
   /** The shelf asked for these pins' captures on screen — the focus context. */
   summon: SummonMessage | null;
+  /** A relationship was just created; the page composes its cluster. */
+  focusRelationship: FocusRelationshipMessage | null;
 }
 
 type RevealMessage = Extract<Broadcast, { kind: "reveal-pin" }>;
 type SummonMessage = Extract<Broadcast, { kind: "summon-pins" }>;
+type FocusRelationshipMessage = Extract<Broadcast, { kind: "focus-relationship" }>;
 
 export interface OverlayApi {
   setEnabled(enabled: boolean): void;
   refresh(): void;
   reveal(message: RevealMessage): void;
   summon(message: SummonMessage): void;
+  focusRelationship(message: FocusRelationshipMessage): void;
   destroy(): void;
   subscribe(listener: () => void): () => void;
   snapshot(): OverlayState;
 }
 
 function createApi(teardown: () => void): OverlayApi {
-  let state: OverlayState = { enabled: false, revision: 0, reveal: null, summon: null };
+  let state: OverlayState = {
+    enabled: false,
+    revision: 0,
+    reveal: null,
+    summon: null,
+    focusRelationship: null,
+  };
   const listeners = new Set<() => void>();
 
   const commit = (next: Partial<OverlayState>) => {
@@ -44,10 +54,17 @@ function createApi(teardown: () => void): OverlayApi {
 
   return {
     setEnabled: (enabled) =>
-      commit({ enabled, reveal: enabled ? state.reveal : null, summon: enabled ? state.summon : null }),
+      commit({
+        enabled,
+        reveal: enabled ? state.reveal : null,
+        summon: enabled ? state.summon : null,
+        focusRelationship: enabled ? state.focusRelationship : null,
+      }),
     refresh: () => commit({ revision: state.revision + 1 }),
     reveal: (message) => commit({ reveal: message, revision: state.revision + 1 }),
     summon: (message) => commit({ summon: message, revision: state.revision + 1 }),
+    focusRelationship: (message) =>
+      commit({ focusRelationship: message, revision: state.revision + 1 }),
     destroy: teardown,
     subscribe: (listener) => {
       listeners.add(listener);

@@ -118,5 +118,10 @@ function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond
 
   if (message.kind === "summon-pins") {
     void ensureOverlay().then((o) => o.summon(message));
+    return;
+  }
+
+  if (message.kind === "focus-relationship") {
+    void ensureOverlay().then((o) => o.focusRelationship(message));
   }
 }
