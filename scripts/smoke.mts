@@ -4,7 +4,7 @@ import { cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const ROOT = "/Users/pranavi/Documents/GitHub/pinnables";
+const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 
 const home = await mkdtemp(join(tmpdir(), "pinnables-smoke-"));
 await cp(join(ROOT, "fixtures"), home, { recursive: true });

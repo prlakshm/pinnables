@@ -4,10 +4,10 @@
   "projectId": "acme-app",
   "title": "Dashboard card consistency",
   "globalInstruction": "Normalize using the existing design tokens in src/styles/tokens.css. Do not introduce new dependencies.",
-  "status": "ready",
+  "status": "done",
   "generatedAt": "2026-08-01T14:22:10.000Z",
   "createdAt": "2026-08-01T13:40:00.000Z",
-  "updatedAt": "2026-08-01T14:22:10.000Z",
+  "updatedAt": "2026-08-09T21:26:08.281Z",
   "pins": [
     {
       "id": "pin-01",
@@ -17,13 +17,23 @@
       "groupId": null,
       "url": "http://localhost:5173/dashboard",
       "route": "/dashboard",
-      "viewport": { "width": 1440, "height": 900 },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
       "screenshotPath": "pins/pin-01.png",
       "thumbnailPath": "pins/pin-01.thumb.webp",
       "selector": ".dashboard-grid > article:nth-child(2)",
       "domPath": "body > div#root > main.dashboard > section.dashboard-grid > article.stat-card",
       "outerHtml": "<article class=\"stat-card rounded-sm px-6 py-8 shadow-sm bg-white\"><h3>Active users</h3><p class=\"stat-value\">2,481</p></article>",
-      "classList": ["stat-card", "rounded-sm", "px-6", "py-8", "shadow-sm", "bg-white"],
+      "classList": [
+        "stat-card",
+        "rounded-sm",
+        "px-6",
+        "py-8",
+        "shadow-sm",
+        "bg-white"
+      ],
       "elementText": "Active users 2,481",
       "componentName": "StatCard",
       "sourceFile": "src/components/StatCard.tsx:12",
@@ -41,11 +51,11 @@
         "font-size": "14px",
         "line-height": "20px"
       },
-      "annotation": "Too much vertical padding, and the radius doesn't match anything else in the product.",
+      "annotation": "Too much vertical padding, and the radius doesn't match anything else in the product.\n\n[agent] Applied card tokens: padding 16px 20px, radius 12px, shadow from SettingsCard.",
       "captureState": "default",
-      "status": "todo",
+      "status": "done",
       "createdAt": "2026-08-01T13:41:02.000Z",
-      "updatedAt": "2026-08-01T13:41:02.000Z"
+      "updatedAt": "2026-08-09T21:26:08.281Z"
     },
     {
       "id": "pin-02",
@@ -55,13 +65,23 @@
       "groupId": null,
       "url": "http://localhost:5173/settings",
       "route": "/settings",
-      "viewport": { "width": 1440, "height": 900 },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
       "screenshotPath": "pins/pin-02.png",
       "thumbnailPath": "pins/pin-02.thumb.webp",
       "selector": ".settings-panel > .plan-card",
       "domPath": "body > div#root > main.settings > section.settings-panel > article.plan-card",
       "outerHtml": "<article class=\"plan-card rounded-xl px-5 py-4 shadow-md bg-white\"><h3>Team plan</h3><p>For growing teams</p></article>",
-      "classList": ["plan-card", "rounded-xl", "px-5", "py-4", "shadow-md", "bg-white"],
+      "classList": [
+        "plan-card",
+        "rounded-xl",
+        "px-5",
+        "py-4",
+        "shadow-md",
+        "bg-white"
+      ],
       "elementText": "Team plan For growing teams",
       "componentName": "SettingsCard",
       "sourceFile": "src/components/SettingsCard.tsx:8",
@@ -79,11 +99,11 @@
         "font-size": "14px",
         "line-height": "20px"
       },
-      "annotation": "This is the card treatment we want everywhere. Reference only — don't change this one.",
+      "annotation": "This is the card treatment we want everywhere. Reference only — don't change this one.\n\n[agent] Reference card — left unchanged.",
       "captureState": "default",
-      "status": "todo",
+      "status": "done",
       "createdAt": "2026-08-01T13:44:30.000Z",
-      "updatedAt": "2026-08-01T13:44:30.000Z"
+      "updatedAt": "2026-08-09T21:26:08.281Z"
     },
     {
       "id": "pin-03",
@@ -93,13 +113,22 @@
       "groupId": null,
       "url": "http://localhost:5173/dashboard",
       "route": "/dashboard",
-      "viewport": { "width": 1440, "height": 900 },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
       "screenshotPath": "pins/pin-03.png",
       "thumbnailPath": "pins/pin-03.thumb.webp",
       "selector": ".dashboard-grid > article.activity-card",
       "domPath": "body > div#root > main.dashboard > section.dashboard-grid > article.activity-card",
       "outerHtml": "<article class=\"activity-card rounded px-6 py-7 bg-white\"><h3>Recent activity</h3><ul class=\"activity-list\">…</ul></article>",
-      "classList": ["activity-card", "rounded", "px-6", "py-7", "bg-white"],
+      "classList": [
+        "activity-card",
+        "rounded",
+        "px-6",
+        "py-7",
+        "bg-white"
+      ],
       "elementText": "Recent activity",
       "componentName": "ActivityCard",
       "sourceFile": "src/components/ActivityCard.tsx:21",
@@ -117,11 +146,11 @@
         "font-size": "14px",
         "line-height": "20px"
       },
-      "annotation": "Same drift as the stat card, plus it's missing a shadow entirely.",
+      "annotation": "Same drift as the stat card, plus it's missing a shadow entirely.\n\n[agent] Matched SettingsCard container treatment via shared .card tokens.",
       "captureState": "default",
-      "status": "todo",
+      "status": "done",
       "createdAt": "2026-08-01T13:46:11.000Z",
-      "updatedAt": "2026-08-01T13:46:11.000Z"
+      "updatedAt": "2026-08-09T21:26:08.281Z"
     },
     {
       "id": "pin-04",
@@ -131,13 +160,19 @@
       "groupId": null,
       "url": "http://localhost:5173/checkout",
       "route": "/checkout",
-      "viewport": { "width": 390, "height": 844 },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "screenshotPath": "pins/pin-04.png",
       "thumbnailPath": "pins/pin-04.thumb.webp",
       "selector": "nav.mobile-nav",
       "domPath": "body > div#root > nav.mobile-nav",
       "outerHtml": "<nav class=\"mobile-nav drawer\" data-state=\"open\" aria-label=\"Main\"><button aria-label=\"Close\">…</button></nav>",
-      "classList": ["mobile-nav", "drawer"],
+      "classList": [
+        "mobile-nav",
+        "drawer"
+      ],
       "elementText": "Main navigation",
       "componentName": "MobileNav",
       "sourceFile": "src/components/MobileNav.tsx:16",
@@ -155,11 +190,11 @@
         "box-shadow": "rgba(0, 0, 0, 0.18) 4px 0px 24px 0px",
         "background-color": "rgb(255, 255, 255)"
       },
-      "annotation": "Keep this slide-in drawer behavior on checkout. Do not convert it to a bottom tab bar like /dashboard uses.",
+      "annotation": "Keep this slide-in drawer behavior on checkout. Do not convert it to a bottom tab bar like /dashboard uses.\n\n[agent] Slide-in drawer preserved on checkout route.",
       "captureState": "mobile",
-      "status": "todo",
+      "status": "done",
       "createdAt": "2026-08-01T14:02:47.000Z",
-      "updatedAt": "2026-08-01T14:02:47.000Z"
+      "updatedAt": "2026-08-09T21:26:08.281Z"
     },
     {
       "id": "pin-05",
@@ -169,13 +204,20 @@
       "groupId": null,
       "url": "http://localhost:5173/reports",
       "route": "/reports",
-      "viewport": { "width": 1440, "height": 900 },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
       "screenshotPath": "pins/pin-05.png",
       "thumbnailPath": "pins/pin-05.thumb.webp",
       "selector": ".reports-empty",
       "domPath": "body > div#root > main.reports > div.reports-empty",
       "outerHtml": "<div class=\"reports-empty border-dashed p-10\"><p>No reports yet</p><button>Create report</button></div>",
-      "classList": ["reports-empty", "border-dashed", "p-10"],
+      "classList": [
+        "reports-empty",
+        "border-dashed",
+        "p-10"
+      ],
       "elementText": "No reports yet Create report",
       "componentName": "EmptyState",
       "sourceFile": "src/components/EmptyState.tsx:5",
@@ -195,11 +237,11 @@
         "box-shadow": "none",
         "background-color": "rgba(0, 0, 0, 0)"
       },
-      "annotation": "Reads as a different product than the cards. Should sit in the same family without becoming a card itself.",
+      "annotation": "Reads as a different product than the cards. Should sit in the same family without becoming a card itself.\n\n[agent] Aligned empty state with card family tokens (radius, subtle bg) without card shadow.",
       "captureState": "empty",
-      "status": "todo",
+      "status": "done",
       "createdAt": "2026-08-01T14:08:55.000Z",
-      "updatedAt": "2026-08-01T14:08:55.000Z"
+      "updatedAt": "2026-08-09T21:26:08.281Z"
     }
   ],
   "relationships": [
@@ -208,8 +250,15 @@
       "boardId": "dashboard-cards",
       "type": "match",
       "sourcePinId": "pin-02",
-      "targetPinIds": ["pin-01", "pin-03"],
-      "properties": ["radius", "spacing", "shadow"],
+      "targetPinIds": [
+        "pin-01",
+        "pin-03"
+      ],
+      "properties": [
+        "radius",
+        "spacing",
+        "shadow"
+      ],
       "exception": "Preserve each card's own heading and content hierarchy — only the container treatment should change.",
       "instruction": "Dashboard cards should read as the same component family as the Settings plan card."
     }

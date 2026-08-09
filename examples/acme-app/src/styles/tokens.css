@@ -1,0 +1,180 @@
+:root {
+  /* Card family — Settings plan card is the reference (pin-02) */
+  --card-radius: 12px;
+  --card-padding-y: 16px;
+  --card-padding-x: 20px;
+  --card-gap: 8px;
+  --card-shadow: rgba(0, 0, 0, 0.08) 0px 4px 12px 0px;
+  --card-bg: rgb(255, 255, 255);
+
+  /* Empty state — related but not a card */
+  --empty-radius: var(--card-radius);
+  --empty-padding: 32px;
+  --empty-gap: 12px;
+  --empty-border-color: rgb(212, 212, 212);
+  --empty-bg: rgba(0, 0, 0, 0.02);
+
+  /* Typography */
+  --font-size-base: 14px;
+  --line-height-base: 20px;
+  --color-text: rgb(23, 23, 23);
+  --color-text-muted: rgb(115, 115, 115);
+
+  /* Mobile nav drawer */
+  --nav-drawer-width: 280px;
+  --nav-drawer-shadow: rgba(0, 0, 0, 0.18) 4px 0px 24px 0px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--color-text);
+  background: rgb(250, 250, 250);
+}
+
+h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.settings-panel {
+  max-width: 420px;
+}
+
+.reports-empty-wrapper {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.checkout-layout {
+  min-height: 100vh;
+  position: relative;
+}
+
+.checkout-content {
+  padding: 24px 16px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  padding: var(--card-padding-y) var(--card-padding-x);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  background-color: var(--card-bg);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.activity-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-muted);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--empty-gap);
+  padding: var(--empty-padding);
+  border-radius: var(--empty-radius);
+  border: 1px dashed var(--empty-border-color);
+  background-color: var(--empty-bg);
+  text-align: center;
+}
+
+.empty-state p {
+  color: var(--color-text-muted);
+}
+
+.empty-state button {
+  margin-top: 4px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-text);
+  color: white;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.mobile-nav {
+  display: flex;
+  position: fixed;
+  top: 0;
+  left: 0;
+  flex-direction: column;
+  width: var(--nav-drawer-width);
+  height: 100vh;
+  padding: 24px 16px;
+  gap: 16px;
+  background-color: var(--card-bg);
+  box-shadow: var(--nav-drawer-shadow);
+  z-index: 100;
+}
+
+.mobile-nav button {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.mobile-nav a {
+  color: var(--color-text);
+  text-decoration: none;
+  padding: 8px 0;
+}
+
+.page-nav {
+  display: flex;
+  gap: 16px;
+  padding: 12px 24px;
+  background: white;
+  border-bottom: 1px solid rgb(229, 229, 229);
+}
+
+.page-nav a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--font-size-base);
+}
+
+.page-nav a.active {
+  color: var(--color-text);
+  font-weight: 600;
+}
