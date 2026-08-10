@@ -3,6 +3,7 @@ import { pinLabel, type Board, type Pin } from "@pinnables/shared";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
+import { WorkingDots } from "../ui/WorkingDots";
 
 /**
  * The annotation bar, attached to the live component — v1's pill, kept.
@@ -78,6 +79,9 @@ export function SelectionDialog({
   const [chordHeld, setChordHeld] = useState(false);
   /** True only while the session's one teaching moment is on screen. */
   const [hintActive, setHintActive] = useState(false);
+  /** Runs that just finished — their "Completed" tag shows briefly, then the
+      entry leaves the log for good. */
+  const [completedFlash, setCompletedFlash] = useState<Set<string>>(new Set());
   const pollTimer = useRef<number | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const primary = pins[0];
@@ -160,6 +164,20 @@ export function SelectionDialog({
             ? { kind: "done" }
             : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
         );
+        // The outcome belongs to the board, not to this bar — recording it is
+        // what resolves the history tag even after this dialog is gone.
+        void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
+        if (status.state === "done") {
+          // "Completed" gets its moment before the entry leaves the log.
+          setCompletedFlash((previous) => new Set(previous).add(messageId));
+          window.setTimeout(() => {
+            setCompletedFlash((previous) => {
+              const next = new Set(previous);
+              next.delete(messageId);
+              return next;
+            });
+          }, 4_000);
+        }
       } catch {
         if (selectionKeyRef.current !== key) return;
         setPhase({ kind: "failed", detail: "Lost contact with the local service." });
@@ -177,38 +195,101 @@ export function SelectionDialog({
     [onAddToBoard],
   );
 
+  /** One delivery path for fresh sends and resends alike. */
+  const deliver = useCallback(
+    async (message: string, resendOf?: string): Promise<"sent" | "offline" | "failed"> => {
+      const key = selectionKeyRef.current;
+      setPhase({ kind: "sending" });
+      try {
+        const state = await send("state/get", {});
+        if (selectionKeyRef.current !== key) return "failed";
+        if (!state.serviceOnline) return "offline";
+        const { messageId } = await send("agent/send", {
+          text: message,
+          pinIds: pins.map((pin) => pin.id),
+          relationshipId: relationshipId ?? undefined,
+          drawingSummary: drawingSummary ?? undefined,
+          resendOf,
+        });
+        if (selectionKeyRef.current !== key) return "sent";
+        setPhase({ kind: "working", messageId });
+        onLiveSent(pins.map((pin) => pin.id));
+        poll(messageId, key);
+        return "sent";
+      } catch (err) {
+        if (selectionKeyRef.current === key) {
+          setPhase({
+            kind: "failed",
+            detail: err instanceof Error && err.message.trim() ? err.message : "Try again.",
+          });
+        }
+        return "failed";
+      }
+    },
+    [pins, relationshipId, drawingSummary, onLiveSent, poll],
+  );
+
   const sendNow = useCallback(async () => {
     const message = draft.trim();
     if (!message || phase.kind === "sending") return;
-    const key = selectionKeyRef.current;
-    setPhase({ kind: "sending" });
-    try {
-      const state = await send("state/get", {});
-      if (selectionKeyRef.current !== key) return;
-      if (!state.serviceOnline) {
-        // No agent to hear it — the board keeps the message instead, visibly.
-        await stage(message, true);
-        return;
+    const result = await deliver(message);
+    // No agent to hear it — the board keeps the message instead, visibly.
+    if (result === "offline") await stage(message, true);
+    else if (result === "sent") setDraft("");
+  }, [draft, phase.kind, deliver, stage]);
+
+  /** Retry a failed or orphaned message; the new run supersedes the old entry. */
+  const resendEntry = useCallback(
+    async (text: string, messageId: string | null) => {
+      if (phase.kind === "sending") return;
+      const result = await deliver(text, messageId ?? undefined);
+      if (result === "offline") {
+        setPhase({
+          kind: "failed",
+          detail: "No agent connected. Start the local service, then resend.",
+        });
       }
-      const { messageId } = await send("agent/send", {
-        text: message,
-        pinIds: pins.map((pin) => pin.id),
-        relationshipId: relationshipId ?? undefined,
-        drawingSummary: drawingSummary ?? undefined,
-      });
-      if (selectionKeyRef.current !== key) return;
-      setDraft("");
-      setPhase({ kind: "working", messageId });
-      onLiveSent(pins.map((pin) => pin.id));
-      poll(messageId, key);
-    } catch (err) {
-      if (selectionKeyRef.current !== key) return;
-      setPhase({
-        kind: "failed",
-        detail: err instanceof Error && err.message.trim() ? err.message : "Try again.",
-      });
-    }
-  }, [draft, phase.kind, pins, relationshipId, drawingSummary, onLiveSent, poll, stage]);
+    },
+    [phase.kind, deliver],
+  );
+
+  /*
+   * Reconcile "Waiting…" entries whose runs this bar was not watching. The
+   * service answers for runs it knows; a run it has forgotten (a restart, a
+   * crash) is over by definition — recorded failed, which is what makes the
+   * entry's tag become Resend instead of waiting forever.
+   */
+  useEffect(() => {
+    if (!primary) return;
+    const pending = primary.liveSends.filter(
+      (sent) => sent.state === "working" && sent.messageId !== null,
+    );
+    if (pending.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (const sent of pending) {
+        try {
+          const status = await send("agent/status", { messageId: sent.messageId! });
+          if (cancelled) return;
+          if (status.state !== "working") {
+            void send("agent/recordOutcome", {
+              messageId: sent.messageId!,
+              state: status.state,
+            }).catch(() => {});
+          }
+        } catch {
+          if (cancelled) return;
+          void send("agent/recordOutcome", {
+            messageId: sent.messageId!,
+            state: "failed",
+          }).catch(() => {});
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [primary?.id]);
 
   const stageNow = useCallback(async () => {
     const message = draft.trim();
@@ -230,13 +311,13 @@ export function SelectionDialog({
   const statusLine = (() => {
     switch (phase.kind) {
       case "working":
-        return "Agent is working…";
+        return <>Agent is working<WorkingDots /></>;
       case "done":
-        return "Agent finished — check the page.";
+        return "Agent finished. Check the page.";
       case "failed":
         return `Couldn’t complete: ${(phase as { detail: string }).detail}`;
       case "staged-offline":
-        return "No agent connected — added to the board instead.";
+        return "No agent connected. Added to the board instead.";
       case "staged":
         return "Added to the board.";
       default:
@@ -306,7 +387,7 @@ export function SelectionDialog({
           data-on={chordHeld}
           title={`Enter sends to the agent · ${submitHintLabel} stashes on the board`}
         >
-          {submitHintLabel} Stash
+          {submitHintLabel} stash
         </span>
 
         <button
@@ -350,16 +431,35 @@ export function SelectionDialog({
               {note}
             </div>
           ))}
-          {primary.liveSends.map((sent, index) => (
-            <div
-              key={`sent-${index}`}
-              className="pin-note__history-item"
-              data-sent="true"
-              title={`Delivered ${sent.at}`}
-            >
-              {sent.text}
-            </div>
-          ))}
+          {primary.liveSends
+            .filter(
+              (sent) =>
+                sent.state !== "done" ||
+                (sent.messageId !== null && completedFlash.has(sent.messageId)),
+            )
+            .map((sent, index) => (
+              <div
+                key={`sent-${index}`}
+                className="pin-note__history-item"
+                title={`Delivered ${sent.at}`}
+              >
+                <span className="pin-note__history-text">{sent.text}</span>
+                {sent.state === "failed" ? (
+                  <button
+                    type="button"
+                    className="pin-note__tag pin-note__tag--action"
+                    onClick={() => void resendEntry(sent.text, sent.messageId)}
+                    title="This run didn’t finish. Send it to the agent again"
+                  >
+                    Resend
+                  </button>
+                ) : (
+                  <span className="pin-note__tag">
+                    {sent.state === "working" ? <>Waiting<WorkingDots /></> : "Completed"}
+                  </span>
+                )}
+              </div>
+            ))}
         </div>
       )}
 
@@ -371,7 +471,6 @@ export function SelectionDialog({
       )}
       {statusLine && (
         <div className="pin-note__rel" data-state={phase.kind} role="status" aria-live="polite">
-          {phase.kind === "working" && <span className="pin-live-pulse" aria-hidden />}
           {statusLine}
         </div>
       )}

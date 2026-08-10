@@ -719,7 +719,7 @@ const handlers: Handlers = {
     };
   },
 
-  async "agent/send"({ text, pinIds, relationshipId, drawingSummary }) {
+  async "agent/send"({ text, pinIds, relationshipId, drawingSummary, resendOf }) {
     if (pinIds.length === 0) throw new Error("A live message needs at least one pin");
     const board = await store.boardForPin(pinIds[0]);
 
@@ -750,7 +750,18 @@ const handlers: Handlers = {
         ...b,
         pins: b.pins.map((pin) =>
           pinIds.includes(pin.id)
-            ? { ...pin, liveSends: [...pin.liveSends, { text, at: now }], updatedAt: now }
+            ? {
+                ...pin,
+                liveSends: [
+                  // A resend supersedes the entry it retries — the history
+                  // keeps one line per intention, not one per attempt.
+                  ...pin.liveSends.filter(
+                    (sent) => !resendOf || sent.messageId !== resendOf,
+                  ),
+                  { text, at: now, messageId, state: "working" as const },
+                ],
+                updatedAt: now,
+              }
             : pin,
         ),
       };
@@ -761,6 +772,29 @@ const handlers: Handlers = {
 
   async "agent/status"({ messageId }) {
     return agentMessageStatus(messageId);
+  },
+
+  async "agent/recordOutcome"({ messageId, state }) {
+    const board = await store.ensureActiveBoard();
+    let touched = false;
+    await store.mutateBoard(board.id, (b) => {
+      assertDraftBoard(b);
+      return {
+        ...b,
+        pins: b.pins.map((pin) => {
+          if (!pin.liveSends.some((sent) => sent.messageId === messageId)) return pin;
+          touched = true;
+          return {
+            ...pin,
+            liveSends: pin.liveSends.map((sent) =>
+              sent.messageId === messageId ? { ...sent, state } : sent,
+            ),
+          };
+        }),
+      };
+    });
+    if (touched) await notifyBoardChanged(board.id);
+    return {};
   },
 
   async "relationship/create"({ sourcePinId, targetPinIds }) {

@@ -210,7 +210,7 @@ test("relationship lists containing shadow rows do not clip the preview", () => 
   assert.match(css, /\.pin-changes\[data-has-shadow="true"\]\s*\{[^}]*overflow:\s*visible/);
 });
 
-test("inapplicable differences are absent rather than explained", () => {
+test("inapplicable differences are present but quiet — never amber, never silent", () => {
   const blockedSource = elementPin("pin-blocked-source", "Borderless source", 1, {
     "border-width": "0px",
     "border-style": "none",
@@ -234,15 +234,20 @@ test("inapplicable differences are absent rather than explained", () => {
     />,
   );
 
-  // A border colour the source cannot draw is not a choice — no row, no amber
-  // chip, no "can't apply" caption. The property simply does not appear.
-  assert.doesNotMatch(html, /can(&#x27;|')t apply/);
-  assert.doesNotMatch(html, /data-blocked/);
-  assert.doesNotMatch(html, /border-color/);
+  // The difference is listed with its reason — hiding it let a visible
+  // difference read as "already matches" — but it offers no checkbox.
+  assert.match(html, /pin-change--blocked/);
+  assert.match(html, /border-color/);
+  assert.match(html, /can(&#x27;|')t apply/);
+  const blockedRow = html.slice(html.indexOf("pin-change--blocked"), html.indexOf("can"));
+  assert.doesNotMatch(blockedRow, /checkbox/);
 
+  // Quiet ink, not amber: a fact about the source, not a warning to the user.
   const css = source("packages/extension/src/ui/ui.css");
-  assert.doesNotMatch(css, /data-blocked/);
-  assert.doesNotMatch(css, /pin-change--blocked/);
+  const ruleStart = css.indexOf(".pin-change--blocked {");
+  const rule = css.slice(ruleStart, css.indexOf(".pin-section-label", ruleStart));
+  assert.doesNotMatch(rule, /amber/);
+  assert.match(rule, /var\(--pin-ink-faint\)/);
 });
 
 test("pin and relationship trash controls share the danger modifier", () => {
@@ -349,7 +354,9 @@ test("creating a relationship takes the user directly to its style diff", () => 
   );
   const confirm = pinList.slice(
     pinList.indexOf("const confirmRelationship"),
-    pinList.indexOf("return ("),
+    // Anchored after the start: an effect cleanup's `return () => {` earlier
+    // in the file must not collapse this slice to nothing.
+    pinList.indexOf("return (", pinList.indexOf("const confirmRelationship")),
   );
   assert.match(confirm, /await send\("relationship\/create"/);
   assert.match(confirm, /onRelationshipCreated\?\.\(\)/);

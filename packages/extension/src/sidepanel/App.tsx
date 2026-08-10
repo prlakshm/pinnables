@@ -5,6 +5,7 @@ import { send, type Broadcast, type ExtensionState, type TabArmState } from "../
 // radial shading has nothing to resolve into but the highlight still reads.
 import wordmarkUrl from "../ui/wordmark-flat.svg";
 import { CheckIcon, PinIcon } from "../ui/icons";
+import { WorkingDots } from "../ui/WorkingDots";
 import { PinList } from "./PinList";
 import { Relationships } from "./Relationships";
 
@@ -306,14 +307,17 @@ export function App() {
       <header className="pin-panel__header">
         <img src={wordmarkUrl} alt="Pinnables" style={{ height: 17, display: "block" }} />
         {/* Black when armed, the grey plate when not — the same pair as Ready
-            for agent and the composer's send. */}
+            for agent and the composer's send. Busy never disables it: the
+            disabled style is the same gray as "off", and an armed button
+            dressed as off is a lie about a live picker. `toggleCapture`
+            already ignores re-entry while a toggle is in flight. */}
         <button
           className={`pin-btn ${state?.captureMode ? "pin-btn--primary" : "pin-btn--quiet"}`}
           style={{ marginLeft: "auto" }}
           onClick={() => void toggleCapture()}
           aria-pressed={state?.captureMode ?? false}
           aria-busy={captureBusy}
-          disabled={!state || captureBusy}
+          disabled={!state}
         >
           <PinIcon size={14} />
           {state?.captureMode ? "Capturing" : "Capture"}
@@ -432,7 +436,7 @@ export function App() {
               never presents ready-board fields that can no longer save. */}
           {uncopied ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span className="pin-section-label">Couldn&apos;t copy — paste this into your agent</span>
+              <span className="pin-section-label">Couldn&apos;t copy. Paste this into your agent</span>
               <code
                 style={{
                   fontFamily: "var(--pin-mono)",
@@ -488,7 +492,7 @@ export function App() {
                   {phase === "idle"
                     ? "Send to agent"
                     : phase === "submitting"
-                      ? "Submitting…"
+                      ? <>Submitting<WorkingDots /></>
                       : "Submitted"}
                 </button>
               </div>

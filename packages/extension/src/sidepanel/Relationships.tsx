@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  computeBlockedChanges,
   computeStyleDiff,
   describeChange,
   expandProperties,
@@ -7,6 +8,7 @@ import {
   rawPropertiesFor,
   STYLE_ALLOWLIST,
   STYLE_GROUPS,
+  type BlockedChange,
   type Board,
   type DiffDetail,
   type Pin,
@@ -15,7 +17,7 @@ import {
 import { ChangePair, hasPreview } from "./ChangePreview";
 import { RenamableTitle } from "./RenamableTitle";
 import { send } from "../lib/messages";
-import { LinkIcon, PinIcon, TrashIcon } from "../ui/icons";
+import { LinkIcon, PinUprightIcon, TrashIcon } from "../ui/icons";
 
 const GROUP_NAMES = Object.keys(STYLE_GROUPS);
 
@@ -163,6 +165,10 @@ function RelationshipCard({
               entry: describeChange(entry),
               raw: rawPropertiesFor(entry.property),
             })),
+            blocked: computeBlockedChanges(source, target, GROUP_NAMES).map((entry) => ({
+              key: `${targetId}:${entry.property}`,
+              entry,
+            })),
           },
         ];
       })
@@ -272,14 +278,22 @@ function RelationshipCard({
     return at === -1 ? Number.MAX_SAFE_INTEGER : at;
   };
   const targetSections = targetDiffs
-    .map(({ target, rows: targetRows }) => ({
+    .map(({ target, rows: targetRows, blocked: targetBlocked }) => ({
       target,
-      ordered: [...targetRows].sort((a, b) => rank(a.entry.property) - rank(b.entry.property)),
+      /*
+       * Inapplicable differences ride in the same ordered list — present but
+       * quiet. Hiding them entirely let a real, visible difference read as
+       * "already matches", which is the one lie this table must never tell.
+       */
+      ordered: [
+        ...targetRows.map((row) => ({ ...row, blocked: false as const })),
+        ...targetBlocked.map((row) => ({ ...row, raw: [] as string[], blocked: true as const })),
+      ].sort((a, b) => rank(a.entry.property) - rank(b.entry.property)),
     }))
     .filter((section) => section.ordered.length > 0);
   const multipleTargets = relationship.targetPinIds.length > 1;
   const hasShadowRows = targetSections.some(({ ordered }) =>
-    ordered.some((row) => row.entry.kind === "shadow"),
+    ordered.some((row) => !row.blocked && row.entry.kind === "shadow"),
   );
 
   const disabledNote = GROUP_NAMES.some((group) => groupRaw(group).length === 0)
@@ -299,7 +313,7 @@ function RelationshipCard({
           {/* Summon the whole cluster: every involved capture lands on the
               page with its wires, ones already on screen included. */}
           <button
-            className="pin-icon-btn"
+            className="pin-icon-btn pin-summon"
             style={{ width: 28, height: 28, flex: "0 0 auto" }}
             onClick={() => {
               void send("relationship/summon", { relationshipId: relationship.id }).catch(
@@ -309,7 +323,7 @@ function RelationshipCard({
             aria-label="Show this relationship on the page"
             title="Show every involved pin on the page, connected"
           >
-            <PinIcon size={15} />
+            <PinUprightIcon size={16} />
           </button>
           {/* The same button the shelf rows use — two deletes on two screens
               were two different shapes before. */}
@@ -393,15 +407,19 @@ function RelationshipCard({
                       {pinLabel(target, board.pins)}
                     </h3>
                   )}
-                  {ordered.map((row) => (
-                    <ChangeRow
-                      key={row.key}
-                      detail={row.entry}
-                      on={row.raw.every((p) => selected.has(p))}
-                      allTargets={multipleTargets}
-                      onToggle={(next) => toggle(row.raw, next)}
-                    />
-                  ))}
+                  {ordered.map((row) =>
+                    row.blocked ? (
+                      <BlockedRow key={row.key} change={row.entry} />
+                    ) : (
+                      <ChangeRow
+                        key={row.key}
+                        detail={row.entry}
+                        on={row.raw.every((p) => selected.has(p))}
+                        allTargets={multipleTargets}
+                        onToggle={(next) => toggle(row.raw, next)}
+                      />
+                    ),
+                  )}
                 </section>
               );
             })}
@@ -431,6 +449,37 @@ function RelationshipCard({
       </div>
     </div>
   );
+}
+
+/**
+ * A difference the guard rejected — an explanation, not an option, and a
+ * quiet one. The amber warning treatment read as an alarm about the user's
+ * own choice; faint ink states the fact and steps back. No checkbox, because
+ * a control that cannot act is worse than no control.
+ */
+function BlockedRow({ change }: { change: BlockedChange }) {
+  const exact = `${change.property}: ${change.from} → ${change.to}`;
+  return (
+    <div
+      className="pin-change pin-change--blocked"
+      title={exact}
+      aria-label={`${exact}. Can't apply: ${change.applicability.reason}`}
+    >
+      <span />
+      <span className="pin-change__name">{change.property}</span>
+      <span className="pin-change__caption pin-change__caption--lead">
+        can&apos;t apply. {sentenceCase(change.applicability.reason ?? "")}
+      </span>
+    </div>
+  );
+}
+
+/** Guard reasons are stored as fragments; spoken here, they are sentences. */
+function sentenceCase(fragment: string): string {
+  const trimmed = fragment.trim();
+  if (!trimmed) return "";
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return capitalized.endsWith(".") ? capitalized : `${capitalized}.`;
 }
 
 /**

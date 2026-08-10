@@ -533,6 +533,29 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     void chrome.storage.local.set({ [posKey(pinId)]: position });
   }, []);
 
+  /**
+   * Seat a capture card exactly where its live element stands, when that
+   * element is still in view. A source that just joined a relationship takes
+   * its component's own place on screen — the capture stands in for the thing
+   * it pictures, rather than materializing wherever it was last dragged.
+   */
+  const seatCardAtElement = useCallback(
+    (pin: Pin) => {
+      if (pin.kind !== "element" || pin.route !== routeForLocation()) return;
+      const found = refindElement(pin);
+      if (!found) return;
+      const rect = found.element.getBoundingClientRect();
+      const visible =
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.left < window.innerWidth;
+      if (!visible) return;
+      persistPosition(pin.id, { x: rect.left, y: rect.top });
+    },
+    [persistPosition],
+  );
+
   /* ------------------------------------------------------------------ ink */
 
   const regionPin = board?.pins.find((p) => p.kind === "region" && p.route === route) ?? null;
@@ -1135,6 +1158,12 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           setLiveSelected([pin.id]);
           setFocusCards(related ? [intent.sourcePinId] : []);
           setSelected([]);
+          if (related) {
+            const sourcePin = board?.pins.find(
+              (candidate) => candidate.id === intent.sourcePinId,
+            );
+            if (sourcePin) seatCardAtElement(sourcePin);
+          }
         } else {
           // Every click pins. Selecting is the conversation; the shelf entry
           // is the memory of it, whether or not anything gets said.
@@ -1166,7 +1195,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         setCapturing(false);
       }
     },
-    [persistPosition, guard, createRelationship],
+    [persistPosition, guard, createRelationship, board, seatCardAtElement],
   );
 
   /* --------------------------------------------------- live connect gesture */
@@ -1625,7 +1654,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     setSelected([]);
     setLiveSelected(live);
     setFocusCards([relationship.sourcePinId, ...cardTargets]);
-  }, [board, route, state.focusRelationship]);
+    // The source capture takes its component's own place when it is in view.
+    const source = board.pins.find((pin) => pin.id === relationship.sourcePinId);
+    if (source) seatCardAtElement(source);
+  }, [board, route, state.focusRelationship, seatCardAtElement]);
+
+  /**
+   * The shelf mirrors what is on screen: pin ids in the focus context are
+   * published for the panel, whose upright pin icons fill for exactly these.
+   */
+  useEffect(() => {
+    const onScreen = state.enabled ? [...liveSelected, ...focusCards] : [];
+    void chrome.storage.local.set({ onScreenPins: onScreen });
+  }, [state.enabled, liveSelected, focusCards]);
 
   /* ------------------------------------------------------------ live dialog */
 
@@ -1718,7 +1759,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       <div className="pin-overlay">
         <div className="pin-stale" role="alert">
           <span className="pin-stale__dot" />
-          <span>Pinnables was reloaded. Refresh this page to keep pinning — your board is safe.</span>
+          <span>Pinnables was reloaded. Refresh this page to keep pinning. Your board is safe.</span>
           <button className="pin-btn pin-btn--primary" onClick={() => location.reload()}>
             Refresh
           </button>
@@ -1951,7 +1992,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
                     className="pin-icon-btn pin-live-label__close"
                     data-no-drag
                     onClick={() => setLiveSelected([])}
-                    title="Deselect — the pin stays on the shelf"
+                    title="Deselect. The pin stays on the shelf"
                     aria-label="Deselect component"
                   >
                     <CloseIcon size={13} />
@@ -1962,7 +2003,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
                 type="button"
                 className="pin-anchor"
                 data-edge={edge}
-                title={`Start relationship from ${live.label} — drag onto another component`}
+                title={`Start relationship from ${live.label}. Drag onto another component`}
                 aria-label={`Start relationship from ${live.label}`}
                 onPointerDown={(event) => beginLiveConnect(pinId, event)}
               />
@@ -2056,6 +2097,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             count={selected.length}
             onCommit={commitNote}
             onRelate={canRelateSelection ? relateSelected : undefined}
+            agentPinIds={selected}
             autoFocus
           />
         </div>

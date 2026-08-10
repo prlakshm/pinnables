@@ -316,6 +316,19 @@
   background: var(--pin-paper-sunk);
   color: var(--pin-ink);
 }
+/*
+ * The summon pin: the glyph is the state. Its head fills on hover as the
+ * offer, and stays filled while the pin is on screen — pressed in, the way a
+ * real pin holds something up.
+ */
+.pin-summon:hover .pin-upright__solid,
+.pin-summon[data-active="true"] .pin-upright__solid {
+  fill: currentColor;
+}
+.pin-summon[data-active="true"] {
+  color: var(--pin-ink);
+}
+
 /* Destructive controls hover exactly like every other icon button — the same
    gray circle. The trash glyph already names the action; a red flash on the
    way in read as an alarm about a click that had not happened yet. */
@@ -694,14 +707,14 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 /* -------------------------------------------------------------- live focus */
 
 /*
- * The selection, worn by the live component itself. Same family as the picker
- * highlight — gray, tracing the element's own corners — but persistent: this
- * is "the thing we are talking about", not "the thing under the cursor". The
- * outline never takes the pointer; only its anchor does.
+ * The selection wears no outline of its own. The black label above and the
+ * bar below say "selected"; the component's edges stay exactly as the page
+ * draws them — so when a relationship preview changes a border live, the
+ * user sees the real border, not our frame over it. This element is pure
+ * geometry: it seats the label and the anchor, and never takes the pointer.
  */
 .pin-live-outline {
   position: fixed;
-  border: 2px solid var(--pin-ink-muted);
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -722,7 +735,10 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   grid-template-areas: "name close" "source close";
   column-gap: 8px;
   row-gap: 1px;
-  width: 100%;
+  /* A title, never a wall: it hugs its text and caps well short of a
+     full-width table, while still fitting inside a narrow card. */
+  width: max-content;
+  max-width: min(100%, 360px);
   padding: 5px 4px 5px 11px;
   border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
   background: var(--pin-ink);
@@ -833,32 +849,88 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   line-height: 1.5;
   color: var(--pin-ink);
 }
+.pin-note__history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .pin-note__history-item + .pin-note__history-item {
   border-top: 1px solid color-mix(in srgb, var(--pin-rule) 55%, transparent);
 }
-.pin-note__history-item[data-sent="true"] {
+.pin-note__history-text {
+  flex: 1;
+  min-width: 0;
+}
+/* The run's standing, worn on the message itself: black while it is the
+   agent's turn, and the entry leaves the log once the work is done. */
+.pin-note__tag {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.pin-note__tag[data-tone="quiet"] {
+  background: var(--pin-paper-sunk);
   color: var(--pin-ink-muted);
 }
-.pin-note__history-item[data-sent="true"]::after {
-  content: " ✓ sent";
+/* A tag you can press: the retry lives on the message it retries. */
+.pin-note__tag--action {
+  border: none;
+  cursor: pointer;
+  font: inherit;
   font-size: 10px;
-  color: var(--pin-ink-faint);
+  font-weight: 600;
+}
+.pin-note__tag--action:hover {
+  background: var(--pin-ink-lift);
 }
 .pin-note__rel[data-state="failed"] {
   color: var(--pin-ink);
 }
-/* The working pulse: a small ink dot breathing — activity without color. */
-.pin-live-pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--pin-ink);
-  animation: pin-live-pulse 1.2s ease-in-out infinite;
-  flex: 0 0 auto;
+/*
+ * The processing ellipsis: three dots lifting in turn, a slow wave rather
+ * than a blink. `currentColor` is what lets one component serve every place
+ * a wait appears — white inside a black tag, ink on a quiet line, paper on
+ * the filled submit button.
+ *
+ * Sized and spaced like the "…" it replaces, and the lift is absorbed by the
+ * row's own line box, so a line never shifts as the dots rise.
+ */
+.pin-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  margin-left: 3px;
 }
-@keyframes pin-live-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.35; transform: scale(0.8); }
+.pin-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.45;
+  animation: pin-dot-lift 1.8s ease-in-out infinite;
+}
+/* The stagger is the whole effect: each dot starts as the one before it
+   peaks, and the tail of the cycle is a rest before the wave begins again. */
+.pin-dots > span:nth-child(2) { animation-delay: 0.26s; }
+.pin-dots > span:nth-child(3) { animation-delay: 0.52s; }
+
+@keyframes pin-dot-lift {
+  0%, 44%, 100% { transform: translateY(0); opacity: 0.45; }
+  22% { transform: translateY(-3.5px); opacity: 1; }
+}
+
+/* Motion is the message here, so without it the dots simply hold at full
+   strength — an ellipsis that is present rather than one that performs. */
+@media (prefers-reduced-motion: reduce) {
+  .pin-dots > span {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 /* The pin riding the cursor while picking a relationship target. */
@@ -1195,15 +1267,18 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   height: 26px;
   flex: 0 0 auto;
   border-radius: 999px;
-  /* Quiet at rest — the arrow is an offer, not an alarm. It takes the ink
-     fill only when the pointer commits to it. */
+  /* Quiet while there is nothing to send; loaded with ink the moment there
+     is. The fill is the "ready" cue — rest stays gray, as it should. */
   background: var(--pin-paper-sunk);
   color: var(--pin-ink-muted);
   transition: background 120ms ease, color 120ms ease;
 }
-.pin-note__send:hover:not(:disabled) {
+.pin-note__send:not(:disabled) {
   background: var(--pin-on-fill);
   color: var(--pin-on-ink);
+}
+.pin-note__send:hover:not(:disabled) {
+  background: var(--pin-ink-lift);
 }
 /* Light grey on grey — the same "will not act" state as a disabled Capture or
    Ready for agent, so the three read as one control in three places. */
@@ -1929,6 +2004,27 @@ button[aria-expanded="true"] .pin-row__chevron {
   font-size: 11px;
 }
 .pin-change--more:hover { color: var(--pin-ink); }
+
+/*
+ * A row that explains itself instead of offering something — in faint ink,
+ * not amber: it is a fact about the source, never a warning about the user.
+ * The empty checkbox column keeps the property names aligned with the rows
+ * above, so this reads as the same list's quiet tail.
+ */
+.pin-change--blocked {
+  grid-template-columns: 15px 74px 1fr;
+  cursor: default;
+}
+.pin-change--blocked:hover {
+  background: transparent;
+}
+.pin-change--blocked .pin-change__name,
+.pin-change--blocked .pin-change__caption {
+  color: var(--pin-ink-faint);
+}
+.pin-change__caption--lead {
+  text-align: left;
+}
 
 .pin-section-label {
   font-size: 11px;

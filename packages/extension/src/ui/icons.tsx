@@ -67,21 +67,53 @@ export function CursorIcon({ size = 18 }: IconProps) {
   );
 }
 
+/*
+ * The pushpin lives here once, as two contours.
+ *
+ * `PIN_SILHOUETTE` is the pin's outer edge; `PIN_HOLE` is the inner contour
+ * that evenodd subtracts to make it read as an outline. Every pin in the
+ * product — the toolbar's, the Capture button's, the shelf's — draws these
+ * exact curves, so the family cannot drift into two different pins. Only a
+ * rotation and which contours are painted separate them.
+ */
+const PIN_SILHOUETTE = `M 11.74 3.41 C 11.53 3.49, 11.14 3.92, 10.88 4.37 C 10.13 5.65, 8.93 6.69, 7.81 7.02 C 6.62
+  7.37, 5.97 7.7, 5.12 8.37 C 4.59 8.79, 4.46 9.01, 4.46 9.48 C 4.46 9.95, 4.59 10.17, 5.16 10.62
+  C 5.54 10.93, 6.03 11.42, 6.24 11.71 L 6.62 12.24 5.01 13.86 C 3.41 15.47, 3.2 15.82, 3.61 16.23
+  C 4.07 16.7, 4.57 16.42, 6.13 14.86 C 7.92 13.05, 7.77 13.06, 9.07 14.81 C 9.91 15.94, 10.34 16,
+  11.3 15.13 C 12 14.49, 12.42 13.72, 12.74 12.44 C 13.02 11.33, 14.64 9.43, 15.83 8.82 C 16.58
+  8.44, 16.79 8.22, 16.8 7.82 C 16.8 7.51, 12.82 3.45, 12.41 3.35 C 12.25 3.3, 11.94 3.33, 11.74
+  3.41`;
+
+const PIN_HOLE = `M 11.64 5.86 C 10.88 6.92, 9.41 8.09, 8.51 8.33 C 8.08 8.45, 7.34 8.74, 6.88 8.97 L 6.03
+  9.4 8.19 11.68 C 10.2 13.82, 10.37 13.95, 10.66 13.68 C 10.83 13.53, 11.1 12.96, 11.25 12.41 C
+  11.65 11.01, 12.22 10.12, 13.56 8.76 L 14.72 7.58 13.51 6.37 C 12.85 5.7, 12.27 5.16, 12.22 5.16
+  C 12.17 5.16, 11.91 5.48, 11.64 5.86`;
+
 export function PinIcon({ size = 18 }: IconProps) {
   return (
     <svg {...traced(size)}>
-      <path
-        d="M 11.74 3.41 C 11.53 3.49, 11.14 3.92, 10.88 4.37 C 10.13 5.65, 8.93 6.69, 7.81 7.02 C 6.62
-          7.37, 5.97 7.7, 5.12 8.37 C 4.59 8.79, 4.46 9.01, 4.46 9.48 C 4.46 9.95, 4.59 10.17, 5.16 10.62
-          C 5.54 10.93, 6.03 11.42, 6.24 11.71 L 6.62 12.24 5.01 13.86 C 3.41 15.47, 3.2 15.82, 3.61 16.23
-          C 4.07 16.7, 4.57 16.42, 6.13 14.86 C 7.92 13.05, 7.77 13.06, 9.07 14.81 C 9.91 15.94, 10.34 16,
-          11.3 15.13 C 12 14.49, 12.42 13.72, 12.74 12.44 C 13.02 11.33, 14.64 9.43, 15.83 8.82 C 16.58
-          8.44, 16.79 8.22, 16.8 7.82 C 16.8 7.51, 12.82 3.45, 12.41 3.35 C 12.25 3.3, 11.94 3.33, 11.74
-          3.41 M 11.64 5.86 C 10.88 6.92, 9.41 8.09, 8.51 8.33 C 8.08 8.45, 7.34 8.74, 6.88 8.97 L 6.03
-          9.4 8.19 11.68 C 10.2 13.82, 10.37 13.95, 10.66 13.68 C 10.83 13.53, 11.1 12.96, 11.25 12.41 C
-          11.65 11.01, 12.22 10.12, 13.56 8.76 L 14.72 7.58 13.51 6.37 C 12.85 5.7, 12.27 5.16, 12.22 5.16
-          C 12.17 5.16, 11.91 5.48, 11.64 5.86"
-      />
+      <path d={`${PIN_SILHOUETTE} ${PIN_HOLE}`} />
+    </svg>
+  );
+}
+
+/**
+ * The shelf's summon pin: the same glyph, stood upright.
+ *
+ * The traced pin points down-left at roughly 45°, which is right for a
+ * toolbar but wrong for a row of controls, so it is rotated about its own
+ * centre rather than redrawn. Filling is done by painting the silhouette
+ * *behind* the outline: normally it is transparent and the outline reads as
+ * usual, and when it takes ink it shows through the hole, turning the very
+ * same pin solid. One drawing, two states, no second icon to keep in sync.
+ */
+export function PinUprightIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...traced(size)} className={className}>
+      <g transform="rotate(-45 10 10)">
+        <path className="pin-upright__solid" d={PIN_SILHOUETTE} fill="none" />
+        <path d={`${PIN_SILHOUETTE} ${PIN_HOLE}`} />
+      </g>
     </svg>
   );
 }

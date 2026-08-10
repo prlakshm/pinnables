@@ -375,7 +375,7 @@ export function PinObject({
             data-no-drag
             style={{ width: 20, height: 20, flex: "0 0 auto" }}
             onClick={onDismiss}
-            title="Hide from this page — the pin stays on the board"
+            title="Hide from this page. The pin stays on the board"
             aria-label="Hide pin from page"
           >
             <CloseIcon size={13} />
@@ -405,7 +405,7 @@ export function PinObject({
             className="pin-chip pin-object__away"
             data-no-drag
             onClick={awayRoute.onOpen}
-            title={`This component lives on ${awayRoute.route} — a capture here can’t update live`}
+            title={`This component lives on ${awayRoute.route}. A capture here can’t update live`}
             aria-label={`Go to ${awayRoute.route} for live updates`}
           >
             go to {awayRoute.route} for live updates ↗
@@ -491,7 +491,13 @@ export function PinObject({
             </div>
           )}
 
-          <Composer count={selectionCount} onCommit={onCommit} onRelate={onRelate} autoFocus />
+          <Composer
+            count={selectionCount}
+            onCommit={onCommit}
+            onRelate={onRelate}
+            agentPinIds={[pin.id]}
+            autoFocus
+          />
 
           {targetCount > 0 && (
             <div className="pin-note__rel">

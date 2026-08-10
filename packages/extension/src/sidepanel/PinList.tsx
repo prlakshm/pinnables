@@ -1,7 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
 import { describeDrawings, pinLabel, sortedByOrder, type Board, type Pin } from "@pinnables/shared";
 import { send, type Contract } from "../lib/messages";
-import { ArrowUpRightIcon, CheckIcon, LinkIcon, PinIcon, TrashIcon } from "../ui/icons";
+import { ArrowUpRightIcon, CheckIcon, LinkIcon, PinUprightIcon, TrashIcon } from "../ui/icons";
+
+/**
+ * Which pins are currently part of the page's focus context, published by the
+ * overlay. The upright pin icon fills for exactly these rows — the shelf
+ * answering "is this one on screen right now" at a glance.
+ */
+function useOnScreenPins(): ReadonlySet<string> {
+  const [onScreen, setOnScreen] = useState<ReadonlySet<string>>(() => new Set<string>());
+  useEffect(() => {
+    let cancelled = false;
+    void chrome.storage.local.get("onScreenPins").then((bag) => {
+      if (!cancelled) setOnScreen(new Set((bag.onScreenPins as string[]) ?? []));
+    });
+    const onChanged = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== "local" || !changes.onScreenPins) return;
+      setOnScreen(new Set((changes.onScreenPins.newValue as string[]) ?? []));
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => {
+      cancelled = true;
+      chrome.storage.onChanged.removeListener(onChanged);
+    };
+  }, []);
+  return onScreen;
+}
 import { Inspector } from "./Inspector";
 import { RenamableTitle } from "./RenamableTitle";
 
@@ -24,6 +52,7 @@ export function PinList({
   onRelationshipCreated?: () => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const onScreenPins = useOnScreenPins();
   /** The pin every picked pin will be made to match — `sourcePinId` in the contract. */
   const [source, setSource] = useState<string | null>(null);
   const [targets, setTargets] = useState<Set<string>>(new Set());
@@ -90,6 +119,7 @@ export function PinList({
           pin={pin}
           board={board}
           expanded={expanded === pin.id}
+          onScreen={onScreenPins.has(pin.id)}
           onExpand={() => setExpanded((id) => (id === pin.id ? null : pin.id))}
           relating={source !== null}
           isSource={source === pin.id}
@@ -140,6 +170,8 @@ interface PinRowProps {
   pin: Pin;
   board: Board;
   expanded: boolean;
+  /** Whether this pin is part of the page's focus context right now. */
+  onScreen: boolean;
   onExpand: () => void;
   relating: boolean;
   isSource: boolean;
@@ -153,6 +185,7 @@ function PinRow({
   pin,
   board,
   expanded,
+  onScreen,
   onExpand,
   relating,
   isSource,
@@ -313,8 +346,9 @@ function PinRow({
                 * chevron was spending the trailing slot on the lesser one.
                 */}
               <button
-                className="pin-icon-btn"
+                className="pin-icon-btn pin-summon"
                 style={{ width: 24, height: 24 }}
+                data-active={onScreen}
                 onClick={() => {
                   void (async () => {
                     setRevealIssue(null);
@@ -327,9 +361,10 @@ function PinRow({
                   })();
                 }}
                 aria-label={`Show ${title || "pin"} on the page`}
-                title="Show the pinned capture on the page"
+                aria-pressed={onScreen}
+                title={onScreen ? "On the page now" : "Show the pinned capture on the page"}
               >
-                <PinIcon size={14} />
+                <PinUprightIcon size={15} />
               </button>
               <button
                 className="pin-icon-btn pin-icon-btn--danger"

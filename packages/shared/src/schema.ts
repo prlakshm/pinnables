@@ -84,6 +84,14 @@ export const DrawShapeSchema = z.object({
 export const LiveSendSchema = z.object({
   text: z.string(),
   at: z.string(),
+  /** The service's run id, for tying an outcome back to this message. */
+  messageId: z.string().nullable().default(null),
+  /**
+   * Where the run stands. New sends are written as "working" explicitly; the
+   * default covers entries from before outcomes existed, which are long
+   * finished — "done" keeps them out of the waiting list.
+   */
+  state: z.enum(["working", "done", "failed"]).default("done"),
 });
 
 export const BoardStatusSchema = z.enum(["draft", "ready", "in-progress", "done"]);

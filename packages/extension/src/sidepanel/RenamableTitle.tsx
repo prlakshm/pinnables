@@ -119,7 +119,7 @@ export function RenamableTitle({
         setDraft(shown);
         setEditing(true);
       }}
-      title="Click to rename — this is what you call it, not what the code calls it"
+      title="Click to rename. This is what you call it, not what the code calls it"
     >
       {shown}
     </button>

@@ -141,6 +141,11 @@ export interface Contract {
       relationshipId?: string;
       /** Marks the strokes flushed with this message — see DrawShape.ownerPinId. */
       drawingSummary?: string;
+      /**
+       * The messageId this send replaces. A resent message supersedes its
+       * failed ancestor in the pins' history — one intention, one entry.
+       */
+      resendOf?: string;
     };
     res: { messageId: string };
   };
@@ -149,6 +154,17 @@ export interface Contract {
   "agent/status": {
     req: { messageId: string };
     res: { state: "working" | "done" | "failed"; detail: string | null };
+  };
+
+  /**
+   * Record how a live run ended on the pins that sent it, so the message's
+   * "Waiting…" tag can resolve — and survive the surface that happened to be
+   * polling. Written to the board because the outcome is a fact about the
+   * message, not about whichever bar was open when it finished.
+   */
+  "agent/recordOutcome": {
+    req: { messageId: string; state: "done" | "failed" };
+    res: Record<string, never>;
   };
 
   /**
