@@ -47,7 +47,7 @@ export interface CursorSendResult {
 }
 
 export interface CursorStatus {
-  state: "working" | "done" | "failed";
+  state: "starting" | "working" | "done" | "failed";
   detail: string | null;
   agentId?: string;
   runId?: string;
@@ -164,7 +164,10 @@ interface GetAgentResponse {
 
 function mapRunStatus(status: CursorRunStatus, detail?: string | null): CursorStatus {
   switch (status) {
+    // CREATING is the run existing, not the agent touching code. Only RUNNING
+    // is evidence that work has actually begun.
     case "CREATING":
+      return { state: "starting", detail: null };
     case "RUNNING":
       return { state: "working", detail: null };
     case "FINISHED":

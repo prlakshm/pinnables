@@ -22,6 +22,8 @@ interface ComposerProps {
 type Phase =
   | { kind: "idle" }
   | { kind: "sending" }
+  /** Accepted by the service, but the agent is not confirmed running yet. */
+  | { kind: "starting"; messageId: string }
   | { kind: "working"; messageId: string }
   | { kind: "done" }
   | { kind: "failed"; detail: string }
@@ -114,7 +116,13 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
       try {
         const status = await send("agent/status", { messageId });
         if (!alive.current) return;
+        if (status.state === "starting") {
+          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          return;
+        }
         if (status.state === "working") {
+          setPhase({ kind: "working", messageId });
+          void send("agent/recordOutcome", { messageId, state: "working" }).catch(() => {});
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
@@ -148,7 +156,7 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
       const { messageId } = await send("agent/send", { text: message, pinIds: agentPinIds });
       if (!alive.current) return;
       setDraft("");
-      setPhase({ kind: "working", messageId });
+      setPhase({ kind: "starting", messageId });
       poll(messageId);
     } catch (err) {
       if (!alive.current) return;
@@ -165,10 +173,17 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
   }, [agentEnabled, sendToAgent, stash]);
 
   const multi = count > 1;
-  const busy = saving || phase.kind === "sending" || phase.kind === "working";
+  const busy =
+    saving ||
+    phase.kind === "sending" ||
+    phase.kind === "starting" ||
+    phase.kind === "working";
 
   const statusLine = (() => {
     switch (phase.kind) {
+      case "sending":
+      case "starting":
+        return <>Sending to agent<WorkingDots /></>;
       case "working":
         return <>Agent is working<WorkingDots /></>;
       case "done":

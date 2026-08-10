@@ -594,15 +594,17 @@ const handlers: Handlers = {
   },
 
   async "board/markReady"({ boardId }) {
-    let push:
-      | {
-          pointer: string;
-          transport: "cursor" | "clipboard";
-          messageId?: string;
-          agentId?: string;
-          url?: string;
-        }
-      | null = null;
+    type BoardPush = {
+      pointer: string;
+      transport: "cursor" | "clipboard";
+      messageId?: string;
+      agentId?: string;
+      url?: string;
+    };
+    // A holder rather than a plain `let`: the assignment happens inside the
+    // mutateBoard callback, which control-flow analysis does not credit, so a
+    // plain variable would still read as its initializer (null) below.
+    const push: { value: BoardPush | null } = { value: null };
 
     const board = await store.mutateBoard(boardId, async (current) => {
       if (!(await isServiceOnline())) {
@@ -627,7 +629,7 @@ const handlers: Handlers = {
         // that path starts the agent with no clipboard paste. Otherwise we
         // materialize to disk and return a pointer for the user to paste.
         const result = await pushBoard(ready, screenshots);
-        push = {
+        push.value = {
           pointer: result.pointer,
           transport: result.transport,
           messageId: result.messageId || undefined,
@@ -643,14 +645,15 @@ const handlers: Handlers = {
     });
 
     await notifyBoardChanged(boardId);
+    const pushed = push.value;
     return {
       board,
-      pointer: push?.pointer ?? `Load Pinnables board "${board.id}" and implement it.`,
+      pointer: pushed?.pointer ?? `Load Pinnables board "${board.id}" and implement it.`,
       materialized: true,
-      transport: push?.transport ?? "clipboard",
-      messageId: push?.messageId ?? null,
-      agentId: push?.agentId ?? null,
-      url: push?.url ?? null,
+      transport: pushed?.transport ?? "clipboard",
+      messageId: pushed?.messageId ?? null,
+      agentId: pushed?.agentId ?? null,
+      url: pushed?.url ?? null,
     };
   },
 
@@ -799,7 +802,7 @@ const handlers: Handlers = {
                   ...pin.liveSends.filter(
                     (sent) => !resendOf || sent.messageId !== resendOf,
                   ),
-                  { text, at: now, messageId, state: "working" as const },
+                  { text, at: now, messageId, state: "starting" as const },
                 ],
                 updatedAt: now,
               }

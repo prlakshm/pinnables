@@ -19,6 +19,8 @@ import { WorkingDots } from "../ui/WorkingDots";
 type SendPhase =
   | { kind: "idle" }
   | { kind: "sending" }
+  /** Accepted by the service, but the agent is not confirmed running yet. */
+  | { kind: "starting"; messageId: string }
   | { kind: "working"; messageId: string }
   | { kind: "done" }
   | { kind: "failed"; detail: string }
@@ -155,7 +157,16 @@ export function SelectionDialog({
       try {
         const status = await send("agent/status", { messageId });
         if (selectionKeyRef.current !== key) return;
+        if (status.state === "starting") {
+          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          return;
+        }
         if (status.state === "working") {
+          // First confirmation that the agent is actually on it. Recorded to
+          // the board so the history tag flips for every surface, not just
+          // whichever bar happens to be polling.
+          setPhase({ kind: "working", messageId });
+          void send("agent/recordOutcome", { messageId, state: "working" }).catch(() => {});
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
@@ -212,7 +223,7 @@ export function SelectionDialog({
           resendOf,
         });
         if (selectionKeyRef.current !== key) return "sent";
-        setPhase({ kind: "working", messageId });
+        setPhase({ kind: "starting", messageId });
         onLiveSent(pins.map((pin) => pin.id));
         poll(messageId, key);
         return "sent";
@@ -262,7 +273,8 @@ export function SelectionDialog({
   useEffect(() => {
     if (!primary) return;
     const pending = primary.liveSends.filter(
-      (sent) => sent.state === "working" && sent.messageId !== null,
+      (sent) =>
+        (sent.state === "starting" || sent.state === "working") && sent.messageId !== null,
     );
     if (pending.length === 0) return;
     let cancelled = false;
@@ -271,7 +283,7 @@ export function SelectionDialog({
         try {
           const status = await send("agent/status", { messageId: sent.messageId! });
           if (cancelled) return;
-          if (status.state !== "working") {
+          if (status.state !== "starting" && status.state !== sent.state) {
             void send("agent/recordOutcome", {
               messageId: sent.messageId!,
               state: status.state,
@@ -301,7 +313,8 @@ export function SelectionDialog({
 
   const name = pinLabel(primary, board.pins);
   const multi = pins.length > 1;
-  const busy = phase.kind === "sending" || phase.kind === "working";
+  const busy =
+    phase.kind === "sending" || phase.kind === "starting" || phase.kind === "working";
   /** Staged board notes, one history line each. */
   const boardNotes = primary.annotation
     .split("\n")
@@ -318,6 +331,7 @@ export function SelectionDialog({
        * and the stash receipts.
        */
       case "sending":
+      case "starting":
         return <>Sending to agent<WorkingDots /></>;
       case "failed":
         return `Couldn’t complete: ${(phase as { detail: string }).detail}`;
@@ -460,7 +474,13 @@ export function SelectionDialog({
                   </button>
                 ) : (
                   <span className="pin-note__tag">
-                    {sent.state === "working" ? <>Working<WorkingDots /></> : "Completed"}
+                    {sent.state === "starting" ? (
+                      <>Sending to agent<WorkingDots /></>
+                    ) : sent.state === "working" ? (
+                      <>Working<WorkingDots /></>
+                    ) : (
+                      "Completed"
+                    )}
                   </span>
                 )}
               </div>

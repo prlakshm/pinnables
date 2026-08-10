@@ -163,17 +163,18 @@ export interface Contract {
   /** Where a live message stands. Every state is verifiable, never guessed. */
   "agent/status": {
     req: { messageId: string };
-    res: { state: "working" | "done" | "failed"; detail: string | null };
+    res: { state: "starting" | "working" | "done" | "failed"; detail: string | null };
   };
 
   /**
-   * Record how a live run ended on the pins that sent it, so the message's
-   * "Waiting…" tag can resolve — and survive the surface that happened to be
-   * polling. Written to the board because the outcome is a fact about the
-   * message, not about whichever bar was open when it finished.
+   * Record where a live run stands on the pins that sent it, so the message's
+   * tag can resolve — and survive the surface that happened to be polling.
+   * Written to the board because how the run is going is a fact about the
+   * message, not about whichever bar was open at the time. "working" is
+   * recorded the moment the service confirms the agent started.
    */
   "agent/recordOutcome": {
-    req: { messageId: string; state: "done" | "failed" };
+    req: { messageId: string; state: "working" | "done" | "failed" };
     res: Record<string, never>;
   };
 
