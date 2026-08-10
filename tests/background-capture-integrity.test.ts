@@ -137,14 +137,26 @@ Object.defineProperty(globalThis, "fetch", {
       return { blob: async () => ({}) } as Response;
     }
     if (url.endsWith("/health")) {
-      return { ok: true } as Response;
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          home: "/tmp",
+          cursor: { configured: false, ok: false, detail: "CURSOR_API_KEY not set" },
+        }),
+      } as Response;
     }
-    if (url.includes("/materialize")) {
+    if (url.includes("/push") || url.includes("/materialize")) {
       const payload = JSON.parse(String(init?.body)) as { board: Board };
       materializedBoards.push(structuredClone(payload.board));
       return {
         ok: true,
-        json: async () => ({ pointer: "test", boardDir: "/tmp/test-board" }),
+        json: async () => ({
+          pointer: "test",
+          boardDir: "/tmp/test-board",
+          messageId: "",
+          transport: "clipboard",
+        }),
       } as Response;
     }
     throw new Error(`Unexpected fetch: ${url}`);
@@ -194,7 +206,7 @@ function installBoard(next: Board): void {
   captureVisibleTabCalls = 0;
   materializedBoards = [];
   memory = {
-    state: { captureMode: true, activeBoardId: BOARD_ID, serviceOnline: false },
+    state: { captureMode: true, activeBoardId: BOARD_ID, serviceOnline: false, cursorOnline: false },
     boardIds: [BOARD_ID],
     [BOARD_KEY]: structuredClone(next),
   };

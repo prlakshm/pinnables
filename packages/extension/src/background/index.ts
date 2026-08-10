@@ -17,8 +17,9 @@ import {
 import * as store from "../lib/store";
 import {
   agentMessageStatus,
+  getHealth,
   isServiceOnline,
-  materializeBoard,
+  pushBoard,
   sendAgentMessage,
 } from "../lib/service";
 import { bitmapCropRect, visibleElementFrame } from "../lib/crop";
@@ -305,15 +306,22 @@ const CLEAR_STASH_KEY = "clearedBoardStash";
 const handlers: Handlers = {
   async "state/get"() {
     const state = await store.getState();
-    return { ...state, serviceOnline: await isServiceOnline() };
+    const health = await getHealth();
+    return {
+      ...state,
+      serviceOnline: Boolean(health?.ok),
+      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
+    };
   },
 
   async "capture/setMode"({ enabled }) {
     const activeTab = await setCaptureMode(enabled);
     if (enabled) await store.ensureActiveBoard();
+    const health = await getHealth();
     return {
       ...(await store.getState()),
-      serviceOnline: await isServiceOnline(),
+      serviceOnline: Boolean(health?.ok),
+      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
       activeTab,
     };
   },
@@ -586,6 +594,16 @@ const handlers: Handlers = {
   },
 
   async "board/markReady"({ boardId }) {
+    let push:
+      | {
+          pointer: string;
+          transport: "cursor" | "clipboard";
+          messageId?: string;
+          agentId?: string;
+          url?: string;
+        }
+      | null = null;
+
     const board = await store.mutateBoard(boardId, async (current) => {
       if (!(await isServiceOnline())) {
         throw new Error("Local service is offline; the board was not submitted");
@@ -605,21 +623,35 @@ const handlers: Handlers = {
         if (full) screenshots[pin.id] = full;
       }
       try {
-        await materializeBoard(ready, screenshots);
+        // Prefer Cursor Cloud Agents when the service has CURSOR_API_KEY —
+        // that path starts the agent with no clipboard paste. Otherwise we
+        // materialize to disk and return a pointer for the user to paste.
+        const result = await pushBoard(ready, screenshots);
+        push = {
+          pointer: result.pointer,
+          transport: result.transport,
+          messageId: result.messageId || undefined,
+          agentId: result.agentId,
+          url: result.url,
+        };
       } catch (error) {
         throw new Error(
-          `Could not write the board for the agent: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not send the board to the agent: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       return ready;
     });
 
-    // MCP cannot push. The pointer is the entire interface between this
-    // product and the agent, so it has to be short and typeable from memory.
-    const pointer = `Load Pinnables board "${board.id}" and implement it.`;
-
     await notifyBoardChanged(boardId);
-    return { board, pointer, materialized: true };
+    return {
+      board,
+      pointer: push?.pointer ?? `Load Pinnables board "${board.id}" and implement it.`,
+      materialized: true,
+      transport: push?.transport ?? "clipboard",
+      messageId: push?.messageId ?? null,
+      agentId: push?.agentId ?? null,
+      url: push?.url ?? null,
+    };
   },
 
   async "pin/update"({ pinId, patch }) {
