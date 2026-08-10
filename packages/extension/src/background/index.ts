@@ -311,6 +311,9 @@ const handlers: Handlers = {
       ...state,
       serviceOnline: Boolean(health?.ok),
       cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
+      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
+      cursorRuntime: health?.cursor?.runtime ?? null,
+      cursorProjectDir: health?.cursor?.cwd ?? null,
     };
   },
 
@@ -322,6 +325,9 @@ const handlers: Handlers = {
       ...(await store.getState()),
       serviceOnline: Boolean(health?.ok),
       cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
+      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
+      cursorRuntime: health?.cursor?.runtime ?? null,
+      cursorProjectDir: health?.cursor?.cwd ?? null,
       activeTab,
     };
   },
@@ -773,7 +779,7 @@ const handlers: Handlers = {
       if (shot) screenshots[pinId] = shot;
     }
 
-    const { messageId } = await sendAgentMessage({
+    const result = await sendAgentMessage({
       text,
       board,
       pinIds,
@@ -781,6 +787,9 @@ const handlers: Handlers = {
       drawingSummary,
       screenshots,
     });
+    const { messageId } = result;
+    const sendState =
+      result.state === "queued" ? ("queued" as const) : ("starting" as const);
 
     /*
      * Delivery recorded only after the service accepted it. `liveSends` is
@@ -802,7 +811,7 @@ const handlers: Handlers = {
                   ...pin.liveSends.filter(
                     (sent) => !resendOf || sent.messageId !== resendOf,
                   ),
-                  { text, at: now, messageId, state: "starting" as const },
+                  { text, at: now, messageId, state: sendState },
                 ],
                 updatedAt: now,
               }
@@ -811,7 +820,7 @@ const handlers: Handlers = {
       };
     });
     await notifyBoardChanged(board.id);
-    return { messageId };
+    return { messageId, url: result.url ?? null, state: sendState };
   },
 
   async "agent/status"({ messageId }) {

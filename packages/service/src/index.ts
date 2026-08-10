@@ -13,8 +13,12 @@ import {
 import { boardDir, pinnablesHome, writeBoard } from "@pinnables/shared/storage";
 import {
   cursorConfigured,
+  cursorRuntime,
   imagesFromScreenshots,
+  isAgentBusyError,
   probeCursor,
+  projectDir,
+  readStickyAgentId,
   sendToCursor,
   statusFromCursor,
   type CursorStatus,
@@ -28,8 +32,10 @@ import {
  * Bound to 127.0.0.1 only. Nothing here should ever be reachable off-machine.
  *
  * Send path (least friction first):
- *   1. Cursor Cloud Agents API when CURSOR_API_KEY is set — press Send, agent runs.
- *   2. Local spawn via PINNABLES_AGENT_CMD / `claude` as a fallback.
+ *   1. Cursor local agent (default) when CURSOR_API_KEY is set — edits
+ *      PINNABLES_PROJECT_DIR / cwd so the running app hot-reloads.
+ *   2. Cursor Cloud Agents when PINNABLES_CURSOR_RUNTIME=cloud.
+ *   3. Local spawn via PINNABLES_AGENT_CMD / `claude` as a fallback.
  */
 
 const PORT = Number(process.env.PINNABLES_PORT ?? 4573);
@@ -89,7 +95,7 @@ async function materialize(board: Board, screenshots: Record<string, string>) {
 /* ------------------------------------------------------------ live messages */
 
 interface LiveMessage {
-  state: "starting" | "working" | "done" | "failed";
+  state: "queued" | "starting" | "working" | "done" | "failed";
   detail: string | null;
   transport?: "cursor" | "local";
   agentId?: string;
@@ -97,13 +103,27 @@ interface LiveMessage {
   url?: string;
 }
 
+interface QueuedCursorSend {
+  id: string;
+  promptText: string;
+  body: LiveMessageBody;
+  board: Board;
+}
+
 /**
  * Each live send becomes one agent run. Cursor Cloud Agents are preferred when
  * configured; otherwise we spawn a local CLI. Status is polled from this map —
  * for Cursor runs we refresh from the API on each status GET.
+ *
+ * Cursor allows one active run per agent. Further Sends enqueue here and
+ * drain when the active run finishes (status poll + background ticker).
  */
 const liveMessages = new Map<string, LiveMessage>();
+const cursorSendQueue: QueuedCursorSend[] = [];
 let liveCounter = 0;
+let queueDraining = false;
+/** Last Cloud Agent URL we handed back — shown in /health for the panel. */
+let lastAgentUrl: string | null = null;
 
 interface LiveMessageBody {
   text: string;
@@ -195,6 +215,7 @@ async function startViaCursor(
     images,
     name: `Pinnables · ${board.title || board.id}`,
   });
+  lastAgentUrl = result.url;
   liveMessages.set(id, {
     // The run exists; whether Cursor has started it is a separate question,
     // answered by the first status refresh.
@@ -203,9 +224,100 @@ async function startViaCursor(
     transport: "cursor",
     agentId: result.agentId,
     runId: result.runId,
-    url: result.url,
+    url: result.url ?? undefined,
   });
-  console.log(`live message ${id} → Cursor ${result.mode} ${result.agentId} / ${result.runId}`);
+  console.log(
+    `live message ${id} → Cursor ${result.runtime} ${result.mode} ${result.agentId} / ${result.runId}` +
+      (result.cwd ? ` @ ${result.cwd}` : ""),
+  );
+}
+
+function activeCursorRun(): LiveMessage | undefined {
+  for (const msg of liveMessages.values()) {
+    if (
+      msg.transport === "cursor" &&
+      (msg.state === "starting" || msg.state === "working") &&
+      msg.runId
+    ) {
+      return msg;
+    }
+  }
+  return undefined;
+}
+
+function shouldQueueCursorSend(): boolean {
+  return Boolean(activeCursorRun()) || cursorSendQueue.length > 0 || queueDraining;
+}
+
+function markQueued(id: string, position: number, hint?: LiveMessage): void {
+  liveMessages.set(id, {
+    state: "queued",
+    detail:
+      position <= 1
+        ? "Queued — waiting for the current Cursor run to finish"
+        : `Queued — ${position} sends ahead`,
+    transport: "cursor",
+    agentId: hint?.agentId,
+    url: hint?.url ?? lastAgentUrl ?? undefined,
+  });
+}
+
+function enqueueCursorSend(item: QueuedCursorSend): void {
+  cursorSendQueue.push(item);
+  markQueued(item.id, cursorSendQueue.length, activeCursorRun());
+  console.log(`live message ${item.id} → queued (#${cursorSendQueue.length})`);
+}
+
+async function drainCursorQueue(): Promise<void> {
+  if (queueDraining) return;
+  queueDraining = true;
+  try {
+    while (cursorSendQueue.length > 0) {
+      if (activeCursorRun()) break;
+      const next = cursorSendQueue.shift()!;
+      try {
+        await startViaCursor(next.id, next.promptText, next.body, next.board);
+      } catch (err) {
+        if (isAgentBusyError(err)) {
+          // Race with Cursor — put it back at the front and wait for a tick.
+          cursorSendQueue.unshift(next);
+          markQueued(next.id, 1, activeCursorRun());
+          console.log(`live message ${next.id} → still busy, keeping queued`);
+          break;
+        }
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error(`queued send ${next.id} failed:`, detail);
+        liveMessages.set(next.id, {
+          state: "failed",
+          detail,
+          transport: "cursor",
+        });
+      }
+    }
+  } finally {
+    queueDraining = false;
+  }
+}
+
+/**
+ * Refresh every in-flight Cursor run from the API, then try to start the next
+ * queued send. Driven by status GETs and a background ticker so the queue
+ * drains even when nothing is polling a finished message.
+ */
+async function refreshActiveCursorRuns(): Promise<void> {
+  const ids = [...liveMessages.entries()]
+    .filter(
+      ([, msg]) =>
+        msg.transport === "cursor" &&
+        (msg.state === "starting" || msg.state === "working") &&
+        msg.agentId &&
+        msg.runId,
+    )
+    .map(([id]) => id);
+  for (const id of ids) {
+    await refreshMessageStatus(id);
+  }
+  await drainCursorQueue();
 }
 
 function startViaLocalSpawn(id: string, promptText: string, messagePath: string): void {
@@ -291,10 +403,19 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
   liveMessages.set(id, { state: "starting", detail: null });
 
   if (cursorConfigured()) {
+    const queuedItem: QueuedCursorSend = { id, promptText, body, board };
+    if (shouldQueueCursorSend()) {
+      enqueueCursorSend(queuedItem);
+      return id;
+    }
     try {
       await startViaCursor(id, promptText, body, board);
       return id;
     } catch (err) {
+      if (isAgentBusyError(err)) {
+        enqueueCursorSend(queuedItem);
+        return id;
+      }
       const detail = err instanceof Error ? err.message : String(err);
       console.error(`Cursor send failed for ${id}, falling back to local:`, detail);
       // If the user configured Cursor, a silent local fallback is confusing —
@@ -319,6 +440,7 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
 async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
   const found = liveMessages.get(id);
   if (!found) return null;
+  if (found.state === "queued") return found;
   if (found.transport !== "cursor" || !found.agentId || !found.runId) return found;
   if (found.state !== "working" && found.state !== "starting") return found;
 
@@ -331,11 +453,16 @@ async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
       url: status.url ?? found.url,
     };
     liveMessages.set(id, next);
+    if (next.url) lastAgentUrl = next.url;
+    if (next.state === "done" || next.state === "failed") {
+      void drainCursorQueue();
+    }
     return next;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const next: LiveMessage = { ...found, state: "failed", detail };
     liveMessages.set(id, next);
+    void drainCursorQueue();
     return next;
   }
 }
@@ -359,6 +486,7 @@ async function pushBoard(body: PushBoardBody): Promise<{
   url?: string;
   pointer: string;
   transport: "cursor" | "clipboard";
+  state?: LiveMessage["state"];
 }> {
   const board = BoardSchema.parse(body.board);
   const screenshots = body.screenshots ?? {};
@@ -385,36 +513,63 @@ async function pushBoard(body: PushBoardBody): Promise<{
     `Work from the relationships and requested values. Do not ask for the board id — ` +
     `everything you need is above. Prefer editing the named source files.`;
 
-  const images = imagesFromScreenshots(
-    screenshots,
-    board.pins.map((p) => p.id),
-  );
-
   liveCounter += 1;
   const id = `msg-${Date.now().toString(36)}${liveCounter.toString(36)}`;
-  const result = await sendToCursor({
+  // Same shape as live messages so queue drain can call startViaCursor.
+  const queueBody: LiveMessageBody = {
     text: promptText,
-    images,
-    name: `Pinnables · ${board.title || board.id}`,
-  });
-  liveMessages.set(id, {
-    state: "working",
-    detail: null,
-    transport: "cursor",
-    agentId: result.agentId,
-    runId: result.runId,
-    url: result.url,
-  });
-
-  return {
-    messageId: id,
-    boardDir: dir,
-    agentId: result.agentId,
-    runId: result.runId,
-    url: result.url,
-    pointer,
-    transport: "cursor",
+    board,
+    pinIds: board.pins.map((p) => p.id),
+    screenshots,
   };
+  const queuedItem: QueuedCursorSend = {
+    id,
+    promptText,
+    body: queueBody,
+    board,
+  };
+
+  const finishFromLive = (): {
+    messageId: string;
+    boardDir: string;
+    agentId?: string;
+    runId?: string;
+    url?: string;
+    pointer: string;
+    transport: "cursor";
+    state?: LiveMessage["state"];
+  } => {
+    const status = liveMessages.get(id);
+    return {
+      messageId: id,
+      boardDir: dir,
+      agentId: status?.agentId,
+      runId: status?.runId,
+      url: status?.url ?? lastAgentUrl ?? undefined,
+      pointer,
+      transport: "cursor",
+      state: status?.state,
+    };
+  };
+
+  if (shouldQueueCursorSend()) {
+    // startViaCursor expects LiveMessageBody.pinIds for images — already set.
+    // Override send path: queue uses startViaCursor which re-reads screenshots.
+    enqueueCursorSend(queuedItem);
+    return finishFromLive();
+  }
+
+  try {
+    // Prefer the same path as live messages so queue drain stays uniform.
+    await startViaCursor(id, promptText, queueBody, board);
+    return finishFromLive();
+  } catch (err) {
+    if (isAgentBusyError(err)) {
+      enqueueCursorSend(queuedItem);
+      return finishFromLive();
+    }
+    throw err;
+  }
 }
 
 const server = createServer((req, res) => {
@@ -426,7 +581,18 @@ const server = createServer((req, res) => {
     if (req.method === "GET" && url.pathname === "/health") {
       const cursor = cursorConfigured()
         ? await probeCursor()
-        : { ok: false, detail: "CURSOR_API_KEY not set" };
+        : {
+            ok: false,
+            detail: "CURSOR_API_KEY not set",
+            runtime: cursorRuntime(),
+            cwd: projectDir(),
+          };
+      const stickyAgentId = cursorConfigured() ? await readStickyAgentId() : null;
+      const agentUrl =
+        cursor.runtime === "cloud"
+          ? lastAgentUrl ??
+            (stickyAgentId ? `https://cursor.com/agents/${stickyAgentId}` : null)
+          : null;
       return send(res, 200, {
         ok: true,
         home: pinnablesHome(),
@@ -434,6 +600,11 @@ const server = createServer((req, res) => {
           configured: cursorConfigured(),
           ok: cursor.ok,
           detail: cursor.detail,
+          runtime: cursor.runtime,
+          cwd: cursor.cwd,
+          agentId: stickyAgentId,
+          agentUrl,
+          queueLength: cursorSendQueue.length,
         },
       });
     }
@@ -446,7 +617,8 @@ const server = createServer((req, res) => {
         return send(res, 200, {
           messageId,
           transport: status?.transport ?? null,
-          url: status?.url ?? null,
+          url: status?.url ?? lastAgentUrl ?? null,
+          state: status?.state ?? null,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -459,6 +631,12 @@ const server = createServer((req, res) => {
     if (req.method === "GET" && liveMatch) {
       const found = await refreshMessageStatus(liveMatch[1]);
       if (!found) return send(res, 404, { error: "Unknown message" });
+      // A status poll is also a chance to notice the active run finished and
+      // start whatever is waiting — do not rely only on the finished message's
+      // own poller (the UI may have moved on).
+      if (found.state === "done" || found.state === "failed" || found.state === "queued") {
+        void refreshActiveCursorRuns();
+      }
       return send(res, 200, found);
     }
 
@@ -507,9 +685,25 @@ const server = createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`pinnables service on http://${HOST}:${PORT}`);
   console.log(`boards → ${pinnablesHome()}`);
-  console.log(
-    cursorConfigured()
-      ? "Cursor Cloud Agents: configured (Send will push)"
-      : "Cursor Cloud Agents: set CURSOR_API_KEY to enable one-click Send",
-  );
+  if (cursorConfigured()) {
+    const runtime = cursorRuntime();
+    if (runtime === "local") {
+      console.log(`Cursor local agent: edits ${projectDir()} (Send applies live)`);
+    } else {
+      console.log("Cursor Cloud Agents: configured (Send will push to remote)");
+    }
+  } else {
+    console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
+  }
+  // Keep the queue moving when the extension is not polling a finished run.
+  if (cursorConfigured()) {
+    setInterval(() => {
+      void refreshActiveCursorRuns().catch((err) => {
+        console.error(
+          "queue tick failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    }, 2_500);
+  }
 });

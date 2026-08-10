@@ -87,12 +87,13 @@ export const LiveSendSchema = z.object({
   /** The service's run id, for tying an outcome back to this message. */
   messageId: z.string().nullable().default(null),
   /**
-   * Where the run stands. New sends are written as "starting" and promoted to
-   * "working" only once the service confirms the agent is running; the default
-   * covers entries from before outcomes existed, which are long finished —
-   * "done" keeps them out of the waiting list.
+   * Where the run stands. New sends are written as "starting" (or "queued"
+   * when Cursor already has an active run) and promoted to "working" only
+   * once the service confirms the agent is running; the default covers
+   * entries from before outcomes existed, which are long finished — "done"
+   * keeps them out of the waiting list.
    */
-  state: z.enum(["starting", "working", "done", "failed"]).default("done"),
+  state: z.enum(["queued", "starting", "working", "done", "failed"]).default("done"),
 });
 
 export const BoardStatusSchema = z.enum(["draft", "ready", "in-progress", "done"]);

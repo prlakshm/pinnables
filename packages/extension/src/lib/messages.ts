@@ -27,8 +27,17 @@ export interface ExtensionState {
   captureMode: boolean;
   activeBoardId: string | null;
   serviceOnline: boolean;
-  /** True when the local service can push to Cursor Cloud Agents. */
+  /** True when the local service can push to Cursor agents. */
   cursorOnline: boolean;
+  /**
+   * Cloud Agents live at cursor.com/agents. Local agents edit the project
+   * directory on disk — no web URL.
+   */
+  cursorAgentUrl: string | null;
+  /** local = edits this machine's checkout; cloud = remote VM / optional PR. */
+  cursorRuntime: "local" | "cloud" | null;
+  /** Directory the local agent writes into (PINNABLES_PROJECT_DIR / cwd). */
+  cursorProjectDir: string | null;
 }
 
 /**
@@ -157,13 +166,17 @@ export interface Contract {
        */
       resendOf?: string;
     };
-    res: { messageId: string };
+    res: { messageId: string; url: string | null; state: "queued" | "starting" | "working" };
   };
 
   /** Where a live message stands. Every state is verifiable, never guessed. */
   "agent/status": {
     req: { messageId: string };
-    res: { state: "starting" | "working" | "done" | "failed"; detail: string | null };
+    res: {
+      state: "queued" | "starting" | "working" | "done" | "failed";
+      detail: string | null;
+      url?: string;
+    };
   };
 
   /**

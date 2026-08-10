@@ -29,6 +29,10 @@ type SendPhase =
   | { kind: "staged" };
 
 const STATUS_POLL_MS = 2_500;
+/** Still "starting" after this long means the run never truly began. */
+const STARTING_TIMEOUT_MS = 5 * 60_000;
+/** "Working" with no outcome after this long is treated as stuck. */
+const WORKING_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * The chord hint teaches once per capture session — on the first annotation
@@ -76,6 +80,14 @@ export function SelectionDialog({
   onDismiss,
 }: SelectionDialogProps) {
   const [draft, setDraft] = useState("");
+  /*
+   * The message the user just sent, echoed into the history immediately —
+   * before the service has accepted it and the board can show it. The line
+   * moves below the input the moment Enter lands, wearing the same black
+   * "Sending to agent…" tag its board entry will wear, instead of the text
+   * sitting in the input while a separate status row narrates.
+   */
+  const [echo, setEcho] = useState<string | null>(null);
   const [phase, setPhase] = useState<SendPhase>({ kind: "idle" });
   /** Whether the board chord's modifier is held right now — the hint flips. */
   const [chordHeld, setChordHeld] = useState(false);
@@ -114,15 +126,12 @@ export function SelectionDialog({
 
   /*
    * "Added to the board" is a receipt, not a state — it confirms and leaves.
-   * The offline fallback lingers longer because it carries a second fact the
-   * user did not ask for: that no agent heard them.
+   * The offline fallback stays: it reports a problem the user has to go fix,
+   * and a notice that clears itself reads as a problem that did.
    */
   useEffect(() => {
-    if (phase.kind !== "staged" && phase.kind !== "staged-offline") return;
-    const timer = window.setTimeout(
-      () => setPhase({ kind: "idle" }),
-      phase.kind === "staged" ? 2_500 : 5_000,
-    );
+    if (phase.kind !== "staged") return;
+    const timer = window.setTimeout(() => setPhase({ kind: "idle" }), 2_500);
     return () => window.clearTimeout(timer);
   }, [phase]);
 
@@ -148,16 +157,37 @@ export function SelectionDialog({
     selectionKeyRef.current = selectionKey;
     setPhase({ kind: "idle" });
     setDraft("");
+    setEcho(null);
     if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
   }, [selectionKey]);
 
   const poll = useCallback((messageId: string, key: string) => {
+    const startedAt = Date.now();
     const tick = async () => {
       if (selectionKeyRef.current !== key) return;
       try {
         const status = await send("agent/status", { messageId });
         if (selectionKeyRef.current !== key) return;
-        if (status.state === "starting") {
+        /*
+         * Stuck runs get called, not waited out. A run that never starts, or
+         * works with no outcome long past any plausible finish, is treated as
+         * failed so its tag becomes Resend instead of a permanent "Working…".
+         */
+        const elapsed = Date.now() - startedAt;
+        if (
+          (status.state === "starting" && elapsed > STARTING_TIMEOUT_MS) ||
+          (status.state === "working" && elapsed > WORKING_TIMEOUT_MS)
+        ) {
+          const detail =
+            status.state === "starting"
+              ? "The agent didn’t start within 5 minutes. Resend to retry."
+              : "No result after 10 minutes. The run looks stuck, so resend to retry.";
+          setPhase({ kind: "failed", detail });
+          void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          return;
+        }
+        // Queued behind an active Cursor run — keep polling; no starting timeout.
+        if (status.state === "queued" || status.state === "starting") {
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
@@ -179,7 +209,7 @@ export function SelectionDialog({
         // what resolves the history tag even after this dialog is gone.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
         if (status.state === "done") {
-          // "Completed" gets its moment before the entry leaves the log.
+          // The "Done" tag gets its moment before the entry leaves the log.
           setCompletedFlash((previous) => new Set(previous).add(messageId));
           window.setTimeout(() => {
             setCompletedFlash((previous) => {
@@ -211,10 +241,19 @@ export function SelectionDialog({
     async (message: string, resendOf?: string): Promise<"sent" | "offline" | "failed"> => {
       const key = selectionKeyRef.current;
       setPhase({ kind: "sending" });
+      // The input hands the line to the history at once; a resend's line is
+      // already there wearing its Resend tag, so it needs no echo.
+      if (!resendOf) {
+        setEcho(message);
+        setDraft("");
+      }
       try {
         const state = await send("state/get", {});
         if (selectionKeyRef.current !== key) return "failed";
-        if (!state.serviceOnline) return "offline";
+        if (!state.serviceOnline) {
+          setEcho(null);
+          return "offline";
+        }
         const { messageId } = await send("agent/send", {
           text: message,
           pinIds: pins.map((pin) => pin.id),
@@ -233,6 +272,10 @@ export function SelectionDialog({
             kind: "failed",
             detail: err instanceof Error && err.message.trim() ? err.message : "Try again.",
           });
+          setEcho(null);
+          // Give the text back to the input unless the user already moved on
+          // to typing something new during the attempt.
+          if (!resendOf) setDraft((current) => (current === "" ? message : current));
         }
         return "failed";
       }
@@ -246,7 +289,6 @@ export function SelectionDialog({
     const result = await deliver(message);
     // No agent to hear it — the board keeps the message instead, visibly.
     if (result === "offline") await stage(message, true);
-    else if (result === "sent") setDraft("");
   }, [draft, phase.kind, deliver, stage]);
 
   /** Retry a failed or orphaned message; the new run supersedes the old entry. */
@@ -274,7 +316,10 @@ export function SelectionDialog({
     if (!primary) return;
     const pending = primary.liveSends.filter(
       (sent) =>
-        (sent.state === "starting" || sent.state === "working") && sent.messageId !== null,
+        (sent.state === "queued" ||
+          sent.state === "starting" ||
+          sent.state === "working") &&
+        sent.messageId !== null,
     );
     if (pending.length === 0) return;
     let cancelled = false;
@@ -283,7 +328,23 @@ export function SelectionDialog({
         try {
           const status = await send("agent/status", { messageId: sent.messageId! });
           if (cancelled) return;
-          if (status.state !== "starting" && status.state !== sent.state) {
+          // The same staleness rule the live poll applies: a run this old
+          // that still claims to be going is stuck, and its tag should offer
+          // Resend rather than promise "Working…" forever.
+          const age = Date.now() - Date.parse(sent.at);
+          const stuck =
+            (status.state === "starting" && age > STARTING_TIMEOUT_MS) ||
+            (status.state === "working" && age > WORKING_TIMEOUT_MS);
+          if (stuck) {
+            void send("agent/recordOutcome", {
+              messageId: sent.messageId!,
+              state: "failed",
+            }).catch(() => {});
+          } else if (
+            status.state !== "queued" &&
+            status.state !== "starting" &&
+            status.state !== sent.state
+          ) {
             void send("agent/recordOutcome", {
               messageId: sent.messageId!,
               state: status.state,
@@ -302,6 +363,12 @@ export function SelectionDialog({
       cancelled = true;
     };
   }, [primary?.id]);
+
+  // The echo stands in only until the board carries the real entry.
+  useEffect(() => {
+    if (echo === null) return;
+    if (primary?.liveSends.some((sent) => sent.text === echo)) setEcho(null);
+  }, [echo, primary?.liveSends]);
 
   const stageNow = useCallback(async () => {
     const message = draft.trim();
@@ -324,21 +391,16 @@ export function SelectionDialog({
   const statusLine = (() => {
     switch (phase.kind) {
       /*
-       * Only transit gets a row of its own. Once the message lands in the
-       * history, its black "Waiting…" tag is the working indicator — and a
-       * "done" row would double the Completed tag the same way. The row
-       * speaks only for states the history cannot: transit, failure detail,
-       * and the stash receipts.
+       * The row exists only to raise an alarm. Transit and completion are
+       * told by the history line's black tag; a stashed note shows up as its
+       * own history line the moment the board records it. What the history
+       * cannot say is that something went wrong — so that is all this row
+       * says, dressed in the board banner's alarm colours.
        */
-      case "sending":
-      case "starting":
-        return <>Sending to agent<WorkingDots /></>;
       case "failed":
         return `Couldn’t complete: ${(phase as { detail: string }).detail}`;
       case "staged-offline":
         return "No agent connected. Added to the board instead.";
-      case "staged":
-        return "Added to the board.";
       default:
         return null;
     }
@@ -443,7 +505,7 @@ export function SelectionDialog({
         * history while you type the next line. Staged notes first, delivered
         * messages after, each marked for what it is.
         */}
-      {pins.length === 1 && (boardNotes.length > 0 || primary.liveSends.length > 0) && (
+      {pins.length === 1 && (boardNotes.length > 0 || primary.liveSends.length > 0 || echo !== null) && (
         <div className="pin-note__history">
           {boardNotes.map((note, index) => (
             <div key={`note-${index}`} className="pin-note__history-item">
@@ -474,17 +536,30 @@ export function SelectionDialog({
                   </button>
                 ) : (
                   <span className="pin-note__tag">
-                    {sent.state === "starting" ? (
+                    {/* Dots mean in motion; a bare word means settled. */}
+                    {sent.state === "queued" ? (
+                      "Queued"
+                    ) : sent.state === "done" ? (
+                      "Done"
+                    ) : sent.state === "starting" ? (
                       <>Sending to agent<WorkingDots /></>
-                    ) : sent.state === "working" ? (
-                      <>Working<WorkingDots /></>
                     ) : (
-                      "Completed"
+                      <>Working<WorkingDots /></>
                     )}
                   </span>
                 )}
               </div>
             ))}
+          {/* The just-sent line, shown here the instant Enter lands; the
+              board's own entry takes over as soon as the service accepts. */}
+          {echo !== null && !primary.liveSends.some((sent) => sent.text === echo) && (
+            <div className="pin-note__history-item">
+              <span className="pin-note__history-text">{echo}</span>
+              <span className="pin-note__tag">
+                Sending to agent<WorkingDots />
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -495,7 +570,12 @@ export function SelectionDialog({
         </div>
       )}
       {statusLine && (
-        <div className="pin-note__rel" data-state={phase.kind} role="status" aria-live="polite">
+        <div
+          className="pin-note__rel pin-note__alert"
+          data-state={phase.kind}
+          role="alert"
+          aria-live="assertive"
+        >
           {statusLine}
         </div>
       )}

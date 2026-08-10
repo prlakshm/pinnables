@@ -1321,6 +1321,23 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   color: var(--pin-ink-muted);
 }
 
+/*
+ * The status row only speaks up when something needs attention, so when it
+ * does it wears the board banner's alarm dress: the same pale amber field,
+ * with red text for the error itself. Quiet rows stay .pin-note__rel plain.
+ */
+.pin-note__alert {
+  display: flex;
+  align-items: flex-start;
+  margin: 0 11px 8px;
+  padding: 8px 10px;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--pin-red) 24%, var(--pin-rule));
+  background: var(--pin-amber-soft);
+  color: var(--pin-red);
+  line-height: 1.5;
+}
+
 /* ---------------------------------------------------------------- draw mode */
 
 /*
@@ -2073,6 +2090,11 @@ button[aria-expanded="true"] .pin-row__chevron {
   color: var(--pin-amber);
   font-size: 12px;
   line-height: 1.5;
+}
+.pin-banner a {
+  color: inherit;
+  font-weight: 600;
+  text-underline-offset: 2px;
 }
 .pin-banner--error {
   background: var(--pin-red-tint);

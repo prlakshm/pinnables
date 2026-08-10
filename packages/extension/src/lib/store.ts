@@ -19,6 +19,9 @@ const DEFAULT_STATE: ExtensionState = {
   activeBoardId: null,
   serviceOnline: false,
   cursorOnline: false,
+  cursorAgentUrl: null,
+  cursorRuntime: null,
+  cursorProjectDir: null,
 };
 
 async function get<T>(key: string): Promise<T | undefined> {
