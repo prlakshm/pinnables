@@ -321,7 +321,7 @@ export function App() {
     setPhase("idle");
   }, [reload]);
 
-  const pinCount = board?.pins.length ?? 0;
+  const pinCount = board?.pins.filter((pin) => !pin.provisional).length ?? 0;
   const relCount = board?.relationships.length ?? 0;
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {

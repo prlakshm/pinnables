@@ -117,6 +117,13 @@ export interface Contract {
     res: { board: Board };
   };
   "pin/delete": { req: { pinId: string }; res: { board: Board } };
+  /**
+   * Quietly remove a provisional pin whose selection was dismissed unspoken.
+   * The worker verifies silence itself — no annotation, sends, drawings,
+   * relationships, group or name — so a discard that races a promotion is a
+   * safe no-op rather than a lost pin.
+   */
+  "pin/discardProvisional": { req: { pinId: string }; res: { discarded: boolean } };
   "pin/reorder": { req: { pinId: string; beforePinId: string | null }; res: { board: Board } };
   "pin/setStatus": { req: { pinId: string; status: PinStatus }; res: { board: Board } };
   "pin/revealSource": { req: { pinId: string }; res: { ok: boolean } };
@@ -197,6 +204,15 @@ export interface Contract {
    * when needed — same delivery machinery as pin/revealSource.
    */
   "pin/summon": { req: { pinId: string }; res: { ok: boolean } };
+  /**
+   * A multi-selection that received a message becomes a group — that is the
+   * moment it stops being an ephemeral gesture and starts being a
+   * conversation worth reopening. Members already sharing a group keep it;
+   * otherwise the newest grouping wins.
+   */
+  "group/record": { req: { pinIds: string[] }; res: { groupId: string } };
+  /** Put the whole group back on screen as the live multi-selection. */
+  "group/summon": { req: { groupId: string }; res: { ok: boolean } };
   /**
    * The other half of the shelf pin's toggle: take this pin's capture off the
    * page (and defocus it, if it was the live selection). No navigation — a
@@ -295,6 +311,11 @@ export type Broadcast =
   | { kind: "summon-pins"; pinIds: string[] }
   /** Take these pins off the page; live selections among them defocus. */
   | { kind: "dismiss-pins"; pinIds: string[] }
+  /**
+   * Reopen a messaged multi-selection: live-select every member on its route
+   * so the combined annotation bar returns with the group's shared history.
+   */
+  | { kind: "summon-group"; pinIds: string[] }
   /**
    * A relationship was just created, whichever surface did it. The panel
    * opens the Relationships tab scrolled to this card; the page puts the

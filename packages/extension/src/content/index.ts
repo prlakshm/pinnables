@@ -129,5 +129,10 @@ function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond
 
   if (message.kind === "focus-relationship") {
     void ensureOverlay().then((o) => o.focusRelationship(message));
+    return;
+  }
+
+  if (message.kind === "summon-group") {
+    void ensureOverlay().then((o) => o.summonGroup(message));
   }
 }

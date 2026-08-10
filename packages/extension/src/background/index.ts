@@ -143,6 +143,27 @@ async function armTab(tabId: number, enabled: boolean): Promise<TabArmState> {
 }
 
 /**
+ * A provisional pin is silent while nothing about it carries user intent.
+ * Silence, not the flag alone, is what authorizes discarding: a discard
+ * racing a promotion sees the annotation/relationship/drawing that made the
+ * pin real and backs off.
+ */
+function isSilentProvisional(pin: Pin, board: Board): boolean {
+  if (!pin.provisional) return false;
+  if (pin.annotation.trim() !== "" || pin.liveSends.length > 0) return false;
+  if (pin.name !== null || pin.groupId !== null) return false;
+  if (Object.keys(pin.styleEdits).length > 0) return false;
+  if (
+    board.relationships.some(
+      (rel) => rel.sourcePinId === pin.id || rel.targetPinIds.includes(pin.id),
+    )
+  )
+    return false;
+  if (board.pins.some((p) => p.drawings.some((d) => d.ownerPinId === pin.id))) return false;
+  return true;
+}
+
+/**
  * Serialize capture-state delivery per tab and coalesce adjacent requests for
  * the same state.
  *
@@ -272,7 +293,30 @@ async function deliverToPage(url: string, message: Broadcast): Promise<boolean> 
 }
 
 /** Arms every tab, and reports what happened to the one in front. */
+/**
+ * Drop silent provisionals left behind by a session that never got to say
+ * goodbye — a closed tab, a crashed page. Runs when capture arms: a new
+ * session must not inherit unspoken receipts from a dead one.
+ */
+async function sweepSilentProvisionals(): Promise<void> {
+  const board = await store.ensureActiveBoard().catch(() => null);
+  if (!board || board.status !== "draft") return;
+  const dropped: string[] = [];
+  await store.mutateBoard(board.id, (b) => {
+    if (b.status !== "draft") return b;
+    const keep = b.pins.filter((pin) => {
+      const silent = isSilentProvisional(pin, b);
+      if (silent) dropped.push(pin.id);
+      return !silent;
+    });
+    return dropped.length === 0 ? b : { ...b, pins: keep };
+  });
+  for (const pinId of dropped) await store.dropScreenshot(pinId);
+  if (dropped.length > 0) await notifyBoardChanged(board.id);
+}
+
 async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
+  if (enabled) await sweepSilentProvisionals();
   await store.patchState({ captureMode: enabled });
   const message: Broadcast = { kind: "capture-mode", enabled };
   // `tabs.sendMessage` below updates page overlays. Extension pages such as the
@@ -418,6 +462,9 @@ const handlers: Handlers = {
         drawings: [],
         order: highest + 1,
         groupId: null,
+        // Born unspoken. The shelf hears about this pin when the user says
+        // something to it; until then it is a receipt held in reserve.
+        provisional: true,
         url: element.url,
         route: element.route,
         viewport: element.viewport,
@@ -524,11 +571,20 @@ const handlers: Handlers = {
       const pinId = existing?.id ?? store.nextId("pin");
       if (screenshot) await store.putScreenshot(pinId, screenshot.full, screenshot.thumb);
 
+      // Marks made while a pin was selected are that pin speaking.
+      const owners = new Set(
+        shapes.map((shape) => shape.ownerPinId).filter((id): id is string => id !== null),
+      );
+      const promote = (pins: Pin[]): Pin[] =>
+        pins.map((pin) =>
+          owners.has(pin.id) && pin.provisional ? { ...pin, provisional: false } : pin,
+        );
+
       if (existing) {
         savedPin = { ...existing, drawings: shapes, url, viewport, updatedAt: now };
         return {
           ...current,
-          pins: current.pins.map((p) => (p.id === existing.id ? savedPin! : p)),
+          pins: promote(current.pins.map((p) => (p.id === existing.id ? savedPin! : p))),
         };
       }
 
@@ -541,6 +597,7 @@ const handlers: Handlers = {
         drawings: shapes,
         order: highest + 1,
         groupId: null,
+        provisional: false,
         url,
         route,
         viewport,
@@ -567,7 +624,7 @@ const handlers: Handlers = {
         createdAt: now,
         updatedAt: now,
       };
-      return { ...current, pins: [...current.pins, savedPin] };
+      return { ...current, pins: promote([...current.pins, savedPin]) };
     });
     if (droppedScreenshot) await store.dropScreenshot(droppedScreenshot);
     await notifyBoardChanged(board.id);
@@ -600,6 +657,7 @@ const handlers: Handlers = {
   },
 
   async "board/markReady"({ boardId }) {
+    const droppedSilent: string[] = [];
     type BoardPush = {
       pointer: string;
       transport: "cursor" | "clipboard";
@@ -620,8 +678,16 @@ const handlers: Handlers = {
       // A capture already ahead of us finishes first; one arriving now queues
       // behind us and will be rejected after the board becomes ready.
       await setCaptureMode(false);
+      // Unspoken receipts never leave the browser: silent provisionals are
+      // dropped at the door, and anything that spoke sheds the flag.
+      const spoken = current.pins.filter((pin) => {
+        const silent = isSilentProvisional(pin, current);
+        if (silent) droppedSilent.push(pin.id);
+        return !silent;
+      });
       const ready: Board = {
         ...current,
+        pins: spoken.map((pin) => (pin.provisional ? { ...pin, provisional: false } : pin)),
         status: "ready",
         generatedAt: new Date().toISOString(),
       };
@@ -650,6 +716,7 @@ const handlers: Handlers = {
       return ready;
     });
 
+    for (const pinId of droppedSilent) await store.dropScreenshot(pinId);
     await notifyBoardChanged(boardId);
     const pushed = push.value;
     return {
@@ -670,7 +737,11 @@ const handlers: Handlers = {
       return {
         ...b,
         pins: b.pins.map((p) =>
-          p.id === pinId ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p,
+          p.id === pinId
+            ? // Any direct edit is the user speaking — the pin stops being
+              // provisional the moment it carries their words.
+              { ...p, ...patch, provisional: false, updatedAt: new Date().toISOString() }
+            : p,
         ),
       };
     });
@@ -680,6 +751,25 @@ const handlers: Handlers = {
 
   async "pin/setStatus"({ pinId, status }) {
     return handlers["pin/update"]({ pinId, patch: { status } }, {} as chrome.runtime.MessageSender);
+  },
+
+  async "pin/discardProvisional"({ pinId }) {
+    let discarded = false;
+    const found = await store.boardForPin(pinId).catch(() => null);
+    if (!found) return { discarded };
+    await store.mutateBoard(found.id, (b) => {
+      if (b.status !== "draft") return b;
+      const pin = b.pins.find((p) => p.id === pinId);
+      if (!pin || !isSilentProvisional(pin, b)) return b;
+      discarded = true;
+      // Silent by definition means unreferenced — no relationship cleanup.
+      return { ...b, pins: b.pins.filter((p) => p.id !== pinId) };
+    });
+    if (discarded) {
+      await store.dropScreenshot(pinId);
+      await notifyBoardChanged(found.id);
+    }
+    return { discarded };
   },
 
   async "pin/delete"({ pinId }) {
@@ -758,6 +848,44 @@ const handlers: Handlers = {
     return { ok: await deliverToPage(anchor.url, { kind: "summon-pins", pinIds }) };
   },
 
+  async "group/record"({ pinIds }) {
+    const board = await store.ensureActiveBoard();
+    let groupId = "";
+    await store.mutateBoard(board.id, (b) => {
+      assertDraftBoard(b);
+      const members = b.pins.filter((pin) => pinIds.includes(pin.id));
+      const shared = members[0]?.groupId ?? null;
+      groupId =
+        shared && members.every((pin) => pin.groupId === shared)
+          ? shared
+          : `grp-${Date.now().toString(36)}`;
+      return {
+        ...b,
+        pins: b.pins.map((pin) =>
+          pinIds.includes(pin.id) ? { ...pin, groupId, provisional: false } : pin,
+        ),
+      };
+    });
+    await notifyBoardChanged(board.id);
+    return { groupId };
+  },
+
+  async "group/summon"({ groupId }) {
+    const board = await store.ensureActiveBoard();
+    const members = board.pins
+      .filter((pin) => pin.groupId === groupId && pin.kind === "element")
+      .sort((a, b) => a.order - b.order);
+    if (members.length < 2) return { ok: false };
+    // The first member's page hosts the reunion; cross-route members ride
+    // along as capture cards, same as a relationship's cluster.
+    return {
+      ok: await deliverToPage(members[0].url, {
+        kind: "summon-group",
+        pinIds: members.map((pin) => pin.id),
+      }),
+    };
+  },
+
   async "relationship/open"({ relationshipId, atPinId }) {
     const board = await store.boardForRelationship(relationshipId);
     const pin = board.pins.find((candidate) => candidate.id === atPinId);
@@ -813,6 +941,7 @@ const handlers: Handlers = {
                   ),
                   { text, at: now, messageId, state: sendState },
                 ],
+                provisional: false,
                 updatedAt: now,
               }
             : pin,
@@ -868,13 +997,19 @@ const handlers: Handlers = {
         }
       }
 
+      // Relating pins is speaking about all of them at once.
+      const involved = new Set([sourcePinId, ...uniqueTargetIds]);
+      const promoted = b.pins.map((pin) =>
+        involved.has(pin.id) && pin.provisional ? { ...pin, provisional: false } : pin,
+      );
+
       relationship = b.relationships.find(
         (candidate) =>
           candidate.sourcePinId === sourcePinId &&
           candidate.targetPinIds.length === uniqueTargetIds.length &&
           candidate.targetPinIds.every((targetId) => uniqueTargetIds.includes(targetId)),
       );
-      if (relationship) return b;
+      if (relationship) return { ...b, pins: promoted };
 
       relationship = {
         id: store.nextId("rel"),
@@ -886,7 +1021,7 @@ const handlers: Handlers = {
         exception: "",
         instruction: "",
       };
-      return { ...b, relationships: [...b.relationships, relationship] };
+      return { ...b, pins: promoted, relationships: [...b.relationships, relationship] };
     });
     await notifyBoardChanged(board.id);
 
