@@ -310,10 +310,15 @@ export function SelectionDialog({
 
   const statusLine = (() => {
     switch (phase.kind) {
-      case "working":
-        return <>Agent is working<WorkingDots /></>;
-      case "done":
-        return "Agent finished. Check the page.";
+      /*
+       * Only transit gets a row of its own. Once the message lands in the
+       * history, its black "Waiting…" tag is the working indicator — and a
+       * "done" row would double the Completed tag the same way. The row
+       * speaks only for states the history cannot: transit, failure detail,
+       * and the stash receipts.
+       */
+      case "sending":
+        return <>Sending to agent<WorkingDots /></>;
       case "failed":
         return `Couldn’t complete: ${(phase as { detail: string }).detail}`;
       case "staged-offline":
@@ -455,7 +460,7 @@ export function SelectionDialog({
                   </button>
                 ) : (
                   <span className="pin-note__tag">
-                    {sent.state === "working" ? <>Waiting<WorkingDots /></> : "Completed"}
+                    {sent.state === "working" ? <>Working<WorkingDots /></> : "Completed"}
                   </span>
                 )}
               </div>

@@ -697,6 +697,15 @@ const handlers: Handlers = {
     return { ok: await deliverToPage(pin.url, { kind: "summon-pins", pinIds: [pinId] }) };
   },
 
+  async "pin/dismiss"({ pinId }) {
+    // Straight to the active tab, no navigation: dismissing something that is
+    // on screen only ever concerns the page in front of the user.
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return { ok: false };
+    broadcastToTab(tab.id, { kind: "dismiss-pins", pinIds: [pinId] });
+    return { ok: true };
+  },
+
   async "relationship/summon"({ relationshipId }) {
     const board = await store.boardForRelationship(relationshipId);
     const relationship = board.relationships.find((r) => r.id === relationshipId)!;

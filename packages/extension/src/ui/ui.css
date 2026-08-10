@@ -325,8 +325,21 @@
 .pin-summon[data-active="true"] .pin-upright__solid {
   fill: currentColor;
 }
-.pin-summon[data-active="true"] {
+/*
+ * Active is the glyph itself, filled — never a disc. The toolbar's
+ * active-tool rule shares the data-active attribute and paints a black
+ * circle with an inverted glyph; the extra class outranks it here. This is
+ * also what makes the Pins rows and the Relationships card wear identical
+ * states.
+ */
+.pin-icon-btn.pin-summon[data-active="true"] {
+  background: transparent;
   color: var(--pin-ink);
+}
+/* Hover keeps its plate even on a filled pin: the fill says "on screen",
+   the plate says "button under your pointer". Different facts, both shown. */
+.pin-icon-btn.pin-summon[data-active="true"]:hover {
+  background: var(--pin-paper-sunk);
 }
 
 /* Destructive controls hover exactly like every other icon button — the same
@@ -738,7 +751,7 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   /* A title, never a wall: it hugs its text and caps well short of a
      full-width table, while still fitting inside a narrow card. */
   width: max-content;
-  max-width: min(100%, 360px);
+  max-width: min(100%, 500px);
   padding: 5px 4px 5px 11px;
   border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
   background: var(--pin-ink);
@@ -1168,16 +1181,14 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-note {
   margin-top: 8px;
   border: 1px solid var(--pin-rule);
-  border-radius: 999px;
+  /* One shape in every state. The bar used to open as a full capsule and
+     square off once history arrived — a shape change mid-conversation that
+     read as a different control. The rounded rectangle is the shape. */
+  border-radius: var(--pin-radius-lg);
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   min-width: 300px;
   overflow: hidden;
-}
-.pin-note:has(.pin-note__saved),
-.pin-note:has(.pin-note__history),
-.pin-note:has(.pin-note__rel) {
-  border-radius: var(--pin-radius-lg);
 }
 
 .pin-note__saved {

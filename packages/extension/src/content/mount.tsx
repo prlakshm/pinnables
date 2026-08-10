@@ -18,12 +18,15 @@ export interface OverlayState {
   reveal: RevealMessage | null;
   /** The shelf asked for these pins' captures on screen — the focus context. */
   summon: SummonMessage | null;
+  /** The shelf asked for these pins to leave the screen. */
+  dismiss: DismissMessage | null;
   /** A relationship was just created; the page composes its cluster. */
   focusRelationship: FocusRelationshipMessage | null;
 }
 
 type RevealMessage = Extract<Broadcast, { kind: "reveal-pin" }>;
 type SummonMessage = Extract<Broadcast, { kind: "summon-pins" }>;
+type DismissMessage = Extract<Broadcast, { kind: "dismiss-pins" }>;
 type FocusRelationshipMessage = Extract<Broadcast, { kind: "focus-relationship" }>;
 
 export interface OverlayApi {
@@ -31,6 +34,7 @@ export interface OverlayApi {
   refresh(): void;
   reveal(message: RevealMessage): void;
   summon(message: SummonMessage): void;
+  dismiss(message: DismissMessage): void;
   focusRelationship(message: FocusRelationshipMessage): void;
   destroy(): void;
   subscribe(listener: () => void): () => void;
@@ -43,6 +47,7 @@ function createApi(teardown: () => void): OverlayApi {
     revision: 0,
     reveal: null,
     summon: null,
+    dismiss: null,
     focusRelationship: null,
   };
   const listeners = new Set<() => void>();
@@ -63,6 +68,7 @@ function createApi(teardown: () => void): OverlayApi {
     refresh: () => commit({ revision: state.revision + 1 }),
     reveal: (message) => commit({ reveal: message, revision: state.revision + 1 }),
     summon: (message) => commit({ summon: message, revision: state.revision + 1 }),
+    dismiss: (message) => commit({ dismiss: message, revision: state.revision + 1 }),
     focusRelationship: (message) =>
       commit({ focusRelationship: message, revision: state.revision + 1 }),
     destroy: teardown,

@@ -352,6 +352,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const hoverAnchor = useRef<{ pinId: string; edge: AnchorEdge } | null>(null);
   const handledReveal = useRef<typeof state.reveal>(null);
   const handledSummon = useRef<typeof state.summon>(null);
+  const handledDismiss = useRef<typeof state.dismiss>(null);
   const handledFocusRelationship = useRef<typeof state.focusRelationship>(null);
   /** A creation waiting for its board refresh; user action abandons it. */
   const pendingFocusRelationship = useRef<string | null>(null);
@@ -540,18 +541,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * it pictures, rather than materializing wherever it was last dragged.
    */
   const seatCardAtElement = useCallback(
-    (pin: Pin) => {
-      if (pin.kind !== "element" || pin.route !== routeForLocation()) return;
+    (pin: Pin): boolean => {
+      if (pin.kind !== "element" || pin.route !== routeForLocation()) return false;
       const found = refindElement(pin);
-      if (!found) return;
+      if (!found) return false;
       const rect = found.element.getBoundingClientRect();
       const visible =
         rect.bottom > 0 &&
         rect.right > 0 &&
         rect.top < window.innerHeight &&
         rect.left < window.innerWidth;
-      if (!visible) return;
+      if (!visible) return false;
       persistPosition(pin.id, { x: rect.left, y: rect.top });
+      return true;
     },
     [persistPosition],
   );
@@ -1585,23 +1587,35 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     );
     if (valid.length === 0) return;
 
-    pendingFocusRelationship.current = null;
-    setLiveSelected([]);
-    setSelected([]);
-    setFocusCards(valid);
+    /*
+     * Summoning adds; it never steals. The label and bar stay on whatever is
+     * selected, and the summoned captures simply join the screen — the shelf
+     * pin is a toggle for presence, not a context switch.
+     */
+    setFocusCards((previous) => [
+      ...previous,
+      ...valid.filter((pinId) => !previous.includes(pinId)),
+    ]);
 
     /*
-     * Positions come from storage directly, not the `positions` state — the
-     * async state load can still be in flight when a summon lands, and seating
-     * a card that already had a remembered spot would overwrite it.
+     * Placement, in order of truth. A component still on screen is the best
+     * possible seat: the capture lands exactly on top of it, standing in for
+     * the thing it pictures — even over a remembered drag position, because
+     * "show me this pin" means "show me it here". Only when the element is
+     * gone or scrolled away does the remembered position matter, and only
+     * with neither does the beside-placement fallback run. Positions come
+     * from storage directly, not the `positions` state — the async state
+     * load can still be in flight when a summon lands.
      */
     void chrome.storage.local.get(valid.map(posKey)).then((bag) => {
       const viewport = { width: window.innerWidth, height: window.innerHeight };
       for (const pinId of valid) {
-        if (bag[posKey(pinId)]) continue;
         const pin = board.pins.find((candidate) => candidate.id === pinId);
-        const found = pin && pin.route === route ? refindElement(pin) : null;
-        if (!found || !pin) continue;
+        if (!pin) continue;
+        if (seatCardAtElement(pin)) continue;
+        if (bag[posKey(pinId)]) continue;
+        const found = pin.route === route ? refindElement(pin) : null;
+        if (!found) continue;
         const rect = found.element.getBoundingClientRect();
         const fit = Math.min(1, 260 / Math.max(1, pin.elementSize.height || 1));
         persistPosition(
@@ -1617,7 +1631,22 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         );
       }
     });
-  }, [state.summon, board, route, persistPosition]);
+  }, [state.summon, board, route, persistPosition, seatCardAtElement]);
+
+  /**
+   * The shelf pin's off half. The capture leaves the screen; if the pin was
+   * the live selection, it defocuses — label and bar gone, nothing selected.
+   * The pin itself always survives on the shelf.
+   */
+  useEffect(() => {
+    const request = state.dismiss;
+    if (!request) return;
+    if (!claimRevealRequest(handledDismiss, request)) return;
+    const leaving = new Set(request.pinIds);
+    setFocusCards((previous) => previous.filter((pinId) => !leaving.has(pinId)));
+    setLiveSelected((previous) => previous.filter((pinId) => !leaving.has(pinId)));
+    setSelected((previous) => previous.filter((pinId) => !leaving.has(pinId)));
+  }, [state.dismiss]);
 
   /**
    * A relationship was just created — somewhere. The page composes the scene

@@ -345,6 +345,9 @@ function PinRow({
                 * details" and "put it on screen" are different intents and the
                 * chevron was spending the trailing slot on the lesser one.
                 */}
+              {/* A presence toggle: filled means on the page, and pressing it
+                  again takes the capture back off — defocusing it first if it
+                  was the live selection. The pin always stays on the shelf. */}
               <button
                 className="pin-icon-btn pin-summon"
                 style={{ width: 24, height: 24 }}
@@ -353,16 +356,22 @@ function PinRow({
                   void (async () => {
                     setRevealIssue(null);
                     try {
-                      const result = await send("pin/summon", { pinId: pin.id });
-                      if (!result.ok) setRevealIssue("Couldn’t open this pin on the page.");
+                      const result = onScreen
+                        ? await send("pin/dismiss", { pinId: pin.id })
+                        : await send("pin/summon", { pinId: pin.id });
+                      if (!result.ok) setRevealIssue("Couldn’t reach this pin’s page.");
                     } catch {
-                      setRevealIssue("Couldn’t open this pin on the page.");
+                      setRevealIssue("Couldn’t reach this pin’s page.");
                     }
                   })();
                 }}
-                aria-label={`Show ${title || "pin"} on the page`}
+                aria-label={
+                  onScreen
+                    ? `Remove ${title || "pin"} from the page`
+                    : `Show ${title || "pin"} on the page`
+                }
                 aria-pressed={onScreen}
-                title={onScreen ? "On the page now" : "Show the pinned capture on the page"}
+                title={onScreen ? "Remove from the page" : "Show the pinned capture on the page"}
               >
                 <PinUprightIcon size={15} />
               </button>

@@ -173,6 +173,12 @@ export interface Contract {
    * when needed — same delivery machinery as pin/revealSource.
    */
   "pin/summon": { req: { pinId: string }; res: { ok: boolean } };
+  /**
+   * The other half of the shelf pin's toggle: take this pin's capture off the
+   * page (and defocus it, if it was the live selection). No navigation — a
+   * pin that is on screen is on the active tab by definition.
+   */
+  "pin/dismiss": { req: { pinId: string }; res: { ok: boolean } };
   "relationship/summon": { req: { relationshipId: string }; res: { ok: boolean } };
 
   /**
@@ -263,6 +269,8 @@ export type Broadcast =
    * not a race of per-pin messages.
    */
   | { kind: "summon-pins"; pinIds: string[] }
+  /** Take these pins off the page; live selections among them defocus. */
+  | { kind: "dismiss-pins"; pinIds: string[] }
   /**
    * A relationship was just created, whichever surface did it. The panel
    * opens the Relationships tab scrolled to this card; the page puts the

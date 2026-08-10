@@ -121,6 +121,12 @@ function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond
     return;
   }
 
+  if (message.kind === "dismiss-pins") {
+    // Only an already-mounted overlay can have anything on screen to dismiss.
+    overlay?.dismiss(message);
+    return;
+  }
+
   if (message.kind === "focus-relationship") {
     void ensureOverlay().then((o) => o.focusRelationship(message));
   }

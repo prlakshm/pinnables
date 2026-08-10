@@ -492,8 +492,8 @@ export function App() {
                   {phase === "idle"
                     ? "Send to agent"
                     : phase === "submitting"
-                      ? <>Submitting<WorkingDots /></>
-                      : "Submitted"}
+                      ? <>Sending<WorkingDots /></>
+                      : "Sent"}
                 </button>
               </div>
             </>
