@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { watch } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 
@@ -38,22 +39,66 @@ const TYPES = {
   ".png": "image/png",
 };
 
+/*
+ * Live reload, so an agent edit shows up without anyone pressing ⌘R. The
+ * mechanism is deliberately the crudest one that works: watch the fixture
+ * directory, and when anything changes tell every open page over SSE to
+ * reload itself. No HMR, no diffing — these are static files, and a full
+ * reload is honest about what changed. Pins survive it; they live in the
+ * extension, not the page.
+ */
+const reloadClients = new Set();
+let reloadTimer = null;
+watch(ROOT, { recursive: true }, () => {
+  // Editors fire bursts of events per save; one reload per burst is plenty.
+  if (reloadTimer) clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    for (const client of reloadClients) client.write("data: reload\n\n");
+  }, 80);
+});
+
+const RELOAD_PATH = "/__pinnables_reload";
+// EventSource reconnects on its own after a server restart, so the page keeps
+// listening across `npm run film` sessions without any client-side ceremony.
+const RELOAD_SNIPPET = `<script>new EventSource("${RELOAD_PATH}").onmessage = () => location.reload();</script>`;
+
+const withReload = (html) => {
+  const text = html.toString();
+  return text.includes("</body>")
+    ? text.replace("</body>", `${RELOAD_SNIPPET}</body>`)
+    : text + RELOAD_SNIPPET;
+};
+
 createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+
+  if (url.pathname === RELOAD_PATH) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-store",
+      connection: "keep-alive",
+    });
+    res.write("retry: 500\n\n");
+    reloadClients.add(res);
+    req.on("close", () => reloadClients.delete(res));
+    return;
+  }
+
   const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   try {
     const body = await readFile(join(ROOT, file));
     // Never cache. These files are edited constantly and a stale fixture is a
     // bug hunt that has nothing to do with the tool.
+    const isHtml = (TYPES[extname(file)] ?? "") === TYPES[".html"];
     res.writeHead(200, {
       "content-type": TYPES[extname(file)] ?? "application/octet-stream",
       "cache-control": "no-store",
     });
-    res.end(body);
+    res.end(isHtml ? withReload(body) : body);
   } catch {
     // Single-page app: unknown paths fall through to the shell.
     res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store" });
-    res.end(await readFile(join(ROOT, "index.html")));
+    res.end(withReload(await readFile(join(ROOT, "index.html"))));
   }
 }).listen(PORT, () => {
   console.log(`${which.padEnd(5)}  →  http://localhost:${PORT}`);
