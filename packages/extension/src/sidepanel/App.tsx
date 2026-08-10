@@ -228,21 +228,29 @@ export function App() {
       }
       const result = await send("board/markReady", { boardId: board.id });
       setBoard(result.board);
-      try {
-        await navigator.clipboard.writeText(result.pointer);
-      } catch {
-        setUncopied(result.pointer);
+      // Cursor-native path: the service already started the agent. Clipboard
+      // is only needed when we fall back to the paste-the-pointer handoff.
+      if (result.transport !== "cursor") {
+        try {
+          await navigator.clipboard.writeText(result.pointer);
+        } catch {
+          setUncopied(result.pointer);
+        }
       }
       phaseRef.current = "submitted";
       setPhase("submitted");
     } catch {
       // The board is untouched and still on screen, so the press can simply be
       // made again — which is the whole recovery.
-      setSubmitError("Couldn’t write the board. Start the local service, then try again.");
+      setSubmitError(
+        state?.cursorOnline
+          ? "Couldn’t send to Cursor. Check CURSOR_API_KEY on the local service, then try again."
+          : "Couldn’t write the board. Start the local service, then try again.",
+      );
       phaseRef.current = "idle";
       setPhase("idle");
     }
-  }, [board, phase, instructionDraft, setInstruction]);
+  }, [board, phase, instructionDraft, setInstruction, state?.cursorOnline]);
 
   /**
    * The board clears itself once "Submitted" has been read.
@@ -421,7 +429,13 @@ export function App() {
           {!state?.serviceOnline && (
             <div className="pin-banner">
               Local service is offline. Pins are safe in the browser, but the board can&apos;t be
-              written to disk for your agent until it&apos;s running.
+              sent to your agent until it&apos;s running.
+            </div>
+          )}
+          {state?.serviceOnline && !state.cursorOnline && (
+            <div className="pin-banner">
+              Set <code>CURSOR_API_KEY</code> on the local service for one-click Send to Cursor.
+              Without it, Ready copies a pointer for you to paste.
             </div>
           )}
 

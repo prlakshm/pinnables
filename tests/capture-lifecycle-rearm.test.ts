@@ -45,7 +45,7 @@ Object.defineProperty(globalThis, "chrome", {
       local: {
         async get(key: string) {
           return key === "state"
-            ? { state: { captureMode, activeBoardId: null, serviceOnline: false } }
+            ? { state: { captureMode, activeBoardId: null, serviceOnline: false, cursorOnline: false } }
             : {};
         },
         async set() {},

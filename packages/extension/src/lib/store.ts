@@ -18,6 +18,7 @@ const DEFAULT_STATE: ExtensionState = {
   captureMode: false,
   activeBoardId: null,
   serviceOnline: false,
+  cursorOnline: false,
 };
 
 async function get<T>(key: string): Promise<T | undefined> {
