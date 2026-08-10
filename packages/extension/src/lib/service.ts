@@ -19,6 +19,15 @@ export interface MaterializeResult {
   boardDir: string;
 }
 
+export interface AgentMessageStatus {
+  state: "queued" | "starting" | "working" | "done" | "failed";
+  detail: string | null;
+  transport?: "cursor" | "local";
+  agentId?: string;
+  runId?: string;
+  url?: string;
+}
+
 export interface PushBoardResult {
   messageId: string;
   boardDir: string;
@@ -27,6 +36,7 @@ export interface PushBoardResult {
   url?: string;
   pointer: string;
   transport: "cursor" | "clipboard";
+  state?: AgentMessageStatus["state"];
 }
 
 export interface HealthResult {
@@ -36,6 +46,11 @@ export interface HealthResult {
     configured: boolean;
     ok: boolean;
     detail: string | null;
+    runtime?: "local" | "cloud";
+    cwd?: string;
+    agentId?: string | null;
+    agentUrl?: string | null;
+    queueLength?: number;
   };
 }
 
@@ -102,18 +117,10 @@ export async function pushBoard(
   });
 }
 
-export interface AgentMessageStatus {
-  state: "starting" | "working" | "done" | "failed";
-  detail: string | null;
-  transport?: "cursor" | "local";
-  agentId?: string;
-  runId?: string;
-  url?: string;
-}
-
 /**
  * One live message → one agent run (Cursor Cloud Agents when configured,
- * otherwise a local CLI spawn). Screenshots ride as data URLs.
+ * otherwise a local CLI spawn). Screenshots ride as data URLs. When Cursor
+ * already has an active run, the service queues and returns state "queued".
  */
 export async function sendAgentMessage(payload: {
   text: string;
@@ -122,14 +129,21 @@ export async function sendAgentMessage(payload: {
   relationshipId?: string;
   drawingSummary?: string;
   screenshots: Record<string, string>;
-}): Promise<{ messageId: string; transport?: string | null; url?: string | null }> {
-  return request<{ messageId: string; transport?: string | null; url?: string | null }>(
-    "/messages",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
+}): Promise<{
+  messageId: string;
+  transport?: string | null;
+  url?: string | null;
+  state?: AgentMessageStatus["state"] | null;
+}> {
+  return request<{
+    messageId: string;
+    transport?: string | null;
+    url?: string | null;
+    state?: AgentMessageStatus["state"] | null;
+  }>("/messages", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function agentMessageStatus(messageId: string): Promise<AgentMessageStatus> {

@@ -76,31 +76,43 @@ you want them in a build.
 
 ### One-click Send to Cursor (recommended)
 
-1. Create an API key at [Cursor Dashboard → API Keys](https://cursor.com/dashboard/api).
-2. Start the local service with that key (and your repo URL):
+1. Create an API key at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations).
+2. Start the local service with that key, pointed at the **app repo** you're annotating:
 
 ```bash
 CURSOR_API_KEY=crsr_… \
-PINNABLES_REPO_URL=https://github.com/your-org/your-repo \
+PINNABLES_PROJECT_DIR=/absolute/path/to/your-app \
 npm run dev:service
 ```
 
 3. In the extension, pin + annotate, then press **Send to agent**.
 
-The service calls Cursor's Cloud Agents API with the board brief and pin screenshots —
-no clipboard paste, no "Load Pinnables board …" prompt. Follow-up Sends reuse the same
-agent session (stored in `~/.pinnables/cursor-session.json`).
+By default Send uses Cursor's **local** agent runtime: it edits files in
+`PINNABLES_PROJECT_DIR` (or the service's cwd) on this machine. A Vite/dev server
+running that repo should hot-reload — no PR branch, no cloud clone.
+
+Follow-up Sends reuse the same local agent session (`~/.pinnables/cursor-session.json`).
+If that agent still has an active run, the next Send is **queued** and starts when
+the run finishes.
 
 Optional:
 
 | Env | Purpose |
 |---|---|
+| `PINNABLES_PROJECT_DIR` | Repo the local agent edits (required when the service isn't started from that repo) |
+| `PINNABLES_CURSOR_MODEL` | Model id (default `composer-2.5`) |
 | `PINNABLES_CURSOR_AGENT_ID` | Force follow-ups onto a specific agent |
-| `PINNABLES_REPO_REF` | Starting branch/SHA (default: Cursor's default) |
-| `PINNABLES_AUTO_CREATE_PR=1` | Ask Cursor to open a PR when the run finishes |
-| `PINNABLES_CURSOR_FALLBACK_LOCAL=1` | If Cursor API fails, fall back to local CLI spawn |
+| `PINNABLES_CURSOR_RUNTIME=cloud` | Use Cloud Agents instead (remote clone; see below) |
+| `PINNABLES_REPO_URL` | GitHub URL for cloud runtime |
+| `PINNABLES_REPO_REF` | Starting branch/SHA for cloud |
+| `PINNABLES_AUTO_CREATE_PR=1` | Cloud only: open a PR when the run finishes |
+| `PINNABLES_CURSOR_FALLBACK_LOCAL=1` | If Cursor API fails, fall back to CLI spawn (`claude`) |
 
-Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer to paste.
+Cloud runtime (`PINNABLES_CURSOR_RUNTIME=cloud`) clones the repo on a Cursor VM.
+Watch those agents at [cursor.com/agents](https://cursor.com/agents). Prefer local
+for live UI feedback on a running app.
+
+Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer for you to paste.
 
 ### MCP (pull / status write-back)
 

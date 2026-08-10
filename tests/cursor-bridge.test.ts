@@ -75,13 +75,31 @@ test("cursorConfigured reflects CURSOR_API_KEY", () => {
   else process.env.CURSOR_API_KEY = prev;
 });
 
+test("cursorRuntime defaults to local", async () => {
+  const { cursorRuntime, projectDir } = await import("../packages/service/src/cursor.ts");
+  const prevRuntime = process.env.PINNABLES_CURSOR_RUNTIME;
+  const prevDir = process.env.PINNABLES_PROJECT_DIR;
+  delete process.env.PINNABLES_CURSOR_RUNTIME;
+  assert.equal(cursorRuntime(), "local");
+  process.env.PINNABLES_CURSOR_RUNTIME = "cloud";
+  assert.equal(cursorRuntime(), "cloud");
+  process.env.PINNABLES_PROJECT_DIR = "/tmp/annotated-app";
+  assert.equal(projectDir(), "/tmp/annotated-app");
+  if (prevRuntime === undefined) delete process.env.PINNABLES_CURSOR_RUNTIME;
+  else process.env.PINNABLES_CURSOR_RUNTIME = prevRuntime;
+  if (prevDir === undefined) delete process.env.PINNABLES_PROJECT_DIR;
+  else process.env.PINNABLES_PROJECT_DIR = prevDir;
+});
+
 test("sendToCursor creates an agent against a mock Cursor API", async () => {
   const home = await mkdtemp(join(tmpdir(), "pinnables-cursor-"));
   const prevHome = process.env.PINNABLES_HOME;
   const prevKey = process.env.CURSOR_API_KEY;
   const prevBase = process.env.CURSOR_API_BASE;
+  const prevRuntime = process.env.PINNABLES_CURSOR_RUNTIME;
   process.env.PINNABLES_HOME = home;
   process.env.CURSOR_API_KEY = "test-key";
+  process.env.PINNABLES_CURSOR_RUNTIME = "cloud";
 
   let createBody: unknown = null;
   const server = createServer((req, res) => {
@@ -123,6 +141,7 @@ test("sendToCursor creates an agent against a mock Cursor API", async () => {
     assert.equal(result.mode, "create");
     assert.equal(result.agentId, "bc-test-agent");
     assert.equal(result.runId, "run-test-1");
+    assert.equal(result.runtime, "cloud");
     assert.ok(createBody && typeof createBody === "object");
     const body = createBody as {
       prompt: { text: string; images: unknown[] };
@@ -134,8 +153,10 @@ test("sendToCursor creates an agent against a mock Cursor API", async () => {
 
     const session = JSON.parse(await readFile(join(home, "cursor-session.json"), "utf8")) as {
       agentId: string;
+      runtime: string;
     };
     assert.equal(session.agentId, "bc-test-agent");
+    assert.equal(session.runtime, "cloud");
   } finally {
     server.close();
     if (prevHome === undefined) delete process.env.PINNABLES_HOME;
@@ -144,6 +165,8 @@ test("sendToCursor creates an agent against a mock Cursor API", async () => {
     else process.env.CURSOR_API_KEY = prevKey;
     if (prevBase === undefined) delete process.env.CURSOR_API_BASE;
     else process.env.CURSOR_API_BASE = prevBase;
+    if (prevRuntime === undefined) delete process.env.PINNABLES_CURSOR_RUNTIME;
+    else process.env.PINNABLES_CURSOR_RUNTIME = prevRuntime;
   }
 });
 
@@ -153,9 +176,11 @@ test("sendToCursor follow-ups a sticky ACTIVE agent", async () => {
   const prevKey = process.env.CURSOR_API_KEY;
   const prevBase = process.env.CURSOR_API_BASE;
   const prevSticky = process.env.PINNABLES_CURSOR_AGENT_ID;
+  const prevRuntime = process.env.PINNABLES_CURSOR_RUNTIME;
   process.env.PINNABLES_HOME = home;
   process.env.CURSOR_API_KEY = "test-key";
   process.env.PINNABLES_CURSOR_AGENT_ID = "bc-sticky";
+  process.env.PINNABLES_CURSOR_RUNTIME = "cloud";
 
   let followBody: unknown = null;
   const server = createServer((req, res) => {
@@ -201,7 +226,233 @@ test("sendToCursor follow-ups a sticky ACTIVE agent", async () => {
     else process.env.CURSOR_API_BASE = prevBase;
     if (prevSticky === undefined) delete process.env.PINNABLES_CURSOR_AGENT_ID;
     else process.env.PINNABLES_CURSOR_AGENT_ID = prevSticky;
+    if (prevRuntime === undefined) delete process.env.PINNABLES_CURSOR_RUNTIME;
+    else process.env.PINNABLES_CURSOR_RUNTIME = prevRuntime;
   }
+});
+
+test("service queues a second send while Cursor reports agent_busy", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pinnables-queue-"));
+  const prevHome = process.env.PINNABLES_HOME;
+  const prevKey = process.env.CURSOR_API_KEY;
+  const prevBase = process.env.CURSOR_API_BASE;
+
+  let runPosts = 0;
+  let agentBusy = true;
+  const cursor = createServer((req, res) => {
+    void (async () => {
+      if (req.method === "GET" && req.url?.startsWith("/v1/agents?")) {
+        return json(res, 200, { items: [] });
+      }
+      if (req.method === "GET" && req.url === "/v1/agents/bc-queue") {
+        return json(res, 200, {
+          id: "bc-queue",
+          status: "ACTIVE",
+          url: "https://cursor.com/agents/bc-queue",
+          latestRunId: "run-1",
+        });
+      }
+      if (req.method === "GET" && req.url === "/v1/agents/bc-queue/runs/run-1") {
+        return json(res, 200, {
+          id: "run-1",
+          agentId: "bc-queue",
+          status: agentBusy ? "RUNNING" : "FINISHED",
+        });
+      }
+      if (req.method === "GET" && req.url === "/v1/agents/bc-queue/runs/run-2") {
+        return json(res, 200, {
+          id: "run-2",
+          agentId: "bc-queue",
+          status: "RUNNING",
+        });
+      }
+      if (req.method === "POST" && req.url === "/v1/agents") {
+        runPosts += 1;
+        await readJson(req);
+        return json(res, 200, {
+          agent: {
+            id: "bc-queue",
+            url: "https://cursor.com/agents/bc-queue",
+            status: "ACTIVE",
+          },
+          run: { id: "run-1", agentId: "bc-queue", status: "RUNNING" },
+        });
+      }
+      if (req.method === "POST" && req.url === "/v1/agents/bc-queue/runs") {
+        runPosts += 1;
+        await readJson(req);
+        if (agentBusy) {
+          return json(res, 409, {
+            error: { code: "agent_busy", message: "Agent already has an active run" },
+          });
+        }
+        return json(res, 200, {
+          id: "run-2",
+          agentId: "bc-queue",
+          status: "RUNNING",
+        });
+      }
+      json(res, 404, {});
+    })();
+  });
+  await new Promise<void>((resolve) => cursor.listen(0, "127.0.0.1", resolve));
+  const cursorAddr = cursor.address();
+  assert.ok(cursorAddr && typeof cursorAddr === "object");
+
+  const servicePort = 14574;
+  const child: ChildProcess = spawn(
+    process.execPath,
+    ["--import", "tsx", "packages/service/src/index.ts"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PINNABLES_HOME: home,
+        PINNABLES_PORT: String(servicePort),
+        CURSOR_API_KEY: "test-key",
+        CURSOR_API_BASE: `http://127.0.0.1:${cursorAddr.port}`,
+        PINNABLES_CURSOR_RUNTIME: "cloud",
+        PINNABLES_REPO_URL: "https://github.com/prlakshm/pinnables",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  const ready = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), 8000);
+    const onData = (buf: Buffer) => {
+      if (buf.toString().includes("pinnables service on")) {
+        clearTimeout(timer);
+        resolve(true);
+      }
+    };
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+  });
+  assert.equal(ready, true, "service should start");
+
+  const pin = {
+    id: "pin-1",
+    schemaVersion: 1,
+    boardId: "board-queue-test",
+    order: 1,
+    groupId: null,
+    url: "http://localhost:5181/#/catalogue",
+    route: "/catalogue",
+    viewport: { width: 1280, height: 800 },
+    screenshotPath: "pins/pin-1.png",
+    thumbnailPath: "pins/pin-1.thumb.webp",
+    selector: ".mark",
+    domPath: "body > .mark",
+    outerHtml: '<span class="mark">i</span>',
+    classList: ["mark"],
+    elementText: "i",
+    componentName: "Masthead",
+    sourceFile: "src/components/Masthead.tsx:8",
+    computedStyles: { color: "rgb(163, 55, 38)" },
+    styleEdits: {},
+    annotation: "",
+    captureState: "default",
+    status: "todo",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    name: null,
+    kind: "element",
+    drawings: [],
+    liveSends: [],
+  };
+  const board = {
+    id: "board-queue-test",
+    schemaVersion: 1,
+    projectId: "local",
+    title: "Queue test",
+    globalInstruction: "",
+    status: "draft",
+    generatedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    pins: [pin],
+    relationships: [],
+  };
+
+  try {
+    const first = await fetch(`http://127.0.0.1:${servicePort}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "first change",
+        board,
+        pinIds: ["pin-1"],
+        screenshots: { "pin-1": `data:image/png;base64,${TINY_PNG}` },
+      }),
+    });
+    const firstBody = JSON.parse(await first.text()) as {
+      messageId: string;
+      state: string;
+    };
+    assert.equal(first.ok, true);
+    assert.equal(firstBody.state, "starting");
+
+    const second = await fetch(`http://127.0.0.1:${servicePort}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "second change",
+        board,
+        pinIds: ["pin-1"],
+        screenshots: { "pin-1": `data:image/png;base64,${TINY_PNG}` },
+      }),
+    });
+    const secondText = await second.text();
+    assert.equal(second.ok, true, secondText);
+    const secondBody = JSON.parse(secondText) as { messageId: string; state: string };
+    assert.equal(secondBody.state, "queued");
+
+    const queuedStatus = await fetch(
+      `http://127.0.0.1:${servicePort}/messages/${secondBody.messageId}`,
+    ).then((r) => r.json());
+    assert.equal(queuedStatus.state, "queued");
+
+    agentBusy = false;
+    // Drain: finish run-1, then the queue should post run-2.
+    let drained = false;
+    for (let i = 0; i < 20; i += 1) {
+      await fetch(`http://127.0.0.1:${servicePort}/messages/${firstBody.messageId}`);
+      await fetch(`http://127.0.0.1:${servicePort}/messages/${secondBody.messageId}`);
+      const status = await fetch(
+        `http://127.0.0.1:${servicePort}/messages/${secondBody.messageId}`,
+      ).then((r) => r.json());
+      if (status.state === "starting" || status.state === "working") {
+        drained = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    assert.equal(drained, true, "queued send should start after the first run finishes");
+    assert.ok(runPosts >= 2, "Cursor should receive a follow-up run");
+  } finally {
+    child.kill("SIGTERM");
+    cursor.close();
+    if (prevHome === undefined) delete process.env.PINNABLES_HOME;
+    else process.env.PINNABLES_HOME = prevHome;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
+    if (prevBase === undefined) delete process.env.CURSOR_API_BASE;
+    else process.env.CURSOR_API_BASE = prevBase;
+  }
+});
+
+test("isAgentBusyError detects Cursor 409 payloads", async () => {
+  const { isAgentBusyError } = await import("../packages/service/src/cursor.ts");
+  assert.equal(
+    isAgentBusyError(
+      new Error(
+        'Cursor API 409 /v1/agents/bc-x/runs: {"error":{"code":"agent_busy","message":"Agent already has an active run"}}',
+      ),
+    ),
+    true,
+  );
+  assert.equal(isAgentBusyError(new Error("Cursor API 500 boom")), false);
 });
 
 test("statusFromCursor maps FINISHED and ERROR", async () => {
@@ -316,13 +567,14 @@ test("service /boards/:id/push uses Cursor when configured", async () => {
     process.execPath,
     ["--import", "tsx", "packages/service/src/index.ts"],
     {
-      cwd: "/workspace",
+      cwd: process.cwd(),
       env: {
         ...process.env,
         PINNABLES_HOME: home,
         PINNABLES_PORT: String(servicePort),
         CURSOR_API_KEY: "test-key",
         CURSOR_API_BASE: `http://127.0.0.1:${cursorAddr.port}`,
+        PINNABLES_CURSOR_RUNTIME: "cloud",
         PINNABLES_REPO_URL: "https://github.com/prlakshm/pinnables",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -347,6 +599,7 @@ test("service /boards/:id/push uses Cursor when configured", async () => {
     assert.equal(health.ok, true);
     assert.equal(health.cursor.configured, true);
     assert.equal(health.cursor.ok, true);
+    assert.equal(health.cursor.runtime, "cloud");
 
     const pushedRes = await fetch(`http://127.0.0.1:${servicePort}/boards/board-push-test/push`, {
       method: "POST",

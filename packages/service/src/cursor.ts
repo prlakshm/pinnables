@@ -1,18 +1,19 @@
 /**
- * Cursor Cloud Agents bridge.
+ * Cursor agent bridge.
  *
- * This is the transport that makes "Send" actually send — no clipboard, no
- * paste, no "Load Pinnables board …" prompt. The local service materializes
- * pin context into a prompt (+ screenshots as images) and calls Cursor's
- * Cloud Agents API to create an agent or follow up on a sticky one.
+ * Default runtime is **local** (`@cursor/sdk` with `local.cwd`): Send edits the
+ * repo on disk so a running Vite/dev server hot-reloads. Cloud Agents clone a
+ * remote repo onto a VM and often open a PR branch — that is opt-in via
+ * `PINNABLES_CURSOR_RUNTIME=cloud`.
  *
- * Auth: CURSOR_API_KEY (Dashboard → API Keys). Optional sticky session:
- * PINNABLES_CURSOR_AGENT_ID, or the last agent id we wrote under
+ * Auth: CURSOR_API_KEY (Dashboard → Integrations / API Keys). Sticky session:
+ * PINNABLES_CURSOR_AGENT_ID, or the last agent id under
  * ~/.pinnables/cursor-session.json.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Agent, Cursor, AgentBusyError, type Run, type SDKAgent } from "@cursor/sdk";
 import { pinnablesHome } from "@pinnables/shared/storage";
 
 function apiBase(): string {
@@ -20,6 +21,8 @@ function apiBase(): string {
 }
 
 const MAX_IMAGES = 5;
+
+export type CursorRuntime = "local" | "cloud";
 
 export type CursorRunStatus = "CREATING" | "RUNNING" | "FINISHED" | "ERROR" | "CANCELLED" | "EXPIRED";
 
@@ -32,7 +35,7 @@ export interface CursorSendRequest {
   text: string;
   images?: CursorImage[];
   name?: string;
-  /** Prefer follow-up on this agent when set and still ACTIVE. */
+  /** Prefer follow-up on this agent when set and still usable. */
   agentId?: string;
   repoUrl?: string;
   startingRef?: string;
@@ -42,8 +45,10 @@ export interface CursorSendRequest {
 export interface CursorSendResult {
   agentId: string;
   runId: string;
-  url: string;
+  url: string | null;
   mode: "create" | "follow-up";
+  runtime: CursorRuntime;
+  cwd?: string;
 }
 
 export interface CursorStatus {
@@ -51,13 +56,20 @@ export interface CursorStatus {
   detail: string | null;
   agentId?: string;
   runId?: string;
-  url?: string;
+  url?: string | null;
 }
 
 interface SessionFile {
   agentId: string;
+  runtime: CursorRuntime;
+  cwd?: string;
   updatedAt: string;
 }
+
+/** In-process local agent handles — keep conversation sticky across Sends. */
+const localAgents = new Map<string, SDKAgent>();
+/** Live Run handles for status polling before they settle. */
+const localRuns = new Map<string, Run>();
 
 function apiKey(): string | null {
   const key = process.env.CURSOR_API_KEY?.trim();
@@ -68,10 +80,35 @@ export function cursorConfigured(): boolean {
   return Boolean(apiKey());
 }
 
+export function cursorRuntime(): CursorRuntime {
+  const raw = (process.env.PINNABLES_CURSOR_RUNTIME ?? "local").trim().toLowerCase();
+  return raw === "cloud" ? "cloud" : "local";
+}
+
+/** Repo the local agent edits — the app under annotation, not necessarily this package. */
+export function projectDir(): string {
+  return process.env.PINNABLES_PROJECT_DIR?.trim() || process.cwd();
+}
+
+function modelSelection(): { id: string } {
+  const id = process.env.PINNABLES_CURSOR_MODEL?.trim() || "composer-2.5";
+  return { id };
+}
+
+function isCloudAgentId(agentId: string): boolean {
+  return agentId.startsWith("bc-");
+}
+
+function agentUrl(agentId: string, runtime: CursorRuntime): string | null {
+  if (runtime === "cloud" || isCloudAgentId(agentId)) {
+    return `https://cursor.com/agents/${agentId}`;
+  }
+  return null;
+}
+
 function authHeader(): string {
   const key = apiKey();
   if (!key) throw new Error("CURSOR_API_KEY is not set");
-  // Basic auth with empty password is the documented form (`-u KEY:`).
   return `Basic ${Buffer.from(`${key}:`).toString("base64")}`;
 }
 
@@ -108,9 +145,27 @@ export async function readStickyAgentId(): Promise<string | null> {
   }
 }
 
-export async function writeStickyAgentId(agentId: string): Promise<void> {
+export async function readStickySession(): Promise<SessionFile | null> {
+  try {
+    const raw = await readFile(sessionPath(), "utf8");
+    return JSON.parse(raw) as SessionFile;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeStickyAgentId(
+  agentId: string,
+  runtime: CursorRuntime = cursorRuntime(),
+  cwd?: string,
+): Promise<void> {
   await mkdir(pinnablesHome(), { recursive: true });
-  const payload: SessionFile = { agentId, updatedAt: new Date().toISOString() };
+  const payload: SessionFile = {
+    agentId,
+    runtime,
+    ...(cwd ? { cwd } : {}),
+    updatedAt: new Date().toISOString(),
+  };
   await writeFile(sessionPath(), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
@@ -135,6 +190,123 @@ export function imagesFromScreenshots(
   }
   return out;
 }
+
+/** True when Cursor rejected a follow-up because a run is already active. */
+export function isAgentBusyError(err: unknown): boolean {
+  if (err instanceof AgentBusyError) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /409|agent_busy|already has an active run|active run/i.test(message);
+}
+
+function mapCloudRunStatus(status: CursorRunStatus, detail?: string | null): CursorStatus {
+  switch (status) {
+    case "CREATING":
+      return { state: "starting", detail: null };
+    case "RUNNING":
+      return { state: "working", detail: null };
+    case "FINISHED":
+      return { state: "done", detail: detail ?? null };
+    case "ERROR":
+    case "CANCELLED":
+    case "EXPIRED":
+      return {
+        state: "failed",
+        detail: detail?.trim() || `Cursor run ended with status ${status}`,
+      };
+    default:
+      return { state: "failed", detail: `Unknown Cursor run status: ${String(status)}` };
+  }
+}
+
+function mapLocalRunStatus(
+  status: Run["status"],
+  detail?: string | null,
+): CursorStatus {
+  switch (status) {
+    case "running":
+      return { state: "working", detail: null };
+    case "finished":
+      return { state: "done", detail: detail ?? null };
+    case "error":
+    case "cancelled":
+      return {
+        state: "failed",
+        detail: detail?.trim() || `Cursor run ended with status ${status}`,
+      };
+    default:
+      return { state: "starting", detail: null };
+  }
+}
+
+/* ---------------------------------------------------------------- local SDK */
+
+async function obtainLocalAgent(preferredId?: string | null): Promise<{
+  agent: SDKAgent;
+  mode: "create" | "follow-up";
+}> {
+  const cwd = projectDir();
+  const key = apiKey();
+  if (!key) throw new Error("CURSOR_API_KEY is not set");
+  const base = {
+    apiKey: key,
+    model: modelSelection(),
+    local: { cwd },
+  };
+
+  const tryResume = async (agentId: string): Promise<SDKAgent | null> => {
+    if (isCloudAgentId(agentId)) return null;
+    const cached = localAgents.get(agentId);
+    if (cached) return cached;
+    try {
+      const agent = await Agent.resume(agentId, base);
+      localAgents.set(agent.agentId, agent);
+      return agent;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/404|not.?found|410|expired|missing/i.test(message)) return null;
+      throw err;
+    }
+  };
+
+  if (preferredId) {
+    const resumed = await tryResume(preferredId);
+    if (resumed) return { agent: resumed, mode: "follow-up" };
+  }
+
+  const agent = await Agent.create({
+    ...base,
+    name: "Pinnables",
+  });
+  localAgents.set(agent.agentId, agent);
+  return { agent, mode: "create" };
+}
+
+async function sendLocal(req: CursorSendRequest): Promise<CursorSendResult> {
+  const sticky = req.agentId ?? (await readStickyAgentId());
+  const { agent, mode } = await obtainLocalAgent(sticky);
+  const cwd = projectDir();
+
+  const run = await agent.send({
+    text: req.text,
+    ...(req.images?.length ? { images: req.images } : {}),
+  });
+  localRuns.set(run.id, run);
+  // Keep the handle warm; status polling uses getRun / the cached Run.
+  void run.wait().catch(() => {
+    /* statusFromCursor surfaces the failure */
+  });
+  await writeStickyAgentId(agent.agentId, "local", cwd);
+  return {
+    agentId: agent.agentId,
+    runId: run.id,
+    url: null,
+    mode,
+    runtime: "local",
+    cwd,
+  };
+}
+
+/* --------------------------------------------------------------- cloud REST */
 
 interface CreateAgentResponse {
   agent: { id: string; url?: string; status?: string };
@@ -162,39 +334,17 @@ interface GetAgentResponse {
   latestRunId?: string;
 }
 
-function mapRunStatus(status: CursorRunStatus, detail?: string | null): CursorStatus {
-  switch (status) {
-    // CREATING is the run existing, not the agent touching code. Only RUNNING
-    // is evidence that work has actually begun.
-    case "CREATING":
-      return { state: "starting", detail: null };
-    case "RUNNING":
-      return { state: "working", detail: null };
-    case "FINISHED":
-      return { state: "done", detail: detail ?? null };
-    case "ERROR":
-    case "CANCELLED":
-    case "EXPIRED":
-      return {
-        state: "failed",
-        detail: detail?.trim() || `Cursor run ended with status ${status}`,
-      };
-    default:
-      return { state: "failed", detail: `Unknown Cursor run status: ${String(status)}` };
-  }
-}
-
-export async function getAgent(agentId: string): Promise<GetAgentResponse> {
+async function getCloudAgent(agentId: string): Promise<GetAgentResponse> {
   return cursorFetch<GetAgentResponse>(`/v1/agents/${encodeURIComponent(agentId)}`);
 }
 
-export async function getRun(agentId: string, runId: string): Promise<GetRunResponse> {
+async function getCloudRun(agentId: string, runId: string): Promise<GetRunResponse> {
   return cursorFetch<GetRunResponse>(
     `/v1/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`,
   );
 }
 
-export async function createAgent(req: CursorSendRequest): Promise<CursorSendResult> {
+async function createCloudAgent(req: CursorSendRequest): Promise<CursorSendResult> {
   const repoUrl = req.repoUrl ?? process.env.PINNABLES_REPO_URL?.trim();
   const startingRef = req.startingRef ?? process.env.PINNABLES_REPO_REF?.trim();
   const body: Record<string, unknown> = {
@@ -204,6 +354,9 @@ export async function createAgent(req: CursorSendRequest): Promise<CursorSendRes
     },
     name: req.name ?? "Pinnables",
     autoCreatePR: req.autoCreatePR ?? process.env.PINNABLES_AUTO_CREATE_PR === "1",
+    // Prefer the caller's branch when cloud is explicitly requested — still a
+    // remote clone, not the local working tree.
+    workOnCurrentBranch: process.env.PINNABLES_WORK_ON_CURRENT_BRANCH !== "0",
   };
   if (repoUrl) {
     body.repos = [{ url: repoUrl, ...(startingRef ? { startingRef } : {}) }];
@@ -213,16 +366,17 @@ export async function createAgent(req: CursorSendRequest): Promise<CursorSendRes
     method: "POST",
     body: JSON.stringify(body),
   });
-  await writeStickyAgentId(res.agent.id);
+  await writeStickyAgentId(res.agent.id, "cloud");
   return {
     agentId: res.agent.id,
     runId: res.run.id,
-    url: res.agent.url ?? `https://cursor.com/agents/${res.agent.id}`,
+    url: res.agent.url ?? agentUrl(res.agent.id, "cloud"),
     mode: "create",
+    runtime: "cloud",
   };
 }
 
-export async function createFollowUp(
+async function createCloudFollowUp(
   agentId: string,
   req: Pick<CursorSendRequest, "text" | "images">,
 ): Promise<CursorSendResult> {
@@ -238,18 +392,37 @@ export async function createFollowUp(
       }),
     },
   );
-  await writeStickyAgentId(agentId);
+  await writeStickyAgentId(agentId, "cloud");
   return {
     agentId,
     runId: res.id,
-    url: `https://cursor.com/agents/${agentId}`,
+    url: agentUrl(agentId, "cloud"),
     mode: "follow-up",
+    runtime: "cloud",
   };
 }
 
+async function sendCloud(req: CursorSendRequest): Promise<CursorSendResult> {
+  const sticky = req.agentId ?? (await readStickyAgentId());
+  if (sticky && isCloudAgentId(sticky)) {
+    try {
+      const agent = await getCloudAgent(sticky);
+      if (agent.status === "ACTIVE") {
+        return await createCloudFollowUp(sticky, req);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/404|not.?found|410/i.test(message)) {
+        if (/409|busy|401|403/i.test(message)) throw err;
+      }
+    }
+  }
+  return createCloudAgent(req);
+}
+
 /**
- * Prefer follow-up on a sticky ACTIVE agent; otherwise create a new one.
- * A 409 agent_busy surfaces as a failed send so the extension can retry.
+ * Prefer follow-up on a sticky agent; otherwise create a new one.
+ * Local runtime edits `PINNABLES_PROJECT_DIR` / cwd on this machine.
  */
 export async function sendToCursor(req: CursorSendRequest): Promise<CursorSendResult> {
   if (!cursorConfigured()) {
@@ -258,49 +431,70 @@ export async function sendToCursor(req: CursorSendRequest): Promise<CursorSendRe
     );
   }
 
-  const sticky = req.agentId ?? (await readStickyAgentId());
-  if (sticky) {
-    try {
-      const agent = await getAgent(sticky);
-      if (agent.status === "ACTIVE") {
-        return await createFollowUp(sticky, req);
-      }
-    } catch (err) {
-      // Stale sticky id — fall through to create.
-      const message = err instanceof Error ? err.message : String(err);
-      if (!/404|not.?found|410/i.test(message)) {
-        // Busy or auth errors should not silently create a duplicate agent.
-        if (/409|busy|401|403/i.test(message)) throw err;
-      }
-    }
+  if (cursorRuntime() === "local") {
+    return sendLocal(req);
   }
-
-  return createAgent(req);
+  return sendCloud(req);
 }
 
 export async function statusFromCursor(agentId: string, runId: string): Promise<CursorStatus> {
-  const run = await getRun(agentId, runId);
-  const mapped = mapRunStatus(run.status, run.error ?? run.summary ?? null);
-  return {
-    ...mapped,
-    agentId,
-    runId,
-    url: `https://cursor.com/agents/${agentId}`,
-  };
+  // Runtime is encoded in the agent id prefix (`bc-` = cloud).
+  if (isCloudAgentId(agentId)) {
+    const run = await getCloudRun(agentId, runId);
+    const mapped = mapCloudRunStatus(run.status, run.error ?? run.summary ?? null);
+    return {
+      ...mapped,
+      agentId,
+      runId,
+      url: agentUrl(agentId, "cloud"),
+    };
+  }
+
+  try {
+    const cached = localRuns.get(runId);
+    const run =
+      cached ??
+      (await Agent.getRun(runId, {
+        runtime: "local",
+        cwd: projectDir(),
+      }));
+    const detail = run.error?.message ?? null;
+    const mapped = mapLocalRunStatus(run.status, detail);
+    if (mapped.state === "done" || mapped.state === "failed") {
+      localRuns.delete(runId);
+    }
+    return { ...mapped, agentId, runId, url: null };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { state: "failed", detail, agentId, runId, url: null };
+  }
 }
 
 /** Probe auth without starting work — used by /health. */
-export async function probeCursor(): Promise<{ ok: boolean; detail: string | null }> {
+export async function probeCursor(): Promise<{
+  ok: boolean;
+  detail: string | null;
+  runtime: CursorRuntime;
+  cwd: string;
+}> {
+  const runtime = cursorRuntime();
+  const cwd = projectDir();
   if (!cursorConfigured()) {
-    return { ok: false, detail: "CURSOR_API_KEY not set" };
+    return { ok: false, detail: "CURSOR_API_KEY not set", runtime, cwd };
   }
   try {
+    if (runtime === "local") {
+      await Cursor.models.list({ apiKey: apiKey()! });
+      return { ok: true, detail: null, runtime, cwd };
+    }
     await cursorFetch<{ items?: unknown[] }>("/v1/agents?limit=1");
-    return { ok: true, detail: null };
+    return { ok: true, detail: null, runtime, cwd };
   } catch (err) {
     return {
       ok: false,
       detail: err instanceof Error ? err.message : String(err),
+      runtime,
+      cwd,
     };
   }
 }

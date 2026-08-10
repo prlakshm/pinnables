@@ -31,6 +31,10 @@ type Phase =
   | { kind: "staged" };
 
 const STATUS_POLL_MS = 2_500;
+/** Still "starting" after this long means the run never truly began. */
+const STARTING_TIMEOUT_MS = 5 * 60_000;
+/** "Working" with no outcome after this long is treated as stuck. */
+const WORKING_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * One prompt, however many pins — and one line.
@@ -83,14 +87,12 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
     };
   }, [agentEnabled]);
 
-  // A stash receipt confirms and leaves; the offline fallback lingers longer
-  // because it carries the extra fact that no agent heard the message.
+  // A stash receipt confirms and leaves. The offline fallback stays: it
+  // reports a problem the user has to go fix, and a notice that clears
+  // itself reads as a problem that did.
   useEffect(() => {
-    if (phase.kind !== "staged" && phase.kind !== "staged-offline") return;
-    const timer = window.setTimeout(
-      () => setPhase({ kind: "idle" }),
-      phase.kind === "staged" ? 2_500 : 5_000,
-    );
+    if (phase.kind !== "staged") return;
+    const timer = window.setTimeout(() => setPhase({ kind: "idle" }), 2_500);
     return () => window.clearTimeout(timer);
   }, [phase]);
 
@@ -111,12 +113,28 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
   );
 
   const poll = useCallback((messageId: string) => {
+    const startedAt = Date.now();
     const tick = async () => {
       if (!alive.current) return;
       try {
         const status = await send("agent/status", { messageId });
         if (!alive.current) return;
-        if (status.state === "starting") {
+        // Stuck runs get called, not waited out — same rule as the live bar.
+        const elapsed = Date.now() - startedAt;
+        if (
+          (status.state === "starting" && elapsed > STARTING_TIMEOUT_MS) ||
+          (status.state === "working" && elapsed > WORKING_TIMEOUT_MS)
+        ) {
+          const detail =
+            status.state === "starting"
+              ? "The agent didn’t start within 5 minutes. Resend to retry."
+              : "No result after 10 minutes. The run looks stuck, so resend to retry.";
+          setPhase({ kind: "failed", detail });
+          void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          return;
+        }
+        // Queued behind an active Cursor run — keep polling; no starting timeout.
+        if (status.state === "queued" || status.state === "starting") {
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
@@ -179,21 +197,13 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
     phase.kind === "starting" ||
     phase.kind === "working";
 
+  // Alarms only — everything that goes right is silent here.
   const statusLine = (() => {
     switch (phase.kind) {
-      case "sending":
-      case "starting":
-        return <>Sending to agent<WorkingDots /></>;
-      case "working":
-        return <>Agent is working<WorkingDots /></>;
-      case "done":
-        return "Agent finished. Check the page.";
       case "failed":
         return `Couldn’t complete: ${phase.detail}`;
       case "staged-offline":
         return "No agent connected. Stashed on the board instead.";
-      case "staged":
-        return "Stashed on the board.";
       default:
         return null;
     }
@@ -263,7 +273,12 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
       </div>
 
       {statusLine && (
-        <div className="pin-note__rel" data-state={phase.kind} role="status" aria-live="polite">
+        <div
+          className="pin-note__rel pin-note__alert"
+          data-state={phase.kind}
+          role="alert"
+          aria-live="assertive"
+        >
           {statusLine}
         </div>
       )}

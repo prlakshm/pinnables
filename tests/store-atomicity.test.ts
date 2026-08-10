@@ -36,6 +36,7 @@ test("concurrent state patches merge instead of overwriting each other", async (
       activeBoardId: null,
       serviceOnline: false,
       cursorOnline: false,
+      cursorAgentUrl: null,
     } satisfies ExtensionState,
   };
 
@@ -49,6 +50,7 @@ test("concurrent state patches merge instead of overwriting each other", async (
     activeBoardId: "board-concurrent",
     serviceOnline: false,
     cursorOnline: false,
+    cursorAgentUrl: null,
   });
 });
 

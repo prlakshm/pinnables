@@ -43,7 +43,8 @@ async function waitForAgentStart(messageId: string): Promise<void> {
   for (;;) {
     try {
       const status = await send("agent/status", { messageId });
-      if (status.state !== "starting") return;
+      // Queued sends are accepted — keep waiting until Cursor actually starts.
+      if (status.state !== "starting" && status.state !== "queued") return;
     } catch {
       // The board is already with the service; a status blip is not worth
       // holding the button hostage over.
@@ -76,6 +77,8 @@ export function App() {
    * from, so clearing the board after a failed copy would strand the work.
    */
   const [uncopied, setUncopied] = useState<string | null>(null);
+  /** Cloud Agent URL from the last successful Send — not the IDE chat panel. */
+  const [agentUrl, setAgentUrl] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const generation = ++reloadGeneration.current;
@@ -264,6 +267,8 @@ export function App() {
         } catch {
           setUncopied(result.pointer);
         }
+      } else if (result.url) {
+        setAgentUrl(result.url);
       }
       // Cursor started a run for this board — hold "Sending…" until it is
       // confirmed working, so the checkmark means the agent has it.
@@ -465,8 +470,26 @@ export function App() {
           )}
           {state?.serviceOnline && !state.cursorOnline && (
             <div className="pin-banner">
-              Set <code>CURSOR_API_KEY</code> on the local service for one-click Send to Cursor.
-              Without it, Ready copies a pointer for you to paste.
+              Set <code>CURSOR_API_KEY</code> on the local service for one-click Send.
+              Point <code>PINNABLES_PROJECT_DIR</code> at the app repo so edits land live.
+            </div>
+          )}
+          {state?.cursorOnline && state.cursorRuntime === "local" && state.cursorProjectDir && (
+            <div className="pin-banner">
+              Send edits files in <code>{state.cursorProjectDir}</code> — your running app
+              should hot-reload. No PR branch.
+            </div>
+          )}
+          {(agentUrl || state?.cursorAgentUrl) && state?.cursorRuntime === "cloud" && (
+            <div className="pin-banner">
+              Cloud Agents run on the web, not in this panel.{" "}
+              <a
+                href={agentUrl ?? state.cursorAgentUrl ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open agent in Cursor
+              </a>
             </div>
           )}
 
