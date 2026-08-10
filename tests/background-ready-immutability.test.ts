@@ -150,7 +150,7 @@ function draftBoard(): Board {
 
 function installBoard(board: Board): void {
   memory = {
-    state: { captureMode: false, activeBoardId: BOARD_ID, serviceOnline: false },
+    state: { captureMode: false, activeBoardId: BOARD_ID, serviceOnline: false, cursorOnline: false },
     boardIds: [BOARD_ID],
     [BOARD_KEY]: structuredClone(board),
   };

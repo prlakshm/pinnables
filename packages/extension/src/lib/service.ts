@@ -7,6 +7,9 @@ import type { Board } from "@pinnables/shared";
  *
  * Everything degrades: if the service is down, boards still live in
  * chrome.storage and the user keeps working. Only the agent handoff needs it.
+ *
+ * When CURSOR_API_KEY is configured on the service, Send / Ready push through
+ * Cursor's Cloud Agents API — no clipboard paste.
  */
 
 const BASE = "http://127.0.0.1:4573";
@@ -14,6 +17,26 @@ const BASE = "http://127.0.0.1:4573";
 export interface MaterializeResult {
   pointer: string;
   boardDir: string;
+}
+
+export interface PushBoardResult {
+  messageId: string;
+  boardDir: string;
+  agentId?: string;
+  runId?: string;
+  url?: string;
+  pointer: string;
+  transport: "cursor" | "clipboard";
+}
+
+export interface HealthResult {
+  ok: boolean;
+  home: string;
+  cursor?: {
+    configured: boolean;
+    ok: boolean;
+    detail: string | null;
+  };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -37,6 +60,19 @@ export async function isServiceOnline(): Promise<boolean> {
   }
 }
 
+export async function getHealth(): Promise<HealthResult | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 900);
+    const res = await fetch(`${BASE}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return (await res.json()) as HealthResult;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Push the board and its screenshots to disk. Screenshots travel as data URLs
  * because the extension has no other way to hand over binary — the service
@@ -52,15 +88,32 @@ export async function materializeBoard(
   });
 }
 
+/**
+ * Materialize + send to Cursor when configured; otherwise materialize only and
+ * return a clipboard pointer (legacy path).
+ */
+export async function pushBoard(
+  board: Board,
+  screenshots: Record<string, string>,
+): Promise<PushBoardResult> {
+  return request<PushBoardResult>(`/boards/${encodeURIComponent(board.id)}/push`, {
+    method: "POST",
+    body: JSON.stringify({ board, screenshots }),
+  });
+}
+
 export interface AgentMessageStatus {
   state: "working" | "done" | "failed";
   detail: string | null;
+  transport?: "cursor" | "local";
+  agentId?: string;
+  runId?: string;
+  url?: string;
 }
 
 /**
- * One live message → one headless agent run, spawned by the service. The whole
- * board travels so the service can render full pin context without a second
- * round trip; screenshots ride as data URLs like materialize.
+ * One live message → one agent run (Cursor Cloud Agents when configured,
+ * otherwise a local CLI spawn). Screenshots ride as data URLs.
  */
 export async function sendAgentMessage(payload: {
   text: string;
@@ -69,11 +122,14 @@ export async function sendAgentMessage(payload: {
   relationshipId?: string;
   drawingSummary?: string;
   screenshots: Record<string, string>;
-}): Promise<{ messageId: string }> {
-  return request<{ messageId: string }>("/messages", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+}): Promise<{ messageId: string; transport?: string | null; url?: string | null }> {
+  return request<{ messageId: string; transport?: string | null; url?: string | null }>(
+    "/messages",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function agentMessageStatus(messageId: string): Promise<AgentMessageStatus> {

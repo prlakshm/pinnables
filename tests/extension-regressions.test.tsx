@@ -353,6 +353,8 @@ test("generic agent submission never launches a hard-coded Cursor deeplink", () 
 
   assert.doesNotMatch(app, /cursor:\/\//);
   assert.doesNotMatch(app, /openInCursor/);
+  // Clipboard is the fallback when Cursor Cloud Agents are not configured.
+  assert.match(app, /result\.transport !== "cursor"/);
   assert.match(app, /navigator\.clipboard\.writeText\(result\.pointer\)/);
 });
 

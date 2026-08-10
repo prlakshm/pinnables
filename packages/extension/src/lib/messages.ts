@@ -27,6 +27,8 @@ export interface ExtensionState {
   captureMode: boolean;
   activeBoardId: string | null;
   serviceOnline: boolean;
+  /** True when the local service can push to Cursor Cloud Agents. */
+  cursorOnline: boolean;
 }
 
 /**
@@ -87,7 +89,15 @@ export interface Contract {
   "board/setInstruction": { req: { boardId: string; instruction: string }; res: { board: Board } };
   "board/markReady": {
     req: { boardId: string };
-    res: { board: Board; pointer: string; materialized: boolean };
+    res: {
+      board: Board;
+      pointer: string;
+      materialized: boolean;
+      transport: "cursor" | "clipboard";
+      messageId: string | null;
+      agentId: string | null;
+      url: string | null;
+    };
   };
 
   "pin/update": {

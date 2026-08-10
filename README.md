@@ -74,6 +74,36 @@ you want them in a build.
 
 ## Connect an agent
 
+### One-click Send to Cursor (recommended)
+
+1. Create an API key at [Cursor Dashboard → API Keys](https://cursor.com/dashboard/api).
+2. Start the local service with that key (and your repo URL):
+
+```bash
+CURSOR_API_KEY=crsr_… \
+PINNABLES_REPO_URL=https://github.com/your-org/your-repo \
+npm run dev:service
+```
+
+3. In the extension, pin + annotate, then press **Send to agent**.
+
+The service calls Cursor's Cloud Agents API with the board brief and pin screenshots —
+no clipboard paste, no "Load Pinnables board …" prompt. Follow-up Sends reuse the same
+agent session (stored in `~/.pinnables/cursor-session.json`).
+
+Optional:
+
+| Env | Purpose |
+|---|---|
+| `PINNABLES_CURSOR_AGENT_ID` | Force follow-ups onto a specific agent |
+| `PINNABLES_REPO_REF` | Starting branch/SHA (default: Cursor's default) |
+| `PINNABLES_AUTO_CREATE_PR=1` | Ask Cursor to open a PR when the run finishes |
+| `PINNABLES_CURSOR_FALLBACK_LOCAL=1` | If Cursor API fails, fall back to local CLI spawn |
+
+Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer to paste.
+
+### MCP (pull / status write-back)
+
 **Claude Code** — `.mcp.json` at the project root:
 
 ```json
@@ -91,7 +121,7 @@ you want them in a build.
 `[mcp_servers.pinnables]`. Add `"env": { "PINNABLES_HOME": ".../fixtures" }` to try it against the
 sample board before capturing anything real.
 
-Then, in the agent:
+Then, in the agent (clipboard fallback path):
 
 > Load Pinnables board "dashboard-cards" and implement it.
 
@@ -117,8 +147,9 @@ Three constraints this encodes, each learned the hard way in [PDR-REVIEW.md](PDR
   `chrome.storage`. The panel and the worker are views, not owners.
 - **The content script is two-tier.** A listener stub satisfies the 200 ms budget; the picker loads
   on activation, so "no background capture when inactive" is literally true.
-- **MCP is pull-only.** No server can push a board into a running agent conversation, so the handoff
-  is: materialize to disk → copy a pointer → the user pastes → the agent pulls.
+- **MCP is pull-only for context; Send can push.** The clipboard pointer remains the zero-config
+  fallback. With `CURSOR_API_KEY`, the local service pushes the board through Cursor's Cloud Agents
+  API so pressing Send starts an agent without paste.
 
 ## Tools
 

@@ -35,6 +35,7 @@ test("concurrent state patches merge instead of overwriting each other", async (
       captureMode: false,
       activeBoardId: null,
       serviceOnline: false,
+      cursorOnline: false,
     } satisfies ExtensionState,
   };
 
@@ -47,6 +48,7 @@ test("concurrent state patches merge instead of overwriting each other", async (
     captureMode: true,
     activeBoardId: "board-concurrent",
     serviceOnline: false,
+    cursorOnline: false,
   });
 });
 
@@ -93,6 +95,7 @@ test("reopening after submission replaces a ready active board with one shared d
       captureMode: false,
       activeBoardId: submitted.id,
       serviceOnline: true,
+      cursorOnline: false,
     } satisfies ExtensionState,
     boardIds: [submitted.id],
     [`board:${submitted.id}`]: submitted,
