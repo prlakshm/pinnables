@@ -153,6 +153,7 @@ h2 {
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; align-items: start; }
 
 .card-name { font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; margin: 14px 0 1px; }
+.card-name[title] { cursor: help; }
 .card-latin { font-style: italic; color: var(--ink-soft); font-size: 13px; margin: 0 0 12px; }
 .traits { display: flex; gap: 14px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
 .traits b { display: block; font-family: var(--sans); font-size: 15px; font-weight: 500; color: var(--ink); letter-spacing: 0; text-transform: none; margin-top: 2px; }
@@ -285,7 +286,7 @@ footer .stamp { color: var(--stamp); }
             <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 74V40"/><path d="M50 40c-9 0-15-6-15-14 0-7 6-12 15-12s15 5 15 12c0 8-6 14-15 14z"/><path d="M41 26c4-4 14-4 18 0"/><path d="M44 32c3-3 9-3 12 0"/><path d="M50 56c-9-1-14-6-15-13 9 0 14 5 15 13z"/><path d="M50 64c9-1 14-6 15-13-9 0-14 5-15 13z"/></svg>
             <span class="acc">ACC 0612</span>
           </div>
-          <h3 class="card-name">Rose</h3>
+          <h3 class="card-name" title="In flower June">Rose</h3>
           <p class="card-latin">Rosa gallica</p>
           <div class="traits">
             <div>Days<b>78</b></div>
@@ -294,12 +295,12 @@ footer .stamp { color: var(--stamp); }
           </div>
         </article>
 
-        <article class="variety variety--legacy" data-pin-component="VarietyCardLegacy" data-pin-source="src/components/VarietyCardLegacy.tsx:9">
+        <article class="variety" data-pin-component="VarietyCardLegacy" data-pin-source="src/components/VarietyCardLegacy.tsx:9">
           <div class="plate">
             <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M50 76V38"/><path d="M50 38 34 24m16 14 16-14M50 38 40 18m10 20 10-20M50 38V16"/><ellipse cx="50" cy="30" rx="8" ry="7"/><path d="M42 52c8-3 16-3 20 2"/></svg>
             <span class="acc">ACC 0301</span>
           </div>
-          <h3 class="card-name">Daffodil</h3>
+          <h3 class="card-name" title="In flower March">Daffodil</h3>
           <p class="card-latin">Narcissus pseudonarcissus</p>
           <div class="traits">
             <div>Days<b>64</b></div>
