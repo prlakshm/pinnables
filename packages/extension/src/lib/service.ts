@@ -103,7 +103,7 @@ export async function pushBoard(
 }
 
 export interface AgentMessageStatus {
-  state: "working" | "done" | "failed";
+  state: "starting" | "working" | "done" | "failed";
   detail: string | null;
   transport?: "cursor" | "local";
   agentId?: string;

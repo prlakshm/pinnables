@@ -25,6 +25,34 @@ type Phase = "idle" | "submitting" | "submitted";
  * as an answer to the press, short enough that nobody waits on it.
  */
 const SUBMITTED_MS = 1200;
+const AGENT_POLL_MS = 2_500;
+/*
+ * How long "Sending…" will wait for the agent to be confirmed running before
+ * it settles for "Sent". The board did leave — a service that never answers
+ * must not leave the only control on screen disabled forever.
+ */
+const AGENT_CONFIRM_TIMEOUT_MS = 30_000;
+
+/**
+ * Resolve once the service reports the run has actually started, or once
+ * waiting stops being worth it. "Sent" is a claim about the agent, not about
+ * the request, so it waits for evidence rather than for the POST to return.
+ */
+async function waitForAgentStart(messageId: string): Promise<void> {
+  const deadline = Date.now() + AGENT_CONFIRM_TIMEOUT_MS;
+  for (;;) {
+    try {
+      const status = await send("agent/status", { messageId });
+      if (status.state !== "starting") return;
+    } catch {
+      // The board is already with the service; a status blip is not worth
+      // holding the button hostage over.
+      return;
+    }
+    if (Date.now() >= deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, AGENT_POLL_MS));
+  }
+}
 
 export function App() {
   const started = useRef(false);
@@ -237,6 +265,9 @@ export function App() {
           setUncopied(result.pointer);
         }
       }
+      // Cursor started a run for this board — hold "Sending…" until it is
+      // confirmed working, so the checkmark means the agent has it.
+      if (result.messageId) await waitForAgentStart(result.messageId);
       phaseRef.current = "submitted";
       setPhase("submitted");
     } catch {

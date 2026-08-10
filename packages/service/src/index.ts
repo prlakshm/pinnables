@@ -89,7 +89,7 @@ async function materialize(board: Board, screenshots: Record<string, string>) {
 /* ------------------------------------------------------------ live messages */
 
 interface LiveMessage {
-  state: "working" | "done" | "failed";
+  state: "starting" | "working" | "done" | "failed";
   detail: string | null;
   transport?: "cursor" | "local";
   agentId?: string;
@@ -196,7 +196,9 @@ async function startViaCursor(
     name: `Pinnables · ${board.title || board.id}`,
   });
   liveMessages.set(id, {
-    state: "working",
+    // The run exists; whether Cursor has started it is a separate question,
+    // answered by the first status refresh.
+    state: "starting",
     detail: null,
     transport: "cursor",
     agentId: result.agentId,
@@ -219,11 +221,20 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
    */
   const custom = process.env.PINNABLES_AGENT_CMD;
   const cwd = process.env.PINNABLES_PROJECT_DIR ?? process.cwd();
+  /*
+   * Piped rather than ignored so the run can say when it has actually begun.
+   * A spawned process is not a working agent — it is a process that has yet to
+   * read its prompt. The first byte it emits is the earliest honest evidence
+   * that the agent is doing the work, so that is what promotes the run from
+   * "starting" to "working". The output itself is drained and dropped; only
+   * its existence is information here.
+   */
+  const stdio: ["ignore", "pipe", "pipe"] = ["ignore", "pipe", "pipe"];
   const child = custom
     ? spawn(custom, {
         cwd,
         shell: true,
-        stdio: "ignore",
+        stdio,
         env: {
           ...process.env,
           PINNABLES_PROMPT: localPrompt,
@@ -232,10 +243,16 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
       })
     : spawn("claude", ["-p", localPrompt, "--permission-mode", "acceptEdits"], {
         cwd,
-        stdio: "ignore",
+        stdio,
       });
 
-  liveMessages.set(id, { state: "working", detail: null, transport: "local" });
+  liveMessages.set(id, { state: "starting", detail: null, transport: "local" });
+  const markWorking = (): void => {
+    if (liveMessages.get(id)?.state !== "starting") return;
+    liveMessages.set(id, { state: "working", detail: null, transport: "local" });
+  };
+  child.stdout?.on("data", markWorking);
+  child.stderr?.on("data", markWorking);
   child.on("error", (err) => {
     liveMessages.set(id, {
       state: "failed",
@@ -271,7 +288,7 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
   const id = `msg-${Date.now().toString(36)}${liveCounter.toString(36)}`;
   const { messagePath, promptText } = await writeLiveArtifacts(body, board, pins, id);
 
-  liveMessages.set(id, { state: "working", detail: null });
+  liveMessages.set(id, { state: "starting", detail: null });
 
   if (cursorConfigured()) {
     try {
@@ -303,7 +320,7 @@ async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
   const found = liveMessages.get(id);
   if (!found) return null;
   if (found.transport !== "cursor" || !found.agentId || !found.runId) return found;
-  if (found.state !== "working") return found;
+  if (found.state !== "working" && found.state !== "starting") return found;
 
   try {
     const status: CursorStatus = await statusFromCursor(found.agentId, found.runId);
