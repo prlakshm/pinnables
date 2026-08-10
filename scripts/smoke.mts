@@ -2,9 +2,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = "/Users/pranavi/Documents/GitHub/pinnables";
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const home = await mkdtemp(join(tmpdir(), "pinnables-smoke-"));
 await cp(join(ROOT, "fixtures"), home, { recursive: true });
