@@ -271,6 +271,15 @@
   color: var(--pin-ink-muted);
   filter: none;
 }
+/* A primary button reporting its own progress is busy, not off. It stays
+   black through "Sending" and "Sent" — the gray plate is for buttons that
+   will not act, and this one already did. */
+.pin-btn--primary:disabled[data-progress="true"] {
+  background: var(--pin-ink);
+  border-color: var(--pin-ink);
+  color: var(--pin-paper);
+  cursor: default;
+}
 /*
  * Both off states darken a step on hover. The difference is the text: `--quiet`
  * is switched off but clickable, so its label comes up to full ink; a disabled

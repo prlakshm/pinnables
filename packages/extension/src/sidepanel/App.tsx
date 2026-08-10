@@ -479,13 +479,15 @@ export function App() {
                   {relCount === 1 ? "" : "s"}
                 </span>
                 {/* One control, reporting its own progress. Disabled while it works
-                    and while it says so, which is also what greys it — the panel's
-                    black-when-it-will-act rule, spent here on the only press that
-                    sends anything. */}
+                    Disabled mid-flight so a second press cannot double-submit,
+                    but never gray: "Sending" and "Sent" are the press being
+                    answered, and the answer wears the same black as the ask. */}
                 <button
                   className="pin-btn pin-btn--primary"
                   style={{ marginLeft: "auto" }}
                   disabled={phase !== "idle"}
+                  data-progress={phase !== "idle"}
+                  aria-busy={phase === "submitting"}
                   onClick={() => void submit()}
                 >
                   {phase === "submitted" && <CheckIcon size={14} />}
