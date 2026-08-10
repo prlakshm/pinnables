@@ -354,6 +354,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const handledSummon = useRef<typeof state.summon>(null);
   const handledDismiss = useRef<typeof state.dismiss>(null);
   const handledFocusRelationship = useRef<typeof state.focusRelationship>(null);
+  const handledSummonGroup = useRef<typeof state.summonGroup>(null);
   /** A creation waiting for its board refresh; user action abandons it. */
   const pendingFocusRelationship = useRef<string | null>(null);
   const revealCleanup = useRef<(() => void) | null>(null);
@@ -1689,6 +1690,57 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   }, [board, route, state.focusRelationship, seatCardAtElement]);
 
   /**
+   * The shelf's group row, landing. Reopening a messaged multi-selection is a
+   * context switch, not an addition: members on this route come back as the
+   * live selection — combined bar, shared history and all — and members from
+   * other routes ride along as capture cards, exactly like a relationship's
+   * cluster does.
+   */
+  useEffect(() => {
+    const request = state.summonGroup;
+    if (!request || !board) return;
+    if (!claimRevealRequest(handledSummonGroup, request)) return;
+
+    const members = request.pinIds.filter((pinId) =>
+      board.pins.some((pin) => pin.id === pinId && pin.kind === "element"),
+    );
+    if (members.length === 0) return;
+    const live = members.filter(
+      (pinId) => board.pins.find((pin) => pin.id === pinId)?.route === route,
+    );
+    pendingFocusRelationship.current = null;
+    setSelected([]);
+    setLiveSelected(live);
+    setFocusCards(members.filter((pinId) => !live.includes(pinId)));
+
+    const first = board.pins.find((pin) => pin.id === live[0]);
+    const found = first ? refindElement(first) : null;
+    found?.element.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [state.summonGroup, board, route]);
+
+  /*
+   * The dismissal side of "the shelf records what you said": a provisional
+   * pin whose selection ends unspoken is quietly discarded. The worker
+   * verifies silence itself, so a discard racing a promotion is a no-op —
+   * this watcher only has to notice departures, never adjudicate them.
+   */
+  const previousLiveSelected = useRef<string[]>([]);
+  useEffect(() => {
+    const departed = previousLiveSelected.current.filter((id) => !liveSelected.includes(id));
+    previousLiveSelected.current = liveSelected;
+    if (!board || departed.length === 0) return;
+    for (const pinId of departed) {
+      const pin = board.pins.find((candidate) => candidate.id === pinId);
+      if (!pin?.provisional) continue;
+      void send("pin/discardProvisional", { pinId })
+        .then(({ discarded }) => {
+          if (discarded) api.refresh();
+        })
+        .catch(() => {});
+    }
+  }, [liveSelected, board, api]);
+
+  /**
    * The shelf mirrors what is on screen: pin ids in the focus context are
    * published for the panel, whose upright pin icons fill for exactly these.
    */
@@ -1876,15 +1928,35 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   /** The annotation bar sits under the selection, like the group composer. */
   const dialogPlacement = (() => {
     if (drawing || liveSelectedPins.length === 0) return null;
-    const rects = liveSelected
-      .map((pinId) => liveRects[pinId]?.rect)
-      .filter((rect): rect is DOMRect => rect !== undefined);
-    if (rects.length === 0) return null;
+    const entries = liveSelected
+      .map((pinId, index) => ({ rect: liveRects[pinId]?.rect, full: index === 0 }))
+      .filter((entry): entry is { rect: DOMRect; full: boolean } => entry.rect !== undefined);
+    if (entries.length === 0) return null;
+    const rects = entries.map((entry) => entry.rect);
     const left = Math.min(...rects.map((rect) => rect.left));
     const right = Math.max(...rects.map((rect) => rect.right));
     const bottom = Math.max(...rects.map((rect) => rect.bottom));
     const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const placed = placeGroupComposer({ left, right, bottom }, viewport);
+    /*
+     * A top-of-viewport selection hangs its label below itself — there is no
+     * room above. When that flipped label belongs to the lowest rect it sits
+     * exactly where the bar would land, so the bar yields the label's height
+     * and the stack reads component, label, bar.
+     */
+    const flipped = entries.filter(
+      (entry) => entry.rect.top < 60 && entry.rect.bottom >= bottom - 1,
+    );
+    /*
+     * Allowance = label height minus most of the bar's own 12px offset, so
+     * the stacked pair reads as one unit: the bar starts ~6px under the
+     * label instead of a full gap below it.
+     */
+    const labelAllowance =
+      flipped.length === 0 ? 0 : Math.max(...flipped.map((entry) => (entry.full ? 42 : 26)));
+    const placed = placeGroupComposer(
+      { left, right, bottom: bottom + labelAllowance },
+      viewport,
+    );
     if (rects.length > 1) return placed;
     /*
      * A lone selection reads as one block: label, component, bar — all
@@ -2000,7 +2072,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             <div
               key={pinId}
               className="pin-live-outline"
-              data-label={live.rect.top < 60 ? "inside" : "above"}
+              data-label={live.rect.top < 60 ? "below" : "above"}
               style={{
                 left: live.rect.left,
                 top: live.rect.top,
@@ -2151,7 +2223,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       <Toolbar
         mode={mode}
         onMode={setMode}
-        pinCount={pins.length}
+        pinCount={pins.filter((pin) => !pin.provisional).length}
         onExit={() => void exitCapture()}
         drawTool={drawTool}
         onDrawTool={setDrawTool}

@@ -59,7 +59,23 @@ export function PinList({
   const [relationshipBusy, setRelationshipBusy] = useState(false);
   const [relationshipIssue, setRelationshipIssue] = useState<string | null>(null);
 
-  const pins = sortedByOrder(board.pins);
+  // Unspoken pins are not on the shelf — that is the whole contract.
+  const pins = sortedByOrder(board.pins).filter((pin) => !pin.provisional);
+
+  /*
+   * Messaged multi-selections, reopenable. A group exists only through its
+   * members' shared groupId — delete pins down to one and the row simply
+   * stops existing, no cleanup to forget.
+   */
+  const groups = (() => {
+    const byId = new Map<string, Pin[]>();
+    for (const pin of pins) {
+      if (pin.groupId === null || pin.kind !== "element") continue;
+      byId.set(pin.groupId, [...(byId.get(pin.groupId) ?? []), pin]);
+    }
+    return [...byId.entries()].filter(([, members]) => members.length >= 2);
+  })();
+  const [groupIssue, setGroupIssue] = useState<string | null>(null);
 
   const toggleTarget = (pinId: string) =>
     setTargets((prev) => {
@@ -112,6 +128,62 @@ export function PinList({
           {relationshipIssue}
         </div>
       )}
+
+      {groupIssue && (
+        <div className="pin-banner pin-banner--error" role="alert">
+          {groupIssue}
+        </div>
+      )}
+
+      {!source &&
+        groups.map(([groupId, members]) => {
+          const onScreen = members.every((member) => onScreenPins.has(member.id));
+          const label = members.map((member) => pinLabel(member, board.pins)).join(" + ");
+          return (
+            <div key={groupId} className="pin-group-row">
+              <LinkIcon size={13} />
+              <span className="pin-group-row__label" title={label}>
+                {label}
+              </span>
+              <span className="pin-chip pin-chip--mono">group</span>
+              {/* Same presence toggle the pins wear: filled means the combined
+                  bar is up; pressing again sends the members home. */}
+              <button
+                className="pin-icon-btn pin-summon"
+                style={{ width: 24, height: 24 }}
+                data-active={onScreen}
+                onClick={() => {
+                  void (async () => {
+                    setGroupIssue(null);
+                    try {
+                      if (onScreen) {
+                        await Promise.all(
+                          members.map((member) => send("pin/dismiss", { pinId: member.id })),
+                        );
+                        return;
+                      }
+                      const result = await send("group/summon", { groupId });
+                      if (!result.ok) setGroupIssue("Couldn’t reach this group’s page.");
+                    } catch {
+                      setGroupIssue("Couldn’t reach this group’s page.");
+                    }
+                  })();
+                }}
+                aria-label={
+                  onScreen ? `Remove ${label} from the page` : `Reopen ${label} together`
+                }
+                aria-pressed={onScreen}
+                title={
+                  onScreen
+                    ? "Remove the group from the page"
+                    : "Reopen the group's combined annotation bar"
+                }
+              >
+                <PinUprightIcon size={15} />
+              </button>
+            </div>
+          );
+        })}
 
       {pins.map((pin) => (
         <PinRow

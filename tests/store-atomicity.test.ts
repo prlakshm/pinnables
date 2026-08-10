@@ -30,15 +30,19 @@ const { ensureActiveBoard, patchState } = await import(
 );
 
 test("concurrent state patches merge instead of overwriting each other", async () => {
-  memory = {
-    state: {
-      captureMode: false,
-      activeBoardId: null,
-      serviceOnline: false,
-      cursorOnline: false,
-      cursorAgentUrl: null,
-    } satisfies ExtensionState,
-  };
+  // One base object, spread into both the fixture and the expectation: the
+  // test is about merge semantics, and must not fail every time a new field
+  // joins ExtensionState.
+  const base = {
+    captureMode: false,
+    activeBoardId: null,
+    serviceOnline: false,
+    cursorOnline: false,
+    cursorAgentUrl: null,
+    cursorRuntime: null,
+    cursorProjectDir: null,
+  } satisfies ExtensionState;
+  memory = { state: { ...base } };
 
   await Promise.all([
     patchState({ captureMode: true }),
@@ -46,11 +50,9 @@ test("concurrent state patches merge instead of overwriting each other", async (
   ]);
 
   assert.deepEqual(memory.state, {
+    ...base,
     captureMode: true,
     activeBoardId: "board-concurrent",
-    serviceOnline: false,
-    cursorOnline: false,
-    cursorAgentUrl: null,
   });
 });
 

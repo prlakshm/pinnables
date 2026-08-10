@@ -22,12 +22,15 @@ export interface OverlayState {
   dismiss: DismissMessage | null;
   /** A relationship was just created; the page composes its cluster. */
   focusRelationship: FocusRelationshipMessage | null;
+  /** The shelf asked for a messaged group's combined bar back. */
+  summonGroup: SummonGroupMessage | null;
 }
 
 type RevealMessage = Extract<Broadcast, { kind: "reveal-pin" }>;
 type SummonMessage = Extract<Broadcast, { kind: "summon-pins" }>;
 type DismissMessage = Extract<Broadcast, { kind: "dismiss-pins" }>;
 type FocusRelationshipMessage = Extract<Broadcast, { kind: "focus-relationship" }>;
+type SummonGroupMessage = Extract<Broadcast, { kind: "summon-group" }>;
 
 export interface OverlayApi {
   setEnabled(enabled: boolean): void;
@@ -36,6 +39,7 @@ export interface OverlayApi {
   summon(message: SummonMessage): void;
   dismiss(message: DismissMessage): void;
   focusRelationship(message: FocusRelationshipMessage): void;
+  summonGroup(message: SummonGroupMessage): void;
   destroy(): void;
   subscribe(listener: () => void): () => void;
   snapshot(): OverlayState;
@@ -49,6 +53,7 @@ function createApi(teardown: () => void): OverlayApi {
     summon: null,
     dismiss: null,
     focusRelationship: null,
+    summonGroup: null,
   };
   const listeners = new Set<() => void>();
 
@@ -64,6 +69,7 @@ function createApi(teardown: () => void): OverlayApi {
         reveal: enabled ? state.reveal : null,
         summon: enabled ? state.summon : null,
         focusRelationship: enabled ? state.focusRelationship : null,
+        summonGroup: enabled ? state.summonGroup : null,
       }),
     refresh: () => commit({ revision: state.revision + 1 }),
     reveal: (message) => commit({ reveal: message, revision: state.revision + 1 }),
@@ -71,6 +77,7 @@ function createApi(teardown: () => void): OverlayApi {
     dismiss: (message) => commit({ dismiss: message, revision: state.revision + 1 }),
     focusRelationship: (message) =>
       commit({ focusRelationship: message, revision: state.revision + 1 }),
+    summonGroup: (message) => commit({ summonGroup: message, revision: state.revision + 1 }),
     destroy: teardown,
     subscribe: (listener) => {
       listeners.add(listener);

@@ -114,6 +114,14 @@ export const PinSchema = z.object({
   /** Fractional index — reordering touches one pin, not the whole list. */
   order: z.number(),
   groupId: z.string().nullable(),
+  /**
+   * True until the selection speaks. A click captures fully — screenshot,
+   * styles, the receipt — but the pin reaches the shelf only once the user
+   * commits an act: a message, a stash, a drawing, a relationship, a rename.
+   * Silent provisionals are discarded on dismissal; the shelf records what
+   * was said, not what was touched.
+   */
+  provisional: z.boolean().default(false),
   url: z.string(),
   route: z.string(),
   viewport: ViewportSchema,

@@ -252,7 +252,7 @@ test("a capture already photographing the page is ordered before a later board c
   assert.deepEqual(storedBoard().pins, []);
 });
 
-test("submission waits for an in-flight capture and materializes that queued pin", async () => {
+test("submission waits for an in-flight capture; the unspoken pin does not ship", async () => {
   installBoard(board());
   captureGate = deferred<string>();
 
@@ -269,10 +269,41 @@ test("submission waits for an in-flight capture and materializes that queued pin
   assert.equal(readyResult.ok, true);
   assert.equal(materializedBeforeCaptureFinished, 0);
   assert.equal(materializedBoards.length, 1);
-  assert.equal(materializedBoards[0]?.pins.length, 1);
+  /*
+   * The ordering guarantee holds — submission waited for the capture — but a
+   * pin that never spoke never reaches the agent: the shelf records what was
+   * said, and this one said nothing. It is dropped from the ready board, not
+   * carried as invisible cargo.
+   */
+  assert.equal(materializedBoards[0]?.pins.length, 0);
   assert.equal(storedBoard().status, "ready");
-  assert.equal(storedBoard().pins.length, 1);
+  assert.equal(storedBoard().pins.length, 0);
   assert.equal((memory.state as { captureMode: boolean }).captureMode, false);
+});
+
+test("a spoken pin ships; a silent one alongside it does not", async () => {
+  installBoard(board());
+
+  const first = await dispatchCapture();
+  assert.equal(first.ok, true);
+  const spokenId = storedBoard().pins[0]!.id;
+  await dispatch({
+    type: "pin/update",
+    pinId: spokenId,
+    patch: { annotation: "make it green" },
+  });
+  const second = await dispatchCapture(element({ selector: ".other", domPath: "body > .other" }));
+  assert.equal(second.ok, true);
+  assert.equal(storedBoard().pins.length, 2);
+
+  const readyResult = await dispatch<{ board: Board }>({
+    type: "board/markReady",
+    boardId: BOARD_ID,
+  });
+  assert.equal(readyResult.ok, true);
+  assert.equal(storedBoard().pins.length, 1);
+  assert.equal(storedBoard().pins[0]?.id, spokenId);
+  assert.equal(storedBoard().pins[0]?.provisional, false);
 });
 
 test("a capture after submission starts a fresh draft without mutating the ready board", async () => {

@@ -227,13 +227,26 @@ export function SelectionDialog({
     pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
   }, []);
 
+  const staging = useRef(false);
   const stage = useCallback(
     async (message: string, offlineFallback: boolean) => {
+      // ⌘↵ held long enough auto-repeats; the second landing must not write
+      // the same note twice.
+      if (staging.current) return;
+      staging.current = true;
+      try {
       await onAddToBoard(message);
+      // Stashing to the whole selection is also the group speaking.
+      if (pins.length > 1) {
+        void send("group/record", { pinIds: pins.map((pin) => pin.id) }).catch(() => {});
+      }
       setDraft("");
       setPhase({ kind: offlineFallback ? "staged-offline" : "staged" });
+      } finally {
+        staging.current = false;
+      }
     },
-    [onAddToBoard],
+    [onAddToBoard, pins],
   );
 
   /** One delivery path for fresh sends and resends alike. */
@@ -264,6 +277,11 @@ export function SelectionDialog({
         if (selectionKeyRef.current !== key) return "sent";
         setPhase({ kind: "starting", messageId });
         onLiveSent(pins.map((pin) => pin.id));
+        // A multi-selection that has now spoken becomes a group the shelf can
+        // reopen; a lone pin needs no such record.
+        if (pins.length > 1) {
+          void send("group/record", { pinIds: pins.map((pin) => pin.id) }).catch(() => {});
+        }
         poll(messageId, key);
         return "sent";
       } catch (err) {
@@ -382,11 +400,32 @@ export function SelectionDialog({
   const multi = pins.length > 1;
   const busy =
     phase.kind === "sending" || phase.kind === "starting" || phase.kind === "working";
-  /** Staged board notes, one history line each. */
+  /*
+   * Staged board notes, one history line each. A multi-selection shows only
+   * the lines every selected pin carries — a group stash writes to all of
+   * them, and a note aimed at one pin does not belong to the group's
+   * conversation. (With one pin the filter passes everything.)
+   */
   const boardNotes = primary.annotation
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((line) =>
+      pins.every((pin) => pin.annotation.split("\n").some((cand) => cand.trim() === line)),
+    )
+    .filter((line, index, all) => all.indexOf(line) === index);
+
+  /*
+   * Delivered messages the whole selection shares. A group send records the
+   * same messageId on every pin it went to, which is exactly the test for
+   * "belongs to this conversation" — one pin's private sends stay off a
+   * group bar, and a lone pin shows its full log.
+   */
+  const historySends = primary.liveSends.filter((sent) =>
+    sent.messageId === null
+      ? pins.length === 1
+      : pins.every((pin) => pin.liveSends.some((other) => other.messageId === sent.messageId)),
+  );
 
   const statusLine = (() => {
     switch (phase.kind) {
@@ -503,16 +542,22 @@ export function SelectionDialog({
       {/*
         * The conversation so far, under the input — where a chat keeps its
         * history while you type the next line. Staged notes first, delivered
-        * messages after, each marked for what it is.
+        * messages after, each marked for what it is. A multi-selection shows
+        * the group's shared conversation.
         */}
-      {pins.length === 1 && (boardNotes.length > 0 || primary.liveSends.length > 0 || echo !== null) && (
+      {(boardNotes.length > 0 || historySends.length > 0 || echo !== null) && (
         <div className="pin-note__history">
           {boardNotes.map((note, index) => (
             <div key={`note-${index}`} className="pin-note__history-item">
-              {note}
+              <span className="pin-note__history-text">{note}</span>
+              {/* A note's state is a fact too: it went to the board, and no
+                  agent has it. Quiet dress — this is bookkeeping, not alarm. */}
+              <span className="pin-note__tag" data-tone="quiet">
+                On board
+              </span>
             </div>
           ))}
-          {primary.liveSends
+          {historySends
             .filter(
               (sent) =>
                 sent.state !== "done" ||
