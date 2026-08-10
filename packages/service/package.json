@@ -1,0 +1,17 @@
+{
+  "name": "@pinnables/service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pinnables-service": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@pinnables/shared": "0.1.0"
+  }
+}

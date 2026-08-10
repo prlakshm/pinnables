@@ -7,15 +7,26 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "test": "tsx --tsconfig packages/extension/tsconfig.json --test tests/*.test.ts tests/*.test.tsx",
+    "build": "npm run check-tokens && npm run check-typography && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/vite-plugin && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
+    "dev:extension": "npm run dev --workspace @pinnables/extension",
+    "dev:service": "npm run start --workspace @pinnables/service",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
-    "dev:flowers": "npm run dev --prefix examples/flowers-website",
     "init:project": "tsx scripts/init-project.mts",
-    "typecheck": "tsc --build --force"
+    "smoke": "tsx scripts/smoke.mts",
+    "trace-wordmark": "node scripts/trace-wordmark.mjs",
+    "typecheck": "npm run typecheck --workspace @pinnables/extension",
+    "demo": "node scripts/serve-demo.mjs demo",
+    "film": "node scripts/serve-demo.mjs film",
+    "make-icons": "node scripts/make-icons.mjs",
+    "check-tokens": "node scripts/check-tokens.mjs",
+    "check-typography": "node scripts/check-typography.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "potrace": "^2.1.8",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "jimp": "^0.14.0"
   }
 }

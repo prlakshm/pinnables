@@ -2,15 +2,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { PinStatusSchema, renderBoardManifest, renderPinContext } from "@pinnables/shared";
 import {
-  PinStatusSchema,
+  pinnablesHome,
   readAllBoards,
   readBoard,
-  renderBoardManifest,
-  renderPinContext,
+  resolveAsset,
   writeBoard,
-  pinnablesHome,
-} from "@pinnables/shared";
+} from "@pinnables/shared/storage";
 
 const server = new McpServer({ name: "pinnables", version: "0.1.0" });
 
@@ -96,7 +95,9 @@ server.registerTool(
       const known = board.pins.map((p) => p.id).join(", ");
       return failure(`No pin "${pinId}" on board "${boardId}". Pins on this board: ${known}`);
     }
-    return text(renderPinContext(board, pin));
+    // Absolute, so the agent can open it with its own file tools rather than
+    // us inlining base64 into the tool result.
+    return text(renderPinContext(board, pin, resolveAsset(board.id, pin.screenshotPath)));
   },
 );
 

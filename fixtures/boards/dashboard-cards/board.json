@@ -4,10 +4,10 @@
   "projectId": "acme-app",
   "title": "Dashboard card consistency",
   "globalInstruction": "Normalize using the existing design tokens in src/styles/tokens.css. Do not introduce new dependencies.",
-  "status": "done",
+  "status": "ready",
   "generatedAt": "2026-08-01T14:22:10.000Z",
   "createdAt": "2026-08-01T13:40:00.000Z",
-  "updatedAt": "2026-08-09T21:26:08.281Z",
+  "updatedAt": "2026-08-01T14:22:10.000Z",
   "pins": [
     {
       "id": "pin-01",
@@ -51,11 +51,13 @@
         "font-size": "14px",
         "line-height": "20px"
       },
-      "annotation": "Too much vertical padding, and the radius doesn't match anything else in the product.\n\n[agent] Applied card tokens: padding 16px 20px, radius 12px, shadow from SettingsCard.",
+      "styleEdits": {},
+      "annotation": "Too much vertical padding, and the radius doesn't match anything else in the product.",
       "captureState": "default",
-      "status": "done",
+      "status": "todo",
       "createdAt": "2026-08-01T13:41:02.000Z",
-      "updatedAt": "2026-08-09T21:26:08.281Z"
+      "updatedAt": "2026-08-01T13:41:02.000Z",
+      "name": "Revenue card"
     },
     {
       "id": "pin-02",
@@ -99,11 +101,13 @@
         "font-size": "14px",
         "line-height": "20px"
       },
-      "annotation": "This is the card treatment we want everywhere. Reference only — don't change this one.\n\n[agent] Reference card — left unchanged.",
+      "styleEdits": {},
+      "annotation": "This is the card treatment we want everywhere. Reference only \u2014 don't change this one.",
       "captureState": "default",
-      "status": "done",
+      "status": "todo",
       "createdAt": "2026-08-01T13:44:30.000Z",
-      "updatedAt": "2026-08-09T21:26:08.281Z"
+      "updatedAt": "2026-08-01T13:44:30.000Z",
+      "name": null
     },
     {
       "id": "pin-03",
@@ -121,7 +125,7 @@
       "thumbnailPath": "pins/pin-03.thumb.webp",
       "selector": ".dashboard-grid > article.activity-card",
       "domPath": "body > div#root > main.dashboard > section.dashboard-grid > article.activity-card",
-      "outerHtml": "<article class=\"activity-card rounded px-6 py-7 bg-white\"><h3>Recent activity</h3><ul class=\"activity-list\">…</ul></article>",
+      "outerHtml": "<article class=\"activity-card rounded px-6 py-7 bg-white\"><h3>Recent activity</h3><ul class=\"activity-list\">\u2026</ul></article>",
       "classList": [
         "activity-card",
         "rounded",
@@ -146,11 +150,13 @@
         "font-size": "14px",
         "line-height": "20px"
       },
-      "annotation": "Same drift as the stat card, plus it's missing a shadow entirely.\n\n[agent] Matched SettingsCard container treatment via shared .card tokens.",
+      "styleEdits": {},
+      "annotation": "Same drift as the stat card, plus it's missing a shadow entirely.",
       "captureState": "default",
-      "status": "done",
+      "status": "todo",
       "createdAt": "2026-08-01T13:46:11.000Z",
-      "updatedAt": "2026-08-09T21:26:08.281Z"
+      "updatedAt": "2026-08-01T13:46:11.000Z",
+      "name": null
     },
     {
       "id": "pin-04",
@@ -168,7 +174,7 @@
       "thumbnailPath": "pins/pin-04.thumb.webp",
       "selector": "nav.mobile-nav",
       "domPath": "body > div#root > nav.mobile-nav",
-      "outerHtml": "<nav class=\"mobile-nav drawer\" data-state=\"open\" aria-label=\"Main\"><button aria-label=\"Close\">…</button></nav>",
+      "outerHtml": "<nav class=\"mobile-nav drawer\" data-state=\"open\" aria-label=\"Main\"><button aria-label=\"Close\">\u2026</button></nav>",
       "classList": [
         "mobile-nav",
         "drawer"
@@ -190,11 +196,13 @@
         "box-shadow": "rgba(0, 0, 0, 0.18) 4px 0px 24px 0px",
         "background-color": "rgb(255, 255, 255)"
       },
-      "annotation": "Keep this slide-in drawer behavior on checkout. Do not convert it to a bottom tab bar like /dashboard uses.\n\n[agent] Slide-in drawer preserved on checkout route.",
+      "styleEdits": {},
+      "annotation": "Keep this slide-in drawer behavior on checkout. Do not convert it to a bottom tab bar like /dashboard uses.",
       "captureState": "mobile",
-      "status": "done",
+      "status": "todo",
       "createdAt": "2026-08-01T14:02:47.000Z",
-      "updatedAt": "2026-08-09T21:26:08.281Z"
+      "updatedAt": "2026-08-01T14:02:47.000Z",
+      "name": null
     },
     {
       "id": "pin-05",
@@ -237,11 +245,80 @@
         "box-shadow": "none",
         "background-color": "rgba(0, 0, 0, 0)"
       },
-      "annotation": "Reads as a different product than the cards. Should sit in the same family without becoming a card itself.\n\n[agent] Aligned empty state with card family tokens (radius, subtle bg) without card shadow.",
+      "styleEdits": {
+        "border-radius": "12px",
+        "padding-top": "32px",
+        "padding-bottom": "32px"
+      },
+      "annotation": "Reads as a different product than the cards. Should sit in the same family without becoming a card itself.",
       "captureState": "empty",
-      "status": "done",
+      "status": "todo",
       "createdAt": "2026-08-01T14:08:55.000Z",
-      "updatedAt": "2026-08-09T21:26:08.281Z"
+      "updatedAt": "2026-08-01T14:08:55.000Z",
+      "name": null
+    },
+    {
+      "id": "pin-06",
+      "schemaVersion": 1,
+      "boardId": "dashboard-cards",
+      "kind": "region",
+      "drawings": [
+        {
+          "id": "shape-1",
+          "kind": "ellipse",
+          "points": [
+            {
+              "x": 0.18,
+              "y": 0.22
+            },
+            {
+              "x": 0.74,
+              "y": 0.68
+            }
+          ],
+          "color": "#ED1C24"
+        },
+        {
+          "id": "shape-2",
+          "kind": "arrow",
+          "points": [
+            {
+              "x": 0.82,
+              "y": 0.14
+            },
+            {
+              "x": 0.6,
+              "y": 0.34
+            }
+          ],
+          "color": "#ED1C24"
+        }
+      ],
+      "order": 6,
+      "groupId": null,
+      "url": "http://localhost:5173/dashboard",
+      "route": "/dashboard",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "screenshotPath": "pins/pin-06.png",
+      "thumbnailPath": "pins/pin-06.thumb.webp",
+      "selector": "",
+      "domPath": "",
+      "outerHtml": "",
+      "classList": [],
+      "elementText": "toolbar crowding",
+      "componentName": null,
+      "sourceFile": null,
+      "computedStyles": {},
+      "styleEdits": {},
+      "annotation": "Everything between the filter row and the first card is fighting for the same space. Give this whole band more room \u2014 I don't mind which element absorbs it.",
+      "captureState": "default",
+      "status": "todo",
+      "createdAt": "2026-08-01T14:15:20.000Z",
+      "updatedAt": "2026-08-01T14:15:20.000Z",
+      "name": null
     }
   ],
   "relationships": [
@@ -259,7 +336,7 @@
         "spacing",
         "shadow"
       ],
-      "exception": "Preserve each card's own heading and content hierarchy — only the container treatment should change.",
+      "exception": "Preserve each card's own heading and content hierarchy \u2014 only the container treatment should change.",
       "instruction": "Dashboard cards should read as the same component family as the Settings plan card."
     }
   ]

@@ -17,7 +17,18 @@ export const STYLE_GROUPS = {
     "align-items",
     "grid-template-columns",
   ],
-  size: ["width", "height"],
+  /*
+   * `width` does not decide a flex item's width — `flex-basis` and `flex-grow`
+   * do, and a `flex: 1` card ignores any width you hand it. Capturing only the
+   * measured size meant the diff emitted `width: 232.5px` for an element that
+   * could never honour it: the preview applied it and nothing moved, and an
+   * agent writing the same line would have shipped a no-op.
+   *
+   * Capturing the properties that actually control the axis makes the diff
+   * carry `flex-grow: 1 → 0` and `flex-basis: 0% → auto` alongside the width,
+   * which is the change that works — in the preview and in the source file.
+   */
+  size: ["width", "height", "flex-grow", "flex-shrink", "flex-basis"],
   spacing: [
     "padding-top",
     "padding-right",
@@ -48,9 +59,63 @@ export type StyleGroup = keyof typeof STYLE_GROUPS;
 export const STYLE_ALLOWLIST: readonly string[] = Object.values(STYLE_GROUPS).flat();
 
 /**
+ * Computed values intentionally omitted from a capture when they equal CSS's
+ * initial value.
+ *
+ * Keeping the compact capture is useful, but absence must still be a value when
+ * two pins are compared. Without this shared table, `0px → 16px` padding,
+ * `none → shadow`, and `0px → 12px` radius all vanished from the diff because
+ * one side had no key. Capture and comparison use the same table so omission is
+ * lossless rather than ambiguous.
+ */
+export const STYLE_INITIAL_VALUES: Readonly<Record<string, string>> = {
+  "margin-top": "0px",
+  "margin-right": "0px",
+  "margin-bottom": "0px",
+  "margin-left": "0px",
+  "padding-top": "0px",
+  "padding-right": "0px",
+  "padding-bottom": "0px",
+  "padding-left": "0px",
+  gap: "normal",
+  "border-radius": "0px",
+  "border-width": "0px",
+  "border-style": "none",
+  "box-shadow": "none",
+  "background-color": "rgba(0, 0, 0, 0)",
+  "letter-spacing": "normal",
+  "text-align": "start",
+  position: "static",
+  "grid-template-columns": "none",
+  "flex-direction": "row",
+  "justify-content": "normal",
+  "align-items": "normal",
+  "flex-grow": "0",
+  "flex-shrink": "1",
+  "flex-basis": "auto",
+};
+
+function capturedValue(styles: Record<string, string>, property: string): string | undefined {
+  return styles[property] ?? STYLE_INITIAL_VALUES[property];
+}
+
+/**
  * Expand a relationship's `properties` — which may hold friendly group names
  * ("spacing") or bare CSS properties ("border-radius") — into CSS properties.
  * Unknown entries pass through so a hand-written board still works.
+ *
+ * **Anything expanding this must run `applicabilityGuard` itself.** This is the
+ * function that makes the two shapes interchangeable, so it is where the
+ * assumption gets made and where it goes wrong. Expanding a group hands back
+ * every longhand under it — `"border"` yields `border-color` whether or not the
+ * source draws a border — and the fact that the panel only ever *stores*
+ * guarded properties says nothing about what a board authored elsewhere holds.
+ * The checked-in fixture stores group names; so does anything hand-written.
+ *
+ * The live preview learned this the expensive way: it expanded, read the
+ * source's value and wrote it as `!important`, painting a black border from a
+ * borderless card. Upstream filtering is not a guarantee when the input has two
+ * shapes, and the guard belongs where the value is written.
  */
 export function expandProperties(properties: readonly string[]): string[] {
   const out: string[] = [];
@@ -62,10 +127,60 @@ export function expandProperties(properties: readonly string[]): string[] {
   return [...new Set(out)];
 }
 
+/** Which of the named groups actually differ between two pins. */
+export function differingGroups(source: Pin, target: Pin, groups: readonly string[]): string[] {
+  return groups.filter((group) => computeStyleDiff(source, target, [group]).length > 0);
+}
+
 export interface StyleDiffEntry {
   property: string;
   from: string;
   to: string;
+}
+
+export interface Applicability {
+  /** Whether writing this property to the target would actually do anything. */
+  applicable: boolean;
+  /** Why not, in words — so a caller can say it rather than silently drop it. */
+  reason: string | null;
+}
+
+const APPLICABLE: Applicability = { applicable: true, reason: null };
+
+/**
+ * Whether a property can be applied to this target at all.
+ *
+ * Two rules used to live as bare `if`s inside the diff loop, and they are the
+ * same rule twice: a value that differs on paper but cannot manifest on the
+ * element. An undrawn border reports a colour it does not paint; a flex-stretched
+ * card reports a width nobody wrote and that it would ignore if you set it.
+ *
+ * They belong together because *anything ranking these changes has to consult
+ * them*. Perceptibility scoring in particular — a width difference alters layout
+ * in principle, so a naive "layout always counts" rule will confidently promote
+ * a change that is inert. The guard is the thing that stops that, and it is the
+ * place the third case goes when it turns up.
+ *
+ * Returns a closure so the facts each rule depends on are computed once per
+ * pair rather than once per property.
+ */
+export function applicabilityGuard(
+  source: Pin,
+  target: Pin,
+): (property: string) => Applicability {
+  const sourceBordered = hasVisibleBorder(source.computedStyles);
+
+  return (property) => {
+    if (property === "border-color" && !sourceBordered) {
+      return { applicable: false, reason: "the source draws no border" };
+    }
+    return APPLICABLE;
+  };
+}
+
+/** One-off form, for callers holding a single entry rather than a whole diff. */
+export function applicabilityOf(property: string, source: Pin, target: Pin): Applicability {
+  return applicabilityGuard(source, target)(property);
 }
 
 /**
@@ -81,14 +196,105 @@ export function computeStyleDiff(
   properties: readonly string[],
 ): StyleDiffEntry[] {
   const diff: StyleDiffEntry[] = [];
+  const applicable = applicabilityGuard(source, target);
   for (const property of expandProperties(properties)) {
-    const to = source.computedStyles[property];
-    const from = target.computedStyles[property];
+    // A change that cannot manifest is not a change. See `applicabilityGuard`.
+    if (!applicable(property).applicable) continue;
+    const to = capturedValue(source.computedStyles, property);
+    const from = capturedValue(target.computedStyles, property);
     if (to === undefined || from === undefined) continue;
     if (to === from) continue;
     diff.push({ property, from, to });
   }
   return collapseShorthands(diff);
+}
+
+export interface BlockedChange extends StyleDiffEntry {
+  applicability: Applicability;
+}
+
+/**
+ * The differences the guard threw away, for the one caller that wants them.
+ *
+ * A sibling rather than a flag on `computeStyleDiff`, because the three
+ * consumers of that function do not want the same thing and only one of them
+ * wants these. The brief must not carry them — `width: 232.5px` on a flex item
+ * is an instruction that does nothing, and an agent quietly doing nothing is a
+ * failure nobody sees in review. The live preview must not apply them for the
+ * same reason. Only the panel should show them, greyed, with the reason.
+ *
+ * So the default stays safe and the exception opts in. Inverting that — return
+ * everything flagged, let callers filter — would put the burden on three call
+ * sites to remember, and the one that forgets fails silently and ships.
+ *
+ * Note the second condition: blocked is not the same as blocked *and*
+ * differing. `border-color` is inert on a borderless source whether or not the
+ * two pins disagree about it, and a greyed row for two identical colours is a
+ * row about nothing.
+ */
+export function computeBlockedChanges(
+  source: Pin,
+  target: Pin,
+  properties: readonly string[],
+): BlockedChange[] {
+  const blocked: BlockedChange[] = [];
+  const applicable = applicabilityGuard(source, target);
+
+  for (const property of expandProperties(properties)) {
+    const applicability = applicable(property);
+    if (applicability.applicable) continue;
+    const to = capturedValue(source.computedStyles, property);
+    const from = capturedValue(target.computedStyles, property);
+    if (to === undefined || from === undefined) continue;
+    if (to === from) continue;
+    blocked.push({ property, from, to, applicability });
+  }
+  return blocked;
+}
+
+/**
+ * Whether an element actually draws a border.
+ *
+ * `border-color` resolves to `currentColor` when nothing is drawn, so a card
+ * with no border reports its *text* colour — near-black on a white card. The
+ * diff then reads that as a deliberate choice and offers to apply it, which
+ * paints a real black border onto a target that only had a hairline.
+ *
+ * Matching a source with no border means removing the target's border, and
+ * `border-width` and `border-style` already say exactly that. The colour is
+ * inert on the result, so it stays out of the diff.
+ *
+ * Values can be per-side (`"1px 0px 1px 0px"`, `"none solid none solid"`), so
+ * each is checked component-wise: a border is visible when some side has both
+ * a non-zero width and a style that draws.
+ */
+function hasVisibleBorder(styles: Record<string, string>): boolean {
+  const widths = (capturedValue(styles, "border-width") ?? "0px").split(/\s+/);
+  const styleNames = (capturedValue(styles, "border-style") ?? "none").split(/\s+/);
+  return (
+    widths.some((width) => parseFloat(width) > 0) &&
+    styleNames.some((name) => name !== "none" && name !== "hidden")
+  );
+}
+
+/**
+ * The real properties behind a row of the diff.
+ *
+ * A row says `padding` because four longhands collapsed into it, and selection
+ * has to be stored in the longhands — they are what `computedStyles` holds and
+ * what the diff actually compares. Anything that did not collapse is itself.
+ */
+export function rawPropertiesFor(property: string): readonly string[] {
+  return SHORTHANDS[property] ?? [property];
+}
+
+/** Which named group a property belongs to, if any. */
+export function groupOf(property: string): string | null {
+  const raw = rawPropertiesFor(property);
+  for (const [group, members] of Object.entries(STYLE_GROUPS)) {
+    if (raw.some((p) => (members as readonly string[]).includes(p))) return group;
+  }
+  return null;
 }
 
 const SHORTHANDS: Record<string, readonly string[]> = {

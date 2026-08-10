@@ -1,0 +1,2269 @@
+/*
+ * One stylesheet for both surfaces. The side panel imports it directly; the
+ * page overlay injects the same text into its shadow root, so a component looks
+ * identical whether it is floating over someone's app or sitting in the panel.
+ * Everything is namespaced --pin-* so nothing collides with the host page.
+ *
+ * The chrome has no accent, on purpose. Black is state — the tool you are
+ * holding, the button that will fire, the row you picked. Grey is measurement —
+ * the outline around what you are about to pin and the hairline around what you
+ * already pinned. Red is intent — destructive actions, errors, and an authored
+ * red stroke — while relationships stay neutral. That is the whole vocabulary,
+ * because this sits on top of products that already have an accent of their own.
+ *
+ * A choice of hues appears only in the pens; elsewhere red is reserved for
+ * authored marks, destructive intent, and errors.
+ */
+
+:where(.pin-root) {
+  /*
+   * Two layers, on purpose.
+   *
+   * Primitives are named for what they are and are the only place a hex appears.
+   * Semantics are named for what they do and are the only thing components are
+   * allowed to reference. A flat list mixes the two, and the cost is not
+   * theoretical — before this split, #6b6f78 was written out three times (as a
+   * grey, as muted ink, and again inside an rgba) with nothing recording that
+   * they were one decision, so changing it would have silently split it in two.
+   *
+   * Provenance matters as much as the value. Nine of these are named tokens read
+   * out of the Paper file and are authoritative. Two were sampled from renders
+   * because no token exists for them. Four are steps derived here to fill the
+   * ramp. Anything marked "derived" is ours to change; anything marked "Paper"
+   * has to be changed in Paper first.
+   */
+
+  /* ---- primitives ------------------------------------------------------- */
+  --pin-white: #ffffff;              /* Paper: surface */
+  --pin-grey-50: #f6f5f3;            /* Paper: paper */
+  --pin-grey-100: #efeeec;           /* derived */
+  --pin-grey-150: #e4e2de;           /* Paper: line */
+  --pin-grey-200: #d3d2ce;           /* derived */
+  --pin-grey-400: #a1a4ab;           /* derived */
+  --pin-grey-500: #6b6f78;           /* Paper: ink-muted */
+  --pin-grey-600: #454b55;           /* derived */
+  --pin-grey-900: #292c33;           /* Paper: ink */
+
+  /* Blue has one job now: it is a colour you draw *with*, never a colour the
+     tool wears. Its only consumer is DRAW_COLORS in @pinnables/shared, which
+     check-tokens holds to these values so the two palettes cannot fork. */
+  --pin-blue-300: #9bd3f9;           /* Paper: sky */
+  --pin-blue-700: #1e3fd8;           /* Paper: cobalt */
+
+  --pin-red-400: #f4564b;            /* sampled: the lit shoulder of the flat mark */
+  --pin-red-500: #ed1c24;            /* Paper: red */
+
+  /* ---- semantics -------------------------------------------------------- */
+
+  /* Surfaces and text. */
+  --pin-paper: var(--pin-white);
+  --pin-paper-soft: var(--pin-grey-50);
+  --pin-paper-sunk: var(--pin-grey-100);
+  --pin-rule: var(--pin-grey-150);
+  --pin-rule-strong: var(--pin-grey-200);
+  --pin-ink-faint: var(--pin-grey-400);
+  --pin-ink-muted: var(--pin-grey-500);
+  --pin-ink: var(--pin-grey-900);
+  /*
+   * Hover for anything filled with ink. Lifting is the only direction available
+   * to something already the strongest thing on screen. Sized between the two
+   * misses: one swatch along the ramp was a change you had to hunt for, and
+   * Vercel's full +20 L* pulled the button toward slate. This lands at +13,
+   * which reads immediately and still looks black.
+   */
+  --pin-ink-lift: var(--pin-grey-600);
+
+  /* And the mirror for the off state: one step down, so hovering something
+     switched off acknowledges the pointer without pretending to be available. */
+  --pin-off: var(--pin-grey-100);
+  --pin-off-hover: var(--pin-grey-150);
+
+  /*
+   * On. The tool you are holding, the pin that is selected, the option you
+   * picked — all of it black, the same black the commit buttons wear.
+   *
+   * This used to be blue, and blue was the problem: an overlay lands on a
+   * product that already has an accent, and a second one competing with it made
+   * the chrome look like part of the page. Black belongs to no one's brand, so
+   * it can sit on any of them.
+   */
+  --pin-on-fill: var(--pin-ink);
+  --pin-on-fill-hover: var(--pin-ink-lift);
+  --pin-on-ink: var(--pin-paper);
+
+  /*
+   * Measurement — the outline around what you are about to pin, the hairline
+   * around what you already pinned.
+   *
+   * A step lighter than the grey the toolbar icons are drawn in, and not for
+   * consistency's sake. Those glyphs sit on our own white pill where they have
+   * to carry; this outline lands on somebody else's page, on top of the thing
+   * being judged. `ink-muted` at 2px read as a hard rule around the component
+   * rather than a measurement laid over it.
+   */
+  --pin-measure: var(--pin-grey-400);
+  --pin-measure-wash: color-mix(in srgb, var(--pin-grey-400) 10%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-400) 30%, transparent);
+
+  /* Destructive/error intent, plus the authored red pen. */
+  --pin-red: var(--pin-red-500);
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, transparent);
+
+  /* The one status colour left, for the offline banner. Not part of the brand
+     ramp — a warning has to be recognisable before it is on-palette. */
+  --pin-amber: #b45309;
+  --pin-amber-soft: #fffbeb;
+
+  /* The distance a label sits above the thing it names. One value, because the
+     picker's label and a pin's label are the same object at two moments. */
+  --pin-label-gap: 3px;
+
+  --pin-radius-sm: 6px;
+  --pin-radius: 10px;
+  --pin-radius-lg: 16px;
+
+  /* Native interface type: Apple's system aliases resolve to SF Pro, while
+     Windows resolves to Segoe UI. The explicit SF Pro name is a fallback for
+     environments that expose the family but not the system alias. */
+  --pin-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --pin-tracking-ui: -0.01em;
+  --pin-tracking-label: 0.06em;
+
+  /* Tight and low — elevation should read as a crisp edge, not a haze. */
+  --pin-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 12px rgba(9, 9, 11, 0.08);
+  --pin-shadow-lg: 0 1px 2px rgba(9, 9, 11, 0.08), 0 8px 28px rgba(9, 9, 11, 0.12);
+
+  font-family: var(--pin-font);
+  color: var(--pin-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Dark follows the browser/OS preference. The overlay and side panel are one
+ * product, so they use one signal instead of dressing independently to match
+ * whichever page happens to sit underneath the overlay.
+ *
+ * Only semantics are reassigned. The primitive ramp above is untouched, which is
+ * what stops dark mode from becoming a second parallel token system that has to
+ * be kept in step by hand.
+ */
+:where(.pin-root[data-scheme="dark"]) {
+  --pin-paper: #23262b;
+  --pin-paper-soft: #1c1f23;
+  --pin-paper-sunk: #2e3238;
+  --pin-rule: #3a3e45;
+  --pin-rule-strong: #4d525a;
+  --pin-ink-faint: #71757c;
+  --pin-ink-muted: #9ba0a8;
+  --pin-ink: var(--pin-grey-50);
+  /* Inverted: ink is the light one here, so its hover goes up to white. */
+  --pin-ink-lift: var(--pin-white);
+
+  /*
+   * The off states have to invert too. They alias the light end of the grey
+   * ramp, which on a dark panel is a near-white fill — an unarmed Capture button
+   * glowing brighter than the armed one.
+   *
+   * `--pin-on-*` need no override: they alias ink and paper, which have already
+   * swapped, so "black button, white label" becomes "light button, dark label"
+   * on its own. That is the two-layer split paying for itself.
+   */
+  --pin-off: var(--pin-paper-sunk);
+  --pin-off-hover: var(--pin-rule);
+
+  --pin-measure: #9ba0a8;
+  --pin-measure-wash: color-mix(in srgb, #9ba0a8 12%, transparent);
+  --pin-measure-glow: color-mix(in srgb, #9ba0a8 30%, transparent);
+
+  /* Red holds against both grounds, so only its wash needs opening up. */
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 24%, transparent);
+
+  --pin-amber: #fbbf24;
+  --pin-amber-soft: #2a2317;
+
+  --pin-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+  --pin-shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 30px rgba(0, 0, 0, 0.55);
+}
+
+.pin-root *,
+.pin-root *::before,
+.pin-root *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * `:where()` on purpose. These are resets, and a reset that out-specifies the
+ * components built on top of it is worse than no reset — `.pin-root button`
+ * would be (0,1,1) and quietly beat every single-class rule below, so an icon
+ * button's own colour would never apply. Zero specificity means "unless
+ * anything says otherwise", which is what a reset actually means.
+ */
+:where(.pin-root) button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+:where(.pin-root) input,
+:where(.pin-root) textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- primitives */
+
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+/*
+ * `:where(:hover)` rather than `:hover`. A bare `.pin-btn:hover` is (0,0,2,0)
+ * and out-specifies every single-class variant below it, so hovering a black
+ * button repainted its fill light grey while the text stayed white — the button
+ * vanished. Zeroing the pseudo-class keeps this a default that variants can
+ * simply state their way out of, which is what it was always meant to be.
+ */
+.pin-btn:where(:hover) {
+  background: var(--pin-paper-sunk);
+}
+/*
+ * The buttons that commit something — Capture, Send to agent, and the
+ * composer's send — share one two-state treatment, and it is neutral.
+ *
+ * They are deliberately not blue. The extension sits over products that already
+ * own an accent, so black means active/actionable and light grey means quiet or
+ * unavailable without borrowing the host interface's brand language.
+ */
+.pin-btn--primary {
+  background: var(--pin-ink);
+  border-color: var(--pin-ink);
+  color: var(--pin-paper);
+}
+/* Hover lifts the black rather than replacing it — an enabled button that is
+   already the strongest thing on screen has nowhere louder to go. */
+.pin-btn--primary:hover:not(:disabled) {
+  background: var(--pin-ink-lift);
+  border-color: var(--pin-ink-lift);
+}
+.pin-btn--quiet,
+.pin-btn--primary:disabled {
+  background: var(--pin-off);
+  border-color: transparent;
+  color: var(--pin-ink-muted);
+  filter: none;
+}
+/*
+ * Both off states darken a step on hover. The difference is the text: `--quiet`
+ * is switched off but clickable, so its label comes up to full ink; a disabled
+ * button acknowledges the pointer with the fill alone and keeps the muted label,
+ * because brightening the text of something that will not respond is a promise
+ * it cannot keep.
+ */
+.pin-btn--quiet:hover {
+  background: var(--pin-off-hover);
+  color: var(--pin-ink);
+}
+.pin-btn--primary:disabled:hover {
+  background: var(--pin-off-hover);
+}
+.pin-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.pin-btn--ghost:hover {
+  background: var(--pin-paper-sunk);
+}
+.pin-btn:disabled {
+  cursor: default;
+}
+/* Buttons with their own disabled colours say it with colour; everything else
+   still fades. */
+.pin-btn:disabled:not(.pin-btn--primary):not(.pin-btn--quiet) {
+  opacity: 0.5;
+}
+
+.pin-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: var(--pin-ink-muted);
+  transition: background 120ms ease, color 120ms ease;
+}
+.pin-icon-btn:where(:hover) {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
+}
+/*
+ * The summon pin: the glyph is the state. Its head fills on hover as the
+ * offer, and stays filled while the pin is on screen — pressed in, the way a
+ * real pin holds something up.
+ */
+.pin-summon:hover .pin-upright__solid,
+.pin-summon[data-active="true"] .pin-upright__solid {
+  fill: currentColor;
+}
+/*
+ * Active is the glyph itself, filled — never a disc. The toolbar's
+ * active-tool rule shares the data-active attribute and paints a black
+ * circle with an inverted glyph; the extra class outranks it here. This is
+ * also what makes the Pins rows and the Relationships card wear identical
+ * states.
+ */
+.pin-icon-btn.pin-summon[data-active="true"] {
+  background: transparent;
+  color: var(--pin-ink);
+}
+/* Hover keeps its plate even on a filled pin: the fill says "on screen",
+   the plate says "button under your pointer". Different facts, both shown. */
+.pin-icon-btn.pin-summon[data-active="true"]:hover {
+  background: var(--pin-paper-sunk);
+}
+
+/* Destructive controls hover exactly like every other icon button — the same
+   gray circle. The trash glyph already names the action; a red flash on the
+   way in read as an alarm about a click that had not happened yet. */
+.pin-icon-btn--danger:is(:hover, :focus-visible) {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
+}
+/*
+ * The active tool: an ink disc with an inverted glyph, filling the whole button.
+ * The filled silhouette makes the state readable at toolbar size; changing only
+ * an 18px outline glyph would be too easy to miss.
+ */
+.pin-icon-btn[data-active="true"] {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+/* The tool you are already holding still answers the pointer — it lifts rather
+   than switching to the neutral hover, which would read as turning off. */
+.pin-icon-btn[data-active="true"]:hover {
+  background: var(--pin-on-fill-hover);
+}
+
+.pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pin-ink-muted);
+  white-space: nowrap;
+}
+/*
+ * A chip with nothing to decide keeps the white plate and just recedes — same
+ * shape, fainter ink and hairline. A grey fill made it a third state, neither
+ * on nor off and darker than both; this reads as the same chip, further away.
+ */
+.pin-chip:disabled,
+.pin-chip[aria-disabled="true"] {
+  background: var(--pin-paper);
+  border-color: var(--pin-rule);
+  color: var(--pin-ink-faint);
+  cursor: default;
+}
+/*
+ * Three states, two full steps apart: faint for a chip with nothing to decide,
+ * near-black for one you can press, the black fill for one you have.
+ *
+ * Scoped to `button` because the same class is a passive badge on the shelf,
+ * and the on-state is excluded outright rather than out-specified — hovering a
+ * selected chip must not lift the black fill off it, and black text on that
+ * fill is the failure that ordering alone would leave one edit away.
+ */
+button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]) {
+  color: var(--pin-ink);
+}
+button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):hover {
+  background: var(--pin-paper-soft);
+}
+
+.pin-chip[data-on="true"] {
+  background: var(--pin-on-fill);
+  border-color: transparent;
+  color: var(--pin-on-ink);
+}
+/* Some properties in the group are selected. A neutral sunk plate distinguishes
+   this from both untouched white and fully selected black without a new hue. */
+.pin-chip[data-partial="true"] {
+  background: var(--pin-paper-sunk);
+  border-color: var(--pin-rule-strong);
+  color: var(--pin-ink);
+}
+.pin-chip--mono {
+  font-family: var(--pin-mono);
+  font-weight: 400;
+  font-size: 10px;
+}
+
+/* A circle, not a pill — a fixed square footprint, so one pin and nine pins put
+   the same shape next to the word. Past 99 it has to stretch, and at that point
+   a board is not something you are counting anyway. */
+.pin-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 999px;
+  /* A count, not a state — so it stays quiet rather than borrowing the black
+     that means "this one is on" from the tool sitting next to it. */
+  background: var(--pin-off);
+  color: var(--pin-ink);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.pin-badge--wide {
+  width: auto;
+  min-width: 20px;
+  padding: 0 6px;
+}
+
+.pin-kbd {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pin-ink-faint);
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--pin-paper-sunk);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* A shortcut hint sitting inside a filled button, where the page's own
+   background would be invisible. */
+.pin-kbd--on-fill {
+  background: rgba(127, 127, 127, 0.28);
+  color: inherit;
+}
+
+.pin-field {
+  width: 100%;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-paper);
+  padding: 7px 9px;
+  font-size: 13px;
+  resize: none;
+  outline: none;
+}
+.pin-field:focus {
+  border-color: var(--pin-ink);
+  box-shadow: 0 0 0 3px var(--pin-measure-glow);
+}
+.pin-field::placeholder {
+  color: var(--pin-ink-muted);
+}
+
+/* ------------------------------------------------------------------ overlay */
+
+.pin-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+/*
+ * The picker. A grey stroke drawn inside the bounds, a barely-there wash, and
+ * square corners — the corners matter, because a rounded outline implies it
+ * belongs to the element whereas a square one reads as measurement laid over it.
+ * Grey rather than an accent so the element's own colours stay readable
+ * underneath: you are judging the component, not the overlay.
+ */
+.pin-highlight {
+  position: fixed;
+  /* A border rather than an outline: `outline` ignores border-radius on some
+     engines and always draws the same shape, which is the one thing this must
+     not do. The radius comes from the element itself, set inline. */
+  border: 2px solid var(--pin-measure);
+  background: var(--pin-measure-wash);
+  box-sizing: border-box;
+  pointer-events: none;
+  transition: all 60ms linear;
+}
+
+/* Top-left, riding just above the box — the corner is where a name goes on
+   every design tool, and outside the bounds so it never covers the thing it
+   names. It flips inside when the element is at the top of the viewport. */
+.pin-highlight__label {
+  position: absolute;
+  top: calc(-18px - var(--pin-label-gap));
+  left: -2px;
+  border-radius: 3px 3px 0 0;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  /* The measuring stroke stays light enough not to compete with the page, but
+     its 10px label needs the stronger muted-ink plate to remain readable. */
+  background: var(--pin-ink-muted);
+  color: var(--pin-paper);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.pin-highlight[data-label="inside"] .pin-highlight__label {
+  top: 0;
+  left: 0;
+}
+
+/* Top-centre. Pinning starts at the top of a page far more often than the
+   bottom, and a bar that sits under the fold is a bar you forget is on. */
+.pin-toolbar {
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  pointer-events: auto;
+}
+
+.pin-toolbar__grip {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--pin-measure);
+  cursor: grab;
+}
+.pin-toolbar__grip:active { cursor: grabbing; }
+
+.pin-toolbar__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--pin-rule);
+  margin: 0 5px;
+  flex: 0 0 auto;
+}
+
+.pin-toolbar__board {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+/* Not interactive — no hover, and the cursor stays an arrow. */
+.pin-toolbar__board { cursor: default; user-select: none; }
+
+.pin-stale {
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font-size: 13px;
+  pointer-events: auto;
+  max-width: calc(100vw - 32px);
+}
+.pin-stale__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--pin-red);
+  flex: 0 0 auto;
+}
+
+.pin-capture-error {
+  position: fixed;
+  left: 50%;
+  top: 62px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 24px));
+  padding: 9px 10px 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--pin-red) 24%, var(--pin-rule));
+  border-radius: var(--pin-radius);
+  background: color-mix(in srgb, var(--pin-red-tint) 62%, var(--pin-paper));
+  box-shadow: var(--pin-shadow);
+  pointer-events: auto;
+}
+.pin-capture-error__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.pin-capture-error__copy strong {
+  color: var(--pin-red);
+  font-weight: 600;
+}
+.pin-capture-error__copy span { color: var(--pin-ink-muted); }
+.pin-capture-error__dismiss {
+  appearance: none;
+  border: 0;
+  border-radius: var(--pin-radius-sm);
+  padding: 5px 7px;
+  background: transparent;
+  color: var(--pin-red);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pin-capture-error__dismiss:is(:hover, :focus-visible) {
+  background: var(--pin-red-tint);
+}
+
+/* --------------------------------------------------------------- connectors */
+
+/* Relationship lines and endpoints are neutral, drawn under the pins. Red is
+   reserved for authored red marks, errors, and destructive intent. */
+.pin-wires {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.pin-wire {
+  fill: none;
+  stroke: var(--pin-ink);
+  stroke-width: 1;
+  opacity: 0.4;
+}
+.pin-wire--draft {
+  stroke-dasharray: 4 4;
+  opacity: 1;
+}
+
+/*
+ * Edge anchors. One neutral dot, on the edge midpoint that has the most room to
+ * run a wire into — a card against the right edge offers its left dot,
+ * a card at the top offers its bottom. Moving toward any other edge midpoint
+ * offers that one instead, so all four are reachable without showing four.
+ */
+.pin-anchor {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--pin-ink);
+  /* A hairline of paper around the dot, thin enough to read as a highlight
+     rather than a ring. It exists so the dot stays legible when it lands on a
+     dark or busy part of the page underneath. */
+  border: 1.5px solid var(--pin-paper);
+  pointer-events: auto;
+  cursor: crosshair;
+  transition: transform 100ms ease;
+  z-index: 2;
+  animation: pin-anchor-in 120ms ease-out;
+}
+.pin-anchor:is(:hover, :focus-visible) {
+  transform: scale(1.5);
+  background: var(--pin-ink-lift);
+}
+
+@keyframes pin-anchor-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+.pin-anchor[data-edge="left"] { left: -6px; top: 50%; margin-top: -5.5px; }
+.pin-anchor[data-edge="right"] { right: -6px; top: 50%; margin-top: -5.5px; }
+.pin-anchor[data-edge="top"] { top: -6px; left: 50%; margin-left: -5.5px; }
+.pin-anchor[data-edge="bottom"] { bottom: -6px; left: 50%; margin-left: -5.5px; }
+
+/* -------------------------------------------------------------- live focus */
+
+/*
+ * The selection wears no outline of its own. The black label above and the
+ * bar below say "selected"; the component's edges stay exactly as the page
+ * draws them — so when a relationship preview changes a border live, the
+ * user sees the real border, not our frame over it. This element is pure
+ * geometry: it seats the label and the anchor, and never takes the pointer.
+ */
+.pin-live-outline {
+  position: fixed;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+/*
+ * The identity plate above the selection — the same black bar the floating
+ * cards wear, so a live component and its capture answer "what is this" in
+ * one language. The reference carries name, source, and close; the rest of a
+ * multi-selection carry the compact name plate.
+ */
+.pin-live-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - var(--pin-label-gap)));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name close" "source close";
+  column-gap: 8px;
+  row-gap: 1px;
+  /* A title, never a wall: it hugs its text and caps well short of a
+     full-width table, while still fitting inside a narrow card. */
+  width: max-content;
+  max-width: min(100%, 500px);
+  padding: 5px 4px 5px 11px;
+  border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
+  background: var(--pin-ink);
+  color: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  pointer-events: auto;
+}
+.pin-live-label[data-full="false"] {
+  width: max-content;
+  max-width: 100%;
+  grid-template-areas: "name";
+  grid-template-columns: minmax(0, 1fr);
+  padding: 3px 9px;
+}
+.pin-live-outline[data-label="inside"] .pin-live-label {
+  transform: translateY(2px);
+  border-radius: 0 0 var(--pin-radius-sm) var(--pin-radius-sm);
+}
+.pin-live-label__name {
+  grid-area: name;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pin-live-label[data-full="false"] .pin-live-label__name {
+  font-size: 11px;
+  font-weight: 500;
+}
+.pin-live-label__src {
+  grid-area: source;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: color-mix(in srgb, var(--pin-paper) 72%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pin-live-label__close {
+  grid-area: close;
+  width: 20px;
+  height: 20px;
+  align-self: center;
+  color: color-mix(in srgb, var(--pin-paper) 80%, transparent);
+}
+.pin-live-label__close:hover {
+  background: color-mix(in srgb, var(--pin-paper) 18%, transparent);
+  color: var(--pin-paper);
+}
+.pin-live-outline .pin-anchor {
+  pointer-events: auto;
+}
+
+/*
+ * The annotation bar under the selection is `.pin-note` itself — the exact
+ * pill v1 docked under a floating card, now docked under the live component.
+ * Below the toolbar so mode switching always stays reachable.
+ */
+.pin-live-note {
+  position: fixed;
+  z-index: 3;
+  pointer-events: auto;
+}
+.pin-note__rel[data-state] {
+  color: var(--pin-ink-muted);
+}
+/*
+ * The chord hint: two destinations, emphasis on what Enter does right now.
+ * It occupies the same quiet-line slot the pill has always used.
+ */
+.pin-note__hint {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--pin-rule);
+  font-size: 11px;
+}
+.pin-note__hint span {
+  color: var(--pin-ink-faint);
+  transition: color 120ms ease;
+}
+.pin-note__hint span[data-on="true"] {
+  color: var(--pin-ink);
+}
+.pin-note__hint strong {
+  font-weight: 600;
+}
+/* The chord chip fills while its modifier is held. */
+.pin-kbd[data-on="true"] {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+/*
+ * The conversation so far, under the input — a chat keeps its history below
+ * the line being typed. Staged notes in ink, delivered ones receding with
+ * their check, all inside the same pill.
+ */
+.pin-note__history {
+  border-top: 1px solid var(--pin-rule);
+  max-height: 132px;
+  overflow-y: auto;
+}
+.pin-note__history-item {
+  padding: 6px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pin-ink);
+}
+.pin-note__history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pin-note__history-item + .pin-note__history-item {
+  border-top: 1px solid color-mix(in srgb, var(--pin-rule) 55%, transparent);
+}
+.pin-note__history-text {
+  flex: 1;
+  min-width: 0;
+}
+/* The run's standing, worn on the message itself: black while it is the
+   agent's turn, and the entry leaves the log once the work is done. */
+.pin-note__tag {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.pin-note__tag[data-tone="quiet"] {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+}
+/* A tag you can press: the retry lives on the message it retries. */
+.pin-note__tag--action {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+.pin-note__tag--action:hover {
+  background: var(--pin-ink-lift);
+}
+.pin-note__rel[data-state="failed"] {
+  color: var(--pin-ink);
+}
+/*
+ * The processing ellipsis: three dots lifting in turn, a slow wave rather
+ * than a blink. `currentColor` is what lets one component serve every place
+ * a wait appears — white inside a black tag, ink on a quiet line, paper on
+ * the filled submit button.
+ *
+ * Sized and spaced like the "…" it replaces, and the lift is absorbed by the
+ * row's own line box, so a line never shifts as the dots rise.
+ */
+.pin-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  margin-left: 3px;
+}
+.pin-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.45;
+  animation: pin-dot-lift 1.8s ease-in-out infinite;
+}
+/* The stagger is the whole effect: each dot starts as the one before it
+   peaks, and the tail of the cycle is a rest before the wave begins again. */
+.pin-dots > span:nth-child(2) { animation-delay: 0.26s; }
+.pin-dots > span:nth-child(3) { animation-delay: 0.52s; }
+
+@keyframes pin-dot-lift {
+  0%, 44%, 100% { transform: translateY(0); opacity: 0.45; }
+  22% { transform: translateY(-3.5px); opacity: 1; }
+}
+
+/* Motion is the message here, so without it the dots simply hold at full
+   strength — an ellipsis that is present rather than one that performs. */
+@media (prefers-reduced-motion: reduce) {
+  .pin-dots > span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* The pin riding the cursor while picking a relationship target. */
+.pin-connect-ghost {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  padding: 3px;
+  max-width: 140px;
+}
+.pin-connect-ghost img {
+  display: block;
+  max-width: 132px;
+  max-height: 88px;
+  border-radius: 3px;
+}
+.pin-connect-ghost span {
+  display: block;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- pin object */
+
+.pin-object {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 8px));
+  pointer-events: auto;
+  cursor: grab;
+}
+.pin-object:active { cursor: grabbing; }
+
+/* The component supplies its own edge. Pinnables only adds an outside glow
+   while selected; painting another permanent outline over the screenshot turns
+   one component into a visible inner and outer card. */
+.pin-object__card {
+  position: relative;
+  /* Set per pin from the element's own captured radius; the fallback is for
+     region pins, which have no element to borrow from. */
+  border-radius: var(--pin-card-radius, var(--pin-radius));
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  overflow: visible;
+  transition: box-shadow 120ms ease;
+}
+/*
+ * Selection adds a glow outside the component and touches nothing else.
+ */
+.pin-object[data-selected="true"] .pin-object__card {
+  box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
+}
+
+.pin-object__inner {
+  /* Exactly the element's own radius — the same curve the screenshot was cut
+     along, so nothing of the page behind it survives at the corners. */
+  border-radius: inherit;
+  overflow: hidden;
+  position: relative;
+  max-width: calc(100vw - 8px);
+  cursor: inherit;
+}
+.pin-object__inner:focus-visible {
+  outline: 3px solid var(--pin-measure-glow);
+  outline-offset: 3px;
+}
+
+/* A wide element is shown at life size and clipped, so the edge has to say so.
+   Without this the crop reads as the component simply ending there. */
+.pin-object__inner[data-cropped="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 56px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--pin-paper));
+}
+
+/*
+ * Sized by the component, not here. A screenshot is cut at device pixels, so an
+ * <img> left to choose its own size renders it at its pixel count — twice life
+ * size on a 2x display. The max-* below are only the fallback for pins captured
+ * before the element's size was recorded.
+ */
+.pin-object__shot {
+  display: block;
+  border-radius: inherit;
+  max-width: 420px;
+  max-height: 260px;
+  object-fit: contain;
+  background: var(--pin-paper-sunk);
+}
+
+/*
+ * Capture feedback rides on the card itself — a single ring expanding from its
+ * own bounds, rather than a marker seated on the top edge that would have no
+ * other job once the animation ended.
+ */
+.pin-object__card[data-pulse="true"] {
+  animation: pin-pulse 700ms ease-out 1;
+}
+
+/* Direction is a temporary state, so the existing active chip treatment names
+   it without inventing another relationship colour or changing card geometry. */
+.pin-object__connection-role {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px var(--pin-paper);
+}
+
+/*
+ * The off-page chip: same seat and halo as the source chip, but pressable.
+ * It names the capture's honest limitation and offers the fix — route in
+ * mono, because routes are code facts everywhere else in the product.
+ */
+.pin-object__away {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  box-shadow: 0 0 0 1px var(--pin-paper);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+.pin-object__away:hover {
+  background: var(--pin-on-fill);
+  border-color: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+
+@keyframes pin-pulse {
+  0% { box-shadow: 0 0 0 0 var(--pin-measure-glow), var(--pin-shadow); }
+  100% { box-shadow: 0 0 0 18px transparent, var(--pin-shadow); }
+}
+
+/*
+ * The name floats above the card rather than sitting on it, and only while the
+ * pin is selected.
+ *
+ * It is the picker's label kept after the click — same shape, same gap above the
+ * thing it names, inverted to black so hovering and having-pinned are never
+ * mistaken for each other. Keeping it off the card matters more here than in
+ * most UI: the card is a picture of the component, and a bar drawn across its
+ * top is a lie about what that component looks like.
+ */
+.pin-object__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - var(--pin-label-gap)));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name close" "source close";
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  min-height: 38px;
+  padding: 5px 4px 5px 11px;
+  /* Rounded on top, square along the bottom — the picker's label profile. The
+     flat edge is what points the label at the thing below it; rounding all four
+     corners made it read as a pill that happened to be nearby. */
+  border-radius: var(--pin-label-radius, var(--pin-radius-sm))
+    var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
+  background: var(--pin-ink);
+  color: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+}
+
+/* Sans and heavier — this is the name of a thing, not a measurement. */
+.pin-object__name {
+  grid-area: name;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The path stays mono and quiet, and gives up its space first — the name is what
+   identifies the card, the file is where you would go next. */
+.pin-object__src {
+  grid-area: source;
+  font-family: var(--pin-mono);
+  font-size: 11px;
+  line-height: 1.25;
+  color: inherit;
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* The icon button's own neutrals are built for a light ground and vanish on this
+   one, so inside the label it works in the label's own colour. */
+.pin-object__label .pin-icon-btn {
+  grid-area: close;
+  align-self: center;
+  color: inherit;
+  opacity: 0.6;
+}
+.pin-object__label .pin-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: inherit;
+  opacity: 1;
+}
+
+/* --------------------------------------------------------- annotation panel */
+
+/*
+ * Opens whenever the pin is selected and closes when it is not — so the input
+ * is never hunting for a click, and an unselected pin stays a picture of the
+ * thing rather than a form. An existing note collapses to one clamped line so
+ * a board full of pins does not turn into a wall of text.
+ */
+/* A pill, like the toolbar — the two are the only chrome that floats over the
+   page, and one line of controls in a rounded bar is the same object twice. It
+   relaxes to a rounded rectangle when a saved note stacks above the composer,
+   because a pill with two rows in it is just a lozenge. */
+.pin-note {
+  margin-top: 8px;
+  border: 1px solid var(--pin-rule);
+  /* One shape in every state. The bar used to open as a full capsule and
+     square off once history arrived — a shape change mid-conversation that
+     read as a different control. The rounded rectangle is the shape. */
+  border-radius: var(--pin-radius-lg);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  min-width: 300px;
+  overflow: hidden;
+}
+
+.pin-note__saved {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pin-rule);
+  font-size: 12px;
+  color: var(--pin-ink);
+  text-align: left;
+  width: 100%;
+}
+.pin-note__saved span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pin-note__saved:hover { background: var(--pin-paper-soft); }
+
+/* Detached: parked under a multi-selection rather than docked to a card. */
+.pin-note--floating {
+  position: absolute;
+  margin-top: 0;
+  width: min(380px, calc(100vw - 24px));
+  min-width: 0;
+  pointer-events: auto;
+  box-shadow: var(--pin-shadow-lg);
+  z-index: 4;
+}
+
+/* Collapsed state — the pin is not selected but has a note worth showing. One
+   line of text, so it goes back to being a pill. */
+.pin-note.pin-note--collapsed {
+  min-width: 0;
+  max-width: 300px;
+  border-radius: 999px;
+}
+.pin-note--collapsed .pin-note__saved {
+  border-bottom: none;
+  padding: 7px 14px;
+  color: var(--pin-ink-muted);
+  font-size: 11px;
+}
+.pin-note--collapsed .pin-note__saved span { -webkit-line-clamp: 1; }
+
+/*
+ * One line. Type on the left, shortcut and send on the right, nothing above or
+ * below — the box is a place to say one thing about one pin, and every row it
+ * grows makes it read like a form. Which pins are selected is already legible
+ * from the outlines on the page, so a chip row would only repeat it; anything
+ * structured about the pin lives in the inspector instead.
+ */
+.pin-note__body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Left padding clears the pill's curve; the right stays tight because the
+     send button is already a circle sitting inside it. */
+  padding: 6px 7px 6px 16px;
+}
+
+.pin-note__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  padding: 4px 0;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.45;
+  /* One line, and it stays one line — the row is the whole component. */
+  height: 26px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pin-note__input::placeholder { color: var(--pin-ink-muted); }
+
+.pin-note__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  /* Quiet while there is nothing to send; loaded with ink the moment there
+     is. The fill is the "ready" cue — rest stays gray, as it should. */
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+  transition: background 120ms ease, color 120ms ease;
+}
+.pin-note__send:not(:disabled) {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+.pin-note__send:hover:not(:disabled) {
+  background: var(--pin-ink-lift);
+}
+/* Light grey on grey — the same "will not act" state as a disabled Capture or
+   Ready for agent, so the three read as one control in three places. */
+.pin-note__send:disabled {
+  background: var(--pin-off);
+  color: var(--pin-ink-faint);
+  cursor: default;
+  filter: none;
+}
+.pin-note__send:disabled:hover {
+  background: var(--pin-off-hover);
+}
+
+.pin-note__rel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px 8px;
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+}
+
+/* ---------------------------------------------------------------- draw mode */
+
+/*
+ * Marks live in document space, not the viewport. That one choice is what makes
+ * scrolling free: the layer scrolls with the page like any other absolutely
+ * positioned element, so there is no scroll handler and no per-frame work. Only
+ * a reflow moves anything, and only then does anything re-measure.
+ */
+.pin-ink {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+/*
+ * The eraser takes whole strokes, so every stroke carries a fat invisible copy
+ * of itself as a hit target — a 2.5px line is not something anyone can click.
+ *
+ * `pointer-events` on the layer is `none` and these opt back in, which is legal
+ * and is the point: an ancestor set to none does not stop a descendant that
+ * names its own value. That is what lets the ink sit above a surface that is
+ * still swallowing clicks, so a miss lands on nothing instead of on the page.
+ */
+.pin-ink[data-erasing="true"] .pin-ink__hit {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.pin-ink__stroke {
+  transition: opacity 100ms ease;
+}
+/* What is about to go, before it goes. */
+.pin-ink[data-erasing="true"] g:hover .pin-ink__stroke {
+  opacity: 0.3;
+}
+
+/* The surface you draw into. Document-sized, so a stroke can start anywhere on
+   the page rather than only in the fold you happen to be looking at. */
+/*
+ * Sized in pixels by the component, never in percentages. The shadow host is
+ * deliberately zero-sized so the ink can be positioned in document coordinates,
+ * and `width: 100%` against a zero-width parent is zero — a surface that exists,
+ * reports `pointer-events: auto`, and can never be hit by anything.
+ */
+.pin-draw__surface {
+  position: absolute;
+  left: 0;
+  top: 0;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  pointer-events: auto;
+}
+/*
+ * The surface keeps swallowing clicks with the eraser up, and the ink simply
+ * sits on top of it. Letting the surface step aside instead would have meant a
+ * miss went through to the page — clicking a link, submitting a form, navigating
+ * away from the marks you were tidying.
+ */
+.pin-draw__surface[data-tool="erase"] {
+  cursor: default;
+}
+
+/*
+ * A region screenshot is the page plus the marks — never the toolbar, floating
+ * pins, connection wires, or the transient path under the pointer. Visibility
+ * keeps the ink layer mounted and painted while removing only extension chrome
+ * for the duration of captureVisibleTab.
+ */
+.pin-root[data-drawing-snapshot="true"] .pin-overlay,
+.pin-root[data-drawing-snapshot="true"] .pin-draw__surface,
+.pin-root[data-drawing-snapshot="true"] .pin-ink[data-draft="true"] {
+  visibility: hidden;
+}
+
+/*
+ * The pen colours, stacked.
+ *
+ * Collapsed, the one in use is in front with the others peeking out behind it —
+ * enough to say "there are more" without spending the width. Hover fans them
+ * into a row; picking one brings it to the front and the stack closes.
+ *
+ * Colour is the loudest thing available in a bar that is otherwise greyscale, so
+ * four circles sitting open permanently made the least important control the
+ * most eye-catching one.
+ */
+.pin-pens {
+  --pin-pen-size: 20px;
+  --pin-pen-peek: 9px;
+  --pin-pen-gap: 6.85px;
+  --pin-pen-step: calc(var(--pin-pen-size) + var(--pin-pen-gap));
+
+  position: relative;
+  flex: 0 0 auto;
+  height: var(--pin-pen-size);
+  margin: 0 5px;
+  width: calc(var(--pin-pen-size) + 3 * var(--pin-pen-peek));
+  transition: width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pin-pens:hover,
+.pin-pens:focus-within {
+  width: calc(var(--pin-pen-size) + 3 * var(--pin-pen-step));
+}
+
+.pin-pen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--pin-pen-size);
+  height: var(--pin-pen-size);
+  border-radius: 999px;
+  /* The front one is the selected one, so the stack reads front-to-back. */
+  z-index: calc(10 - var(--i));
+  transform: translateX(calc(var(--i) * var(--pin-pen-peek)));
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 120ms ease;
+  /* A rim of paper so one circle reads as in front of the next rather than
+     merged into it. */
+  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12), 0 0 0 1.5px var(--pin-paper);
+}
+.pin-pens:hover .pin-pen,
+.pin-pens:focus-within .pin-pen {
+  transform: translateX(calc(var(--i) * var(--pin-pen-step)));
+}
+.pin-pen[data-active="true"] {
+  box-shadow: inset 0 0 0 1px rgba(9, 9, 11, 0.12), 0 0 0 1.5px var(--pin-paper),
+    0 0 0 3.5px var(--pin-ink);
+}
+
+/* --------------------------------------------------------------- side panel */
+
+/*
+ * `100%` rather than `100vh`. The side panel is not the visual viewport, and on
+ * a resized pane `100vh` reports the window and the footer walks off the bottom.
+ */
+.pin-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--pin-paper);
+  /* The undo toast positions against the panel, not the viewport. */
+  position: relative;
+}
+
+.pin-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pin-rule);
+  flex: 0 0 auto;
+}
+
+.pin-panel__tabs {
+  display: flex;
+  gap: 16px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--pin-rule);
+  flex: 0 0 auto;
+}
+
+.pin-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
+  color: var(--pin-ink-muted);
+  border-bottom: 1.5px solid transparent;
+  margin-bottom: -1px;
+}
+.pin-tab[data-active="true"] {
+  color: var(--pin-ink);
+  border-bottom-color: var(--pin-ink);
+}
+
+/*
+ * `min-height: 0` is the whole reason this scrolls.
+ *
+ * A column flex item defaults to `min-height: auto`, which means it refuses to
+ * shrink below its content — so `overflow-y: auto` never engages, the shelf
+ * grows past the panel instead of scrolling, and the footer is pushed out of
+ * sight. The overflow property was never the problem; the floor under it was.
+ */
+/* Pushed to the far end of the tab rail, aligned with the tabs it acts on. */
+.pin-panel__tabs-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+
+/* Matches the tabs it sits beside — same size, weight and colour. What tells
+   it apart is where it is and what it does on hover, not a pixel of type size.
+   A one-pixel difference on the same rail reads as a mistake, not a rank. */
+/* Same danger reveal as the trash it is a bulk version of — red appears only
+   once the destructive action itself is hovered or keyboard-focused.
+   The negative margin pays back the padding so the text still sits flush with
+   the rail's right edge; only the plate extends past it. */
+.pin-tab-action {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
+  color: var(--pin-ink-muted);
+  padding: 4px 7px;
+  margin-right: -7px;
+  border-radius: var(--pin-radius-sm);
+  transition: background 120ms ease, color 120ms ease;
+}
+/* The same neutral hover as every quiet control. Clearing is undoable now, so
+   the control does not need to shout before it is even pressed. */
+.pin-tab-action:is(:hover, :focus-visible) {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
+}
+
+/*
+ * The undo toast. One line, pinned to the bottom of the panel, gone in a few
+ * seconds — it exists so a single click can be allowed to clear the board
+ * without that click ever being unrecoverable.
+ */
+.pin-toast {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--pin-radius);
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  font-size: 12px;
+  box-shadow: var(--pin-shadow);
+}
+.pin-toast__undo {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--pin-on-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pin-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/*
+ * And the second half of the same bug, one level down. The shelf is a column
+ * flex container, so its cards are flex items that shrink by default — an
+ * expanded card carrying the inspector was being squeezed to fit and then
+ * clipped by its own `overflow: hidden`, with no way to reach the rest. Cards
+ * keep their natural height; the shelf scrolls.
+ */
+.pin-panel__body > * {
+  flex: 0 0 auto;
+}
+
+.pin-panel__footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--pin-rule);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pin-card {
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius);
+  background: var(--pin-paper);
+  overflow: hidden;
+}
+.pin-card[data-selected="true"] {
+  border-color: var(--pin-ink);
+  box-shadow: 0 0 0 3px var(--pin-measure-glow);
+}
+.pin-card[data-pickable="true"] {
+  cursor: pointer;
+}
+.pin-card[data-pickable="true"]:hover .pin-row {
+  background: var(--pin-paper-soft);
+}
+
+/*
+ * The row is a container, not a button — the trailing delete has to be its own
+ * button and a button inside a button is neither valid nor keyboard-navigable.
+ * So the expand target is `__hit` and it takes all the space it can.
+ */
+.pin-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 8px 9px 10px;
+  width: 100%;
+}
+.pin-row:hover { background: var(--pin-paper-soft); }
+
+.pin-row__hit {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+.pin-row__hit[data-clickable="true"] { cursor: pointer; }
+.pin-row__hit[data-done="true"] .pin-row__title {
+  text-decoration: line-through;
+  color: var(--pin-ink-muted);
+}
+
+.pin-row__thumb {
+  width: 52px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-paper-sunk);
+  object-fit: cover;
+}
+
+.pin-row__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pin-row__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pin-row__title {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: var(--pin-tracking-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-row__route {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+  flex: 0 0 auto;
+}
+
+.pin-row__note {
+  font-size: 12px;
+  color: var(--pin-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.pin-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.pin-row__chevron {
+  transition: transform 120ms ease;
+}
+button[aria-expanded="true"] .pin-row__chevron {
+  transform: rotate(90deg);
+}
+
+.pin-expand {
+  border-top: 1px solid var(--pin-rule);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  background: var(--pin-paper-soft);
+}
+
+.pin-expand__shot {
+  width: 100%;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-paper);
+  display: block;
+}
+
+/* The style diff. Neutral chrome, so the values carry the emphasis. */
+.pin-diff {
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-paper-soft);
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pin-diff__row {
+  display: grid;
+  grid-template-columns: 88px 1fr auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+}
+.pin-diff__from {
+  color: var(--pin-ink-muted);
+  text-decoration: line-through;
+}
+.pin-diff__arrow { color: var(--pin-ink-faint); }
+
+.pin-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--pin-ink-muted);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+/* A quiet line under a control, saying what it did not have to ask about. */
+.pin-note-line {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+}
+
+/* Eight stable slots: selection changes the contents of a chip, never its
+   position or the number of chips that fit on a line. */
+.pin-group-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 6px;
+}
+.pin-group-grid .pin-chip {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 5px;
+}
+
+/*
+ * The name as a label, and as a field. It has to sit on the same baseline and at
+ * the same size in both states, or clicking it makes the row jump.
+ */
+.pin-rename-trigger {
+  font: inherit;
+  color: inherit;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  border-radius: 4px;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.pin-rename-trigger:hover {
+  background: var(--pin-off);
+}
+
+.pin-rename {
+  font: inherit;
+  letter-spacing: var(--pin-tracking-ui);
+  font-weight: 500;
+  color: var(--pin-ink);
+  background: var(--pin-paper);
+  border: none;
+  outline: none;
+  padding: 1px 3px;
+  /*
+   * Left stays pulled so the name does not shift sideways when you click it.
+   * The right does not: the trigger's -3px is almost exactly the width of the
+   * space that follows, so the field ate it, and the 1.5px ring then sat on
+   * the "i" of "is the target".
+   */
+  margin: -1px 2px -1px -3px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1.5px var(--pin-ink);
+  /* As wide as the name and no wider — a fixed field would sit over the words
+     that follow it, and the row would resize the moment you started typing. */
+  field-sizing: content;
+  min-width: 3ch;
+  max-width: 190px;
+}
+
+/*
+ * The differences, one row each, with a box you can tick.
+ *
+ * The same selection as the chips above at a resolution you can judge: "radius"
+ * is a category to have an opinion about, `4px → 12px` is two values you can
+ * look at. Unticked rows dim rather than disappear, so the list does not
+ * reflow under the pointer while you are working down it.
+ */
+.pin-changes {
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  overflow: hidden;
+}
+/* Shadow pixels live outside their specimens. Only lists that actually contain
+   one release this boundary, preserving the rounded clipping everywhere else. */
+.pin-changes[data-has-shadow="true"] {
+  overflow: visible;
+}
+
+.pin-change-group + .pin-change-group {
+  border-top: 1px solid var(--pin-rule);
+}
+
+/* Repeated properties only become intelligible when their owner leads them.
+   The target heading uses UI type; the measurements underneath stay mono. */
+.pin-change-target {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  padding: 6px 9px;
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
+  font-family: var(--pin-font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--pin-tracking-ui);
+}
+.pin-change-target > span {
+  color: var(--pin-ink-muted);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: var(--pin-tracking-label);
+  text-transform: uppercase;
+}
+
+.pin-change {
+  display: grid;
+  grid-template-columns: 15px 74px 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--pin-rule);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.pin-change:last-child { border-bottom: none; }
+.pin-change:hover { background: var(--pin-paper-soft); }
+
+.pin-change__box {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--pin-rule-strong);
+  background: var(--pin-paper);
+  cursor: pointer;
+  position: relative;
+}
+.pin-change__box:checked {
+  background: var(--pin-on-fill);
+  border-color: var(--pin-on-fill);
+}
+/* The tick is drawn rather than a glyph, so it scales with the box and needs
+   no icon import inside a label. */
+.pin-change__box:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--pin-on-ink);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(45deg);
+}
+
+/*
+ * The property and the value it would become are one statement, so they carry
+ * one colour and step together: grey while the row is off, black once it is on.
+ * A blanket opacity used to do this, which faded the old value and the arrow by
+ * the same amount and left the row uniformly washed out — nothing in it looked
+ * more important than anything else.
+ */
+.pin-change__name,
+.pin-change__to {
+  color: var(--pin-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 120ms ease;
+}
+.pin-change__to { font-weight: 600; }
+.pin-change[data-on="false"] .pin-change__name,
+.pin-change[data-on="false"] .pin-change__to {
+  color: var(--pin-ink-muted);
+}
+/* The value being replaced stays faint in both states — it is the thing you are
+   moving away from, and it should not brighten when you commit to leaving it. */
+/* Second line of the same row, starting where the values start, so the
+   drawing sits under the number it draws. `row-gap` only applies once a row
+   actually wraps, so untouched rows keep their height. */
+.pin-change--stacked {
+  row-gap: 5px;
+}
+/*
+ * `display: contents` so the three pieces become grid items of the row itself.
+ *
+ * Spanning columns 3-to-end and laying them out with flex made a second, private
+ * set of columns inside the first — the drawing's arrow landed wherever its own
+ * box put it, a few pixels off the arrow directly above. Dissolving the wrapper
+ * puts before, arrow and after in the same three columns the numbers use, so
+ * they line up because they are in the same grid, not because two gaps happen
+ * to match.
+ */
+.pin-change__viz {
+  display: contents;
+}
+.pin-change__viz > :nth-child(1) {
+  grid-column: 3;
+}
+.pin-change__viz > :nth-child(2) {
+  grid-column: 4;
+}
+.pin-change__viz > :nth-child(3) {
+  grid-column: 5;
+}
+/* Left edge of the column, the same place the value above starts. */
+.pin-change__viz > * {
+  justify-self: start;
+}
+
+.pin-change__summary {
+  grid-column: 3 / -1;
+  color: var(--pin-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pin-change[data-on="false"] .pin-change__summary { color: var(--pin-ink-muted); }
+/* Lighter, not struck through — until you tick the row. Unticked, the strike
+   made a value you had not chosen to replace look already deleted; ticked, it
+   is exactly right, because that is the moment you decide it goes. */
+.pin-change__from { color: var(--pin-ink-muted); overflow: hidden; text-overflow: ellipsis; }
+.pin-change[data-on="true"] .pin-change__from { text-decoration: line-through; }
+.pin-change__arrow { color: var(--pin-ink-faint); }
+
+/*
+ * A row that draws its difference instead of describing it.
+ *
+ * Six columns rather than five: the two value cells become fixed-width swatch
+ * frames, and the numbers they used to hold move to a caption at the end. The
+ * swatches size themselves, so `auto` — a `1fr` value column would stretch a
+ * 22px square across half the row.
+ */
+.pin-change--visual {
+  grid-template-columns: 15px 74px auto 12px auto 1fr;
+}
+.pin-change__caption {
+  color: var(--pin-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/*
+ * The counted rows.
+ *
+ * Full width rather than a grid cell, because it is a sentence about the list
+ * and not another item in it — giving it the same columns as the rows above
+ * would make it read as a change you could tick.
+ */
+.pin-change--more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--pin-rule);
+  background: var(--pin-paper-soft);
+  color: var(--pin-ink-muted);
+  font-family: var(--pin-font);
+  font-size: 11px;
+}
+.pin-change--more:hover { color: var(--pin-ink); }
+
+/*
+ * A row that explains itself instead of offering something — in faint ink,
+ * not amber: it is a fact about the source, never a warning about the user.
+ * The empty checkbox column keeps the property names aligned with the rows
+ * above, so this reads as the same list's quiet tail.
+ */
+.pin-change--blocked {
+  grid-template-columns: 15px 74px 1fr;
+  cursor: default;
+}
+.pin-change--blocked:hover {
+  background: transparent;
+}
+.pin-change--blocked .pin-change__name,
+.pin-change--blocked .pin-change__caption {
+  color: var(--pin-ink-faint);
+}
+.pin-change__caption--lead {
+  text-align: left;
+}
+
+.pin-section-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: var(--pin-tracking-label);
+  text-transform: uppercase;
+  color: var(--pin-ink-muted);
+  padding: 6px 2px 2px;
+}
+
+/* A just-created relationship settles in with the same ring the pins use for
+   capture feedback — momentary, then it is an ordinary card. */
+.pin-card[data-fresh="true"] {
+  animation: pin-pulse 700ms ease-out 1;
+}
+
+
+.pin-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--pin-radius-sm);
+  border: 1px solid var(--pin-rule);
+  background: var(--pin-amber-soft);
+  color: var(--pin-amber);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pin-banner--error {
+  background: var(--pin-red-tint);
+  border-color: color-mix(in srgb, var(--pin-red) 30%, var(--pin-rule));
+  color: var(--pin-red);
+}
+
+/* ---------------------------------------------------------------- inspector */
+
+/*
+ * The element panel, borrowed wholesale from Chrome DevTools — because every
+ * developer who opens this already knows that diagram, and inventing a second
+ * vocabulary for the same measurements would cost something and buy nothing.
+ *
+ * What differs is what a typed value means. In DevTools an edit mutates the live
+ * page and dies on refresh. Here it is recorded next to the captured value and
+ * handed to the agent as a before → after pair. Nothing is mutated, which is why
+ * the edit survives the tab closing: it was never an edit to the page, it was a
+ * specification of what the page should be.
+ */
+.pin-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pin-metrics {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-sm);
+  background: var(--pin-paper);
+  overflow: hidden;
+}
+
+.pin-metric {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 9px;
+  min-height: 26px;
+  border-bottom: 1px solid var(--pin-rule);
+}
+.pin-metric:last-child { border-bottom: none; }
+.pin-metric:hover { background: var(--pin-paper-soft); }
+
+/* Identity rows — component, route, source — sit above the measurements and
+   read rather than edit. Same grid, so the value column stays one lane. */
+.pin-metric--fact { background: var(--pin-paper-soft); }
+.pin-metric--fact .pin-metric__value {
+  color: var(--pin-ink);
+  cursor: text;
+  user-select: text;
+}
+
+.pin-metric__name {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-metric__value {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink);
+  padding: 4px;
+  border-radius: 3px;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+.pin-metric__value:hover { background: var(--pin-paper-sunk); }
+.pin-metric__value:focus {
+  background: var(--pin-paper);
+  box-shadow: 0 0 0 1.5px var(--pin-ink);
+}
+/* A requested value stands out by weight, not hue: what was measured recedes to
+   muted, what you asked for comes forward to full ink. */
+.pin-metric__value[data-edited="true"] {
+  color: var(--pin-ink);
+  font-weight: 600;
+}
+
+/* The captured value, struck through once something else is asked for — the
+   before half of the pair the agent will receive. */
+.pin-metric__was {
+  font-family: var(--pin-mono);
+  font-size: 9px;
+  color: var(--pin-ink-muted);
+  text-decoration: line-through;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+
+.pin-metric__revert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: var(--pin-ink-faint);
+}
+.pin-metric__revert:hover {
+  background: var(--pin-red-tint);
+  color: var(--pin-red);
+}
+
+/*
+ * The box model, last and uncoloured.
+ *
+ * DevTools tints its rings because it is painting the same tints onto the page
+ * as a hover overlay — the colour is a key to something happening elsewhere.
+ * Nothing here highlights a live element, so the tint would be decoration, and
+ * four stacked washes in a 300px panel is a lot of decoration. The rings are
+ * told apart the way a spec drawing tells layers apart instead: dashed for the
+ * space around the box, solid for the box itself.
+ */
+.pin-boxmodel {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+  font-family: var(--pin-mono);
+  font-size: 9px;
+}
+
+.pin-boxmodel__ring {
+  position: relative;
+  border-radius: 2px;
+  padding: 15px 30px;
+  text-align: center;
+  background: transparent;
+}
+/* Dashed = the space the element reserves but does not occupy. */
+.pin-boxmodel__ring[data-ring="margin"] { border: 1px dashed var(--pin-rule-strong); }
+/* Solid = the element itself. */
+.pin-boxmodel__ring[data-ring="border"] {
+  border: 1px solid var(--pin-ink-muted);
+  padding: 13px 20px;
+}
+.pin-boxmodel__ring[data-ring="padding"] { border: 1px dashed var(--pin-rule-strong); }
+.pin-boxmodel__ring[data-ring="content"] {
+  border: 1px solid var(--pin-rule-strong);
+  background: var(--pin-paper-soft);
+  padding: 9px 10px;
+  min-width: 76px;
+}
+
+.pin-boxmodel__tag {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  color: var(--pin-ink-muted);
+}
+
+/*
+ * The four edge values sit on the four edges of their ring, which is the whole
+ * reason the diagram beats a list: you read "which side" from position rather
+ * than from a label. Each is an input, so the diagram is also the editor. Ring
+ * padding is sized to hold one, so a three-digit value can never overlap the
+ * ring inside it.
+ */
+.pin-boxmodel__edge {
+  position: absolute;
+  width: 28px;
+  height: 15px;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--pin-ink);
+  padding: 0;
+  border-radius: 3px;
+  outline: none;
+}
+.pin-boxmodel__edge:hover { background: var(--pin-paper-sunk); }
+.pin-boxmodel__edge:focus {
+  background: var(--pin-paper);
+  box-shadow: 0 0 0 1.5px var(--pin-ink);
+}
+.pin-boxmodel__edge[data-side="top"] { top: 0; left: 50%; margin-left: -14px; }
+.pin-boxmodel__edge[data-side="bottom"] { bottom: 0; left: 50%; margin-left: -14px; }
+.pin-boxmodel__edge[data-side="left"] { left: 1px; top: 50%; margin-top: -7.5px; }
+.pin-boxmodel__edge[data-side="right"] { right: 1px; top: 50%; margin-top: -7.5px; }
+.pin-boxmodel__edge[data-edited="true"] {
+  color: var(--pin-ink);
+  font-weight: 600;
+}
+
+.pin-boxmodel__size {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  color: var(--pin-ink-muted);
+  white-space: nowrap;
+}
