@@ -889,27 +889,80 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   min-width: 0;
 }
 /*
- * A messaged multi-selection, reopenable from the shelf. Slimmer than a pin
- * row — it names a conversation between pins, not a pin — with the same
- * presence toggle on the end.
+ * A messaged multi-selection, living on the shelf as one object. The black
+ * plate names the set in the same language the on-page labels use; members
+ * sit inside as ordinary rows, and one composer at the bottom speaks to all
+ * of them. Collapsed — the resting state — the group is just its name.
  */
-.pin-group-row {
+.pin-group {
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius);
+  background: var(--pin-paper);
+  overflow: hidden;
+}
+.pin-group__head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 6px 6px 11px;
-  border: 1px solid var(--pin-rule);
-  border-radius: var(--pin-radius-sm);
-  color: var(--pin-ink-muted);
-  font-size: 12px;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  padding: 6px 6px 6px 9px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
 }
-.pin-group-row__label {
+.pin-group__caret {
+  flex: 0 0 auto;
+  display: inline-flex;
+  opacity: 0.75;
+  transition: transform 120ms ease;
+}
+.pin-group[data-open="true"] .pin-group__caret { transform: rotate(90deg); }
+.pin-group__titles {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pin-group__title {
+  font-size: 12.5px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--pin-ink);
+}
+.pin-group__sub {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  opacity: 0.72;
+}
+/* Icon buttons on the plate wear its ink; the hover plate is a white lift
+   rather than the light-surface gray. */
+.pin-group__head .pin-icon-btn { color: var(--pin-on-ink); }
+.pin-group__head .pin-icon-btn:hover {
+  background: color-mix(in srgb, var(--pin-on-ink) 16%, transparent);
+}
+.pin-group__head .pin-icon-btn.pin-summon[data-active="true"] {
+  color: var(--pin-on-ink);
+  background: transparent;
+}
+.pin-group__head .pin-icon-btn.pin-summon[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--pin-on-ink) 16%, transparent);
+}
+.pin-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 8px 14px;
+}
+/* The group composer reuses the pill without its floating dress. */
+.pin-group__composer .pin-note {
+  margin-top: 0;
+  min-width: 0;
+  box-shadow: none;
 }
 
 /* The run's standing, worn on the message itself: black while it is the
