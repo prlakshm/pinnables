@@ -31,6 +31,7 @@ function useOnScreenPins(): ReadonlySet<string> {
   return onScreen;
 }
 import { Inspector } from "./Inspector";
+import { Composer } from "../content/Composer";
 import { RenamableTitle } from "./RenamableTitle";
 
 /**
@@ -72,15 +73,24 @@ export function PinList({
    * members' shared groupId — delete pins down to one and the row simply
    * stops existing, no cleanup to forget.
    */
-  const groups = (() => {
+  const groupsById = (() => {
     const byId = new Map<string, Pin[]>();
     for (const pin of pins) {
       if (pin.groupId === null || pin.kind !== "element") continue;
       byId.set(pin.groupId, [...(byId.get(pin.groupId) ?? []), pin]);
     }
-    return [...byId.entries()].filter(([, members]) => members.length >= 2);
+    for (const [groupId, members] of [...byId]) {
+      if (members.length < 2) byId.delete(groupId);
+    }
+    return byId;
   })();
   const [groupIssue, setGroupIssue] = useState<string | null>(null);
+  /*
+   * Collapsed is the resting state: the group is its name, and the shelf
+   * stays short. Users reaching for one member mostly re-select it on the
+   * page; expansion is the deliberate act, remembered per group.
+   */
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set<string>());
 
   const toggleTarget = (pinId: string) =>
     setTargets((prev) => {
@@ -140,77 +150,62 @@ export function PinList({
         </div>
       )}
 
-      {!source &&
-        groups.map(([groupId, members]) => {
-          const onScreen = members.every((member) => onScreenPins.has(member.id));
-          const label = members.map((member) => pinLabel(member, board.pins)).join(" + ");
-          return (
-            <div key={groupId} className="pin-group-row">
-              <LinkIcon size={13} />
-              <span className="pin-group-row__label" title={label}>
-                {label}
-              </span>
-              <span className="pin-chip pin-chip--mono">group</span>
-              {/* Same presence toggle the pins wear: filled means the combined
-                  bar is up; pressing again sends the members home. */}
-              <button
-                className="pin-icon-btn pin-summon"
-                style={{ width: 24, height: 24 }}
-                data-active={onScreen}
-                onClick={() => {
-                  void (async () => {
-                    setGroupIssue(null);
-                    try {
-                      if (onScreen) {
-                        await Promise.all(
-                          members.map((member) => send("pin/dismiss", { pinId: member.id })),
-                        );
-                        return;
-                      }
-                      const result = await send("group/summon", { groupId });
-                      if (!result.ok) setGroupIssue("Couldn’t reach this group’s page.");
-                    } catch {
-                      setGroupIssue("Couldn’t reach this group’s page.");
-                    }
-                  })();
-                }}
-                aria-label={
-                  onScreen ? `Remove ${label} from the page` : `Reopen ${label} together`
+      {(() => {
+        const renderRow = (pin: Pin) => (
+          <PinRow
+            key={pin.id}
+            pin={pin}
+            board={board}
+            expanded={expanded === pin.id}
+            onScreen={onScreenPins.has(pin.id)}
+            onExpand={() => setExpanded((id) => (id === pin.id ? null : pin.id))}
+            relating={source !== null}
+            isSource={source === pin.id}
+            isTarget={targets.has(pin.id)}
+            onToggleTarget={() => toggleTarget(pin.id)}
+            onCreateRelationship={() => {
+              setSource(pin.id);
+              setTargets(new Set());
+              setRelationshipIssue(null);
+              setExpanded(null);
+            }}
+            onChanged={onChanged}
+          />
+        );
+        // Target picking needs every row reachable, so containers dissolve
+        // into the flat list for the duration of the relate flow.
+        if (source) return pins.map(renderRow);
+        const emitted = new Set<string>();
+        return pins.map((pin) => {
+          const groupId = pin.kind === "element" ? pin.groupId : null;
+          const members = groupId ? groupsById.get(groupId) : undefined;
+          if (groupId && members) {
+            if (emitted.has(groupId)) return null;
+            emitted.add(groupId);
+            return (
+              <GroupSection
+                key={`group-${groupId}`}
+                groupId={groupId}
+                members={members}
+                board={board}
+                open={openGroups.has(groupId)}
+                onToggleOpen={() =>
+                  setOpenGroups((previous) => {
+                    const next = new Set(previous);
+                    next.has(groupId) ? next.delete(groupId) : next.add(groupId);
+                    return next;
+                  })
                 }
-                aria-pressed={onScreen}
-                title={
-                  onScreen
-                    ? "Remove the group from the page"
-                    : "Reopen the group's combined annotation bar"
-                }
-              >
-                <PinUprightIcon size={15} />
-              </button>
-            </div>
-          );
-        })}
-
-      {pins.map((pin) => (
-        <PinRow
-          key={pin.id}
-          pin={pin}
-          board={board}
-          expanded={expanded === pin.id}
-          onScreen={onScreenPins.has(pin.id)}
-          onExpand={() => setExpanded((id) => (id === pin.id ? null : pin.id))}
-          relating={source !== null}
-          isSource={source === pin.id}
-          isTarget={targets.has(pin.id)}
-          onToggleTarget={() => toggleTarget(pin.id)}
-          onCreateRelationship={() => {
-            setSource(pin.id);
-            setTargets(new Set());
-            setRelationshipIssue(null);
-            setExpanded(null);
-          }}
-          onChanged={onChanged}
-        />
-      ))}
+                allOnScreen={members.every((member) => onScreenPins.has(member.id))}
+                onIssue={setGroupIssue}
+                onChanged={onChanged}
+                renderRow={renderRow}
+              />
+            );
+          }
+          return renderRow(pin);
+        });
+      })()}
 
       {source && (
         <div style={{ display: "flex", gap: 8 }}>
@@ -241,6 +236,133 @@ export function PinList({
       )}
     </>
   );
+}
+
+/**
+ * A group on the shelf: the black plate names the set — the same identity
+ * language the on-page floating labels speak — with the members inside as
+ * ordinary rows and one composer speaking to all of them. Two verbs live at
+ * group level: the header's pin puts the whole conversation back on the
+ * page, and the composer continues it. Everything member-specific stays on
+ * the member rows, behind the collapse.
+ */
+function GroupSection({
+  groupId,
+  members,
+  board,
+  open,
+  onToggleOpen,
+  allOnScreen,
+  onIssue,
+  onChanged,
+  renderRow,
+}: {
+  groupId: string;
+  members: Pin[];
+  board: Board;
+  open: boolean;
+  onToggleOpen: () => void;
+  allOnScreen: boolean;
+  onIssue: (issue: string | null) => void;
+  onChanged: () => void;
+  renderRow: (pin: Pin) => React.ReactNode;
+}) {
+  const label = members.map((member) => pinLabel(member, board.pins)).join(" + ");
+  const routes = [...new Set(members.map((member) => member.route))];
+  const sub = `${members.length} components · ${routes.length === 1 ? routes[0] : `${routes.length} routes`}`;
+
+  const stashToGroup = async (text: string) => {
+    for (const member of members) {
+      const annotation = member.annotation ? `${member.annotation}\n${text}` : text;
+      await send("pin/update", { pinId: member.id, patch: { annotation } });
+    }
+    onChanged();
+  };
+
+  return (
+    <section className="pin-group" data-open={open}>
+      <button
+        type="button"
+        className="pin-group__head"
+        onClick={onToggleOpen}
+        aria-expanded={open}
+        title={open ? "Collapse the group" : "Show the group's components"}
+      >
+        <span className="pin-group__caret" aria-hidden>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 4l4 4-4 4" />
+          </svg>
+        </span>
+        <span className="pin-group__titles">
+          <span className="pin-group__title" title={label}>
+            {label}
+          </span>
+          <span className="pin-group__sub">{sub}</span>
+        </span>
+        {/* The group's go-to-pin: the whole set back on the page, combined
+            bar and all. Filled while it is up; press again to send it home. */}
+        <span
+          role="button"
+          tabIndex={0}
+          className="pin-icon-btn pin-summon"
+          style={{ width: 24, height: 24 }}
+          data-active={allOnScreen}
+          onClick={(event) => {
+            event.stopPropagation();
+            void (async () => {
+              onIssue(null);
+              try {
+                if (allOnScreen) {
+                  await Promise.all(
+                    members.map((member) => send("pin/dismiss", { pinId: member.id })),
+                  );
+                  return;
+                }
+                const result = await send("group/summon", { groupId });
+                if (!result.ok) onIssue("Couldn’t reach this group’s page.");
+              } catch {
+                onIssue("Couldn’t reach this group’s page.");
+              }
+            })();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            (event.currentTarget as HTMLElement).click();
+          }}
+          aria-label={onScreenLabel(allOnScreen, label)}
+          aria-pressed={allOnScreen}
+          title={
+            allOnScreen
+              ? "Remove the group from the page"
+              : "Reopen the group's combined annotation bar"
+          }
+        >
+          <PinUprightIcon size={15} />
+        </span>
+      </button>
+
+      {open && (
+        <div className="pin-group__body">
+          {members.map((member) => renderRow(member))}
+          <div className="pin-group__composer">
+            <div className="pin-note">
+              <Composer
+                count={members.length}
+                agentPinIds={members.map((member) => member.id)}
+                onCommit={stashToGroup}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function onScreenLabel(onScreen: boolean, label: string): string {
+  return onScreen ? `Remove ${label} from the page` : `Reopen ${label} together`;
 }
 
 interface PinRowProps {
