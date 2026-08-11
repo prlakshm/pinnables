@@ -11,7 +11,7 @@ interface ComposerProps {
   onCommit: (text: string) => Promise<void>;
   onRelate?: () => void;
   autoFocus?: boolean;
-  /** Override the placeholder — surfaces with their own copy rules pass it. */
+  /** Override the placeholder — surfaces with their own copy pass it. */
   placeholder?: string;
   /**
    * When set, this bar speaks both destinations like the live selection bar:
@@ -219,7 +219,7 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
           className="pin-note__input"
           rows={1}
           value={draft}
-          placeholder={placeholder ?? (multi ? `Describe the change for all ${count}` : "Describe the change")}
+          placeholder={placeholder ?? (multi ? `Describe a change for all ${count}` : "Describe a change")}
           aria-label={multi ? `Annotation for all ${count} selected pins` : "Pin annotation"}
           onChange={(e) => setDraft(e.target.value.replace(/\n/g, " "))}
           onKeyDown={(e) => {

@@ -483,8 +483,8 @@ export function SelectionDialog({
           value={draft}
           placeholder={
             multi
-              ? `Describe the change for all ${pins.length}`
-              : "Describe the change or stash for later"
+              ? `Describe a change for all ${pins.length}`
+              : "Describe a change or stash for later"
           }
           aria-label={multi ? `Message for all ${pins.length} selected components` : `Message for ${name}`}
           onChange={(event) => {

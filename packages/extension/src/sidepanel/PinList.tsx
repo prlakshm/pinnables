@@ -177,10 +177,11 @@ export function PinList({
       )}
 
       {(() => {
-        const renderRow = (pin: Pin) => (
+        const renderRow = (pin: Pin, inGroup = false) => (
           <PinRow
             key={pin.id}
             pin={pin}
+            inGroup={inGroup}
             board={board}
             expanded={expanded === pin.id}
             onScreen={onScreenPins.has(pin.id)}
@@ -200,7 +201,7 @@ export function PinList({
         );
         // Target picking needs every row reachable, so containers dissolve
         // into the flat list for the duration of the relate flow.
-        if (source) return pins.map(renderRow);
+        if (source) return pins.map((pin) => renderRow(pin));
         const emitted = new Set<string>();
         return pins.map((pin) => {
           const groupId = pin.kind === "element" ? pin.groupId : null;
@@ -225,7 +226,7 @@ export function PinList({
                 allOnScreen={members.every((member) => onScreenPins.has(member.id))}
                 onIssue={setGroupIssue}
                 onChanged={onChanged}
-                renderRow={renderRow}
+                renderRow={(member) => renderRow(member, true)}
               />
             );
           }
@@ -301,8 +302,8 @@ function GroupSection({
   renderRow: (pin: Pin) => React.ReactNode;
 }) {
   const label = members.map((member) => pinLabel(member, board.pins)).join(" + ");
-  const routes = [...new Set(members.map((member) => member.route))];
-  const sub = `${members.length} components · ${routes.length === 1 ? routes[0] : `${routes.length} routes`}`;
+  // Lowercase like every meta line; the word does the announcing, quietly.
+  const sub = `group · ${members.length} components`;
 
   const stashToGroup = async (text: string) => {
     for (const member of members) {
@@ -321,11 +322,6 @@ function GroupSection({
         aria-expanded={open}
         title={open ? "Collapse the group" : "Show the group's components"}
       >
-        <span className="pin-group__caret" aria-hidden>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 4l4 4-4 4" />
-          </svg>
-        </span>
         <span className="pin-group__titles">
           <span className="pin-group__title" title={label}>
             {label}
@@ -374,6 +370,33 @@ function GroupSection({
         >
           <PinUprightIcon size={15} />
         </span>
+        {/* The rows' other trailing verb, groupwide: every member leaves the
+            board together. The group was one conversation; it ends as one. */}
+        <span
+          role="button"
+          tabIndex={0}
+          className="pin-icon-btn pin-icon-btn--danger"
+          style={{ width: 24, height: 24 }}
+          onClick={(event) => {
+            event.stopPropagation();
+            void (async () => {
+              for (const member of members) {
+                await send("pin/delete", { pinId: member.id }).catch(() => {});
+              }
+              onChanged();
+            })();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            (event.currentTarget as HTMLElement).click();
+          }}
+          aria-label={`Delete every pin in ${label}`}
+          title="Delete the group's pins"
+        >
+          <TrashIcon size={14} />
+        </span>
       </button>
 
       {open && (
@@ -385,7 +408,7 @@ function GroupSection({
                 count={members.length}
                 agentPinIds={members.map((member) => member.id)}
                 onCommit={stashToGroup}
-                placeholder={`Describe the change for all ${members.length}…`}
+                placeholder={`Describe a change for all ${members.length}…`}
               />
             </div>
           </div>
@@ -423,6 +446,12 @@ function onScreenLabel(onScreen: boolean, label: string): string {
 interface PinRowProps {
   pin: Pin;
   board: Board;
+  /*
+   * Inside a group the row is a member, not a mouthpiece: the annotation box
+   * and the go-to/relationship verbs live on the group box, so the expanded
+   * row shows only what is member-specific — the metadata.
+   */
+  inGroup?: boolean;
   expanded: boolean;
   /** Whether this pin is part of the page's focus context right now. */
   onScreen: boolean;
@@ -436,6 +465,7 @@ interface PinRowProps {
 }
 
 function PinRow({
+  inGroup = false,
   pin,
   board,
   expanded,
@@ -671,6 +701,7 @@ function PinRow({
             <Inspector pin={pin} onEdit={(styleEdits) => void update({ styleEdits })} />
           )}
 
+          {!inGroup && (
           <textarea
             className="pin-field"
             rows={2}
@@ -680,9 +711,11 @@ function PinRow({
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => draft !== pin.annotation && void update({ annotation: draft })}
           />
+          )}
 
           {/* Two actions, both of which take you somewhere: to the code, or into
               picking what this pin should match. */}
+          {!inGroup && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button
               className="pin-btn"
@@ -715,6 +748,7 @@ function PinRow({
               </button>
             )}
           </div>
+          )}
         </div>
       )}
 

@@ -432,7 +432,14 @@ const handlers: Handlers = {
           candidate.kind === "element" &&
           candidate.route === element.route &&
           candidate.selector === element.selector &&
-          candidate.selector !== "",
+          candidate.selector !== "" &&
+          /*
+           * A grouped pin belongs to its group's conversation. Re-clicking
+           * that component on the page starts an individual one — a fresh
+           * card, never a merge into the group. The group's words still
+           * reach the new card as a "from group" record in its expansion.
+           */
+          candidate.groupId === null,
       );
       if (existing) {
         savedPin = {
