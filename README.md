@@ -91,6 +91,9 @@ By default Send uses Cursor's **local** agent runtime: it edits files in
 `PINNABLES_PROJECT_DIR` (or the service's cwd) on this machine. A Vite/dev server
 running that repo should hot-reload — no PR branch, no cloud clone.
 
+Live Sends use Composer **fast**, skip screenshot vision, and tell the agent to
+edit the named file only. That is what keeps the loop short.
+
 Follow-up Sends reuse the same local agent session (`~/.pinnables/cursor-session.json`).
 If that agent still has an active run, the next Send is **queued** and starts when
 the run finishes.
@@ -101,6 +104,8 @@ Optional:
 |---|---|
 | `PINNABLES_PROJECT_DIR` | Repo the local agent edits (required when the service isn't started from that repo) |
 | `PINNABLES_CURSOR_MODEL` | Model id (default `composer-2.5`) |
+| `PINNABLES_CURSOR_FAST=0` | Full Composer instead of the fast variant (slower) |
+| `PINNABLES_SEND_IMAGES=1` | Always attach pin screenshots (vision; slower). On by default for cloud, and whenever the pen tool was used |
 | `PINNABLES_CURSOR_AGENT_ID` | Force follow-ups onto a specific agent |
 | `PINNABLES_CURSOR_RUNTIME=cloud` | Use Cloud Agents instead (remote clone; see below) |
 | `PINNABLES_REPO_URL` | GitHub URL for cloud runtime |

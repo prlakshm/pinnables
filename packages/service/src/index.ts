@@ -19,6 +19,7 @@ import {
   probeCursor,
   projectDir,
   readStickyAgentId,
+  shouldAttachScreenshots,
   sendToCursor,
   statusFromCursor,
   type CursorStatus,
@@ -180,14 +181,21 @@ async function writeLiveArtifacts(
   const dir = join(pinnablesHome(), "live", id);
   await mkdir(dir, { recursive: true });
   const screenshots = body.screenshots ?? {};
+  const extra = drawingRegionPinIds(body, board)
+    .map((id) => board.pins.find((pin) => pin.id === id))
+    .filter(
+      (pin): pin is Board["pins"][number] =>
+        pin !== undefined && !pins.some((existing) => existing.id === pin.id),
+    );
+  const allPins = [...pins, ...extra];
 
-  for (const pin of pins) {
+  for (const pin of allPins) {
     const dataUrl = screenshots[pin.id];
     const image = dataUrl ? decodeDataUrl(dataUrl) : null;
     if (image) await writeFile(join(dir, `${pin.id}.png`), image);
   }
 
-  const { lines, messagePath } = buildLiveMarkdown(body, board, pins, dir, screenshots);
+  const { lines, messagePath } = buildLiveMarkdown(body, board, allPins, dir, screenshots);
   await writeFile(messagePath, `${lines.join("\n")}\n`, "utf8");
 
   /*
@@ -195,12 +203,46 @@ async function writeLiveArtifacts(
    * prompt carries the full markdown inline. Screenshots travel separately as
    * prompt.images. Local CLI still gets a path-based prompt as a fallback.
    */
+  const drawingHint = messageHasDrawings(body, board)
+    ? `The attached screenshot shows the pen marks — treat those marks as the specification. `
+    : "";
   const promptText =
     `${lines.join("\n")}\n\n` +
-    `Implement the change described above in this project's source. ` +
-    `Use the selector, source file, and captured styles — do not invent a different target.`;
+    drawingHint +
+    `Open the named source file and apply this change now. ` +
+    `Use the selector, source file, and captured styles — do not invent a different target. ` +
+    `Do not search the rest of the repo. Do not run tests, git, or the app. ` +
+    `Do not commit. Stop as soon as the edit is in the file.`;
 
   return { messagePath, promptText, dir };
+}
+
+/** Pen marks live on the route's region pin; the element crop does not show them. */
+function drawingRegionPinIds(body: LiveMessageBody, board: Board): string[] {
+  return board.pins
+    .filter(
+      (pin) =>
+        pin.kind === "region" &&
+        pin.drawings.length > 0 &&
+        (body.pinIds.includes(pin.id) ||
+          pin.drawings.some(
+            (shape) => shape.ownerPinId !== null && body.pinIds.includes(shape.ownerPinId),
+          )),
+    )
+    .map((pin) => pin.id);
+}
+
+function messageHasDrawings(body: LiveMessageBody, board: Board): boolean {
+  if (body.drawingSummary?.trim()) return true;
+  return drawingRegionPinIds(body, board).length > 0;
+}
+
+function imagePinIds(body: LiveMessageBody, board: Board): string[] {
+  const ids = [...body.pinIds];
+  for (const id of drawingRegionPinIds(body, board)) {
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 async function startViaCursor(
@@ -209,7 +251,9 @@ async function startViaCursor(
   body: LiveMessageBody,
   board: Board,
 ): Promise<void> {
-  const images = imagesFromScreenshots(body.screenshots ?? {}, body.pinIds);
+  const images = shouldAttachScreenshots(messageHasDrawings(body, board))
+    ? imagesFromScreenshots(body.screenshots ?? {}, imagePinIds(body, board))
+    : [];
   const result = await sendToCursor({
     text: promptText,
     images,
@@ -688,7 +732,7 @@ server.listen(PORT, HOST, () => {
   if (cursorConfigured()) {
     const runtime = cursorRuntime();
     if (runtime === "local") {
-      console.log(`Cursor local agent: edits ${projectDir()} (Send applies live)`);
+      console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
     } else {
       console.log("Cursor Cloud Agents: configured (Send will push to remote)");
     }

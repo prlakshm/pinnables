@@ -206,6 +206,98 @@ export function retainExistingPinIds(ids: string[], pins: readonly Pin[]): strin
   return retained.length === ids.length ? ids : retained;
 }
 
+/**
+ * Focus context survives a page reload (Vite HMR after a live edit). The overlay
+ * is a content script: a new document is a new React tree, so selection has to
+ * live in extension storage, not in component state.
+ */
+export const OVERLAY_FOCUS_KEY = "overlayFocus";
+
+export interface OverlayFocusSnapshot {
+  origin: string;
+  route: string;
+  liveSelected: string[];
+  focusCards: string[];
+  selected: string[];
+}
+
+export function overlayFocusLocation(): { origin: string; route: string } {
+  return { origin: location.origin, route: routeForLocation() };
+}
+
+export function applyOverlayFocusSnapshot(
+  snapshot: OverlayFocusSnapshot | null | undefined,
+  pins: readonly Pin[],
+  here: { origin: string; route: string },
+): OverlayFocusSnapshot | null {
+  if (!snapshot) return null;
+  if (snapshot.origin !== here.origin || snapshot.route !== here.route) return null;
+  const next: OverlayFocusSnapshot = {
+    origin: snapshot.origin,
+    route: snapshot.route,
+    liveSelected: retainExistingPinIds(snapshot.liveSelected, pins),
+    focusCards: retainExistingPinIds(snapshot.focusCards, pins),
+    selected: retainExistingPinIds(snapshot.selected, pins),
+  };
+  if (
+    next.liveSelected.length === 0 &&
+    next.focusCards.length === 0 &&
+    next.selected.length === 0
+  ) {
+    return null;
+  }
+  return next;
+}
+
+/**
+ * Hide only the overlay chrome that would land inside the crop.
+ *
+ * The screenshot is of the whole viewport but only the element's rect is kept,
+ * so the single thing that must not be photographed is whatever overlaps that
+ * rect. Hiding the entire host instead made every capture blink the labels,
+ * cards and bars off and back on — the flicker you see when a selection becomes
+ * a source or gains a second member. Wires are checked path by path, since
+ * their SVG spans the viewport while the lines themselves rarely cross the
+ * crop.
+ */
+function maskOverlayForCapture(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): () => void {
+  const root = document.getElementById(OVERLAY_HOST_ID)?.shadowRoot;
+  if (!root) return () => {};
+  const hits = (box: { left: number; top: number; right: number; bottom: number }) =>
+    box.right > rect.x &&
+    box.left < rect.x + rect.width &&
+    box.bottom > rect.y &&
+    box.top < rect.y + rect.height;
+
+  const hidden: HTMLElement[] = [];
+  const consider = (node: Element) => {
+    if (!(node instanceof HTMLElement) && !(node instanceof SVGElement)) return;
+    const overlaps =
+      node instanceof SVGSVGElement
+        ? [...node.querySelectorAll("path, circle")].some((mark) =>
+            hits(mark.getBoundingClientRect()),
+          )
+        : hits(node.getBoundingClientRect());
+    if (!overlaps) return;
+    const el = node as HTMLElement;
+    el.style.visibility = "hidden";
+    hidden.push(el);
+  };
+
+  root.querySelectorAll(".pin-overlay > *").forEach(consider);
+  // Document-space layers (ink, draw surface) live outside .pin-overlay.
+  root.querySelectorAll(".pin-ink, .pin-draw").forEach(consider);
+
+  return () => {
+    for (const el of hidden) el.style.visibility = "";
+  };
+}
+
 /** Claim one reveal message by object identity; a fresh request may target the same pin. */
 export function claimRevealRequest<T extends object>(
   handled: { current: T | null },
@@ -381,6 +473,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   /** Latest selection, for callbacks that must not rebuild per keystroke. */
   const liveSelectedRef = useRef<string[]>([]);
   const visibleShapesRef = useRef<DrawShape[]>(NO_SHAPES);
+  /** False until a stored focus snapshot has been applied or ruled out. */
+  const focusReady = useRef(false);
 
   useEffect(
     () => () => {
@@ -517,17 +611,20 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   useEffect(() => {
     const pins = board?.pins ?? [];
     const validIds = new Set(pins.map((pin) => pin.id));
-    const boardChanged = stateBoardId.current !== (board?.id ?? null);
-    stateBoardId.current = board?.id ?? null;
+    const previousBoardId = stateBoardId.current;
+    const nextBoardId = board?.id ?? null;
+    // First load is not a switch — wiping here would drop a restored focus.
+    const switchingBoards = previousBoardId !== null && previousBoardId !== nextBoardId;
+    stateBoardId.current = nextBoardId;
 
-    setSelected((previous) => retainExistingPinIds(boardChanged ? [] : previous, pins));
-    setLiveSelected((previous) => retainExistingPinIds(boardChanged ? [] : previous, pins));
-    setFocusCards((previous) => retainExistingPinIds(boardChanged ? [] : previous, pins));
+    setSelected((previous) => retainExistingPinIds(switchingBoards ? [] : previous, pins));
+    setLiveSelected((previous) => retainExistingPinIds(switchingBoards ? [] : previous, pins));
+    setFocusCards((previous) => retainExistingPinIds(switchingBoards ? [] : previous, pins));
     setConnecting((current) =>
-      !boardChanged && current && validIds.has(current.fromPinId) ? current : null,
+      !switchingBoards && current && validIds.has(current.fromPinId) ? current : null,
     );
     setLiveConnect((current) =>
-      !boardChanged && current && validIds.has(current.fromPinId) ? current : null,
+      !switchingBoards && current && validIds.has(current.fromPinId) ? current : null,
     );
     if (hoverAnchor.current && !validIds.has(hoverAnchor.current.pinId)) hoverAnchor.current = null;
   }, [positionScope]);
@@ -1085,6 +1182,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       setCaptureError(null);
       setHighlight(null);
       let unmask: (() => void) | null = null;
+      let unmaskOverlay: (() => void) | null = null;
       const host = document.getElementById(OVERLAY_HOST_ID);
       /*
        * Our own overlay is not part of the component.
@@ -1122,7 +1220,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         }
 
         unmask = maskSensitive();
-        if (host) host.style.visibility = "hidden";
+        unmaskOverlay = maskOverlayForCapture(measured.rect);
         // One frame so the redaction covers are painted before the shot.
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         const { pin } = await send("capture/element", { element: measured });
@@ -1197,8 +1295,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             ? related.targetPinIds.filter((targetId) => !liveTargets.includes(targetId))
             : [];
           setLiveSelected(liveTargets);
-          setFocusCards(related ? [intent.sourcePinId, ...cardTargets] : []);
           setSelected([]);
+          setFocusCards(related ? [intent.sourcePinId, ...cardTargets] : []);
           if (related) suppressFocusRelationshipId.current = related.id;
           if (related) {
             const sourcePin = board?.pins.find(
@@ -1228,10 +1326,14 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           console.error("[pinnables] capture failed", err);
         }
       } finally {
-        // Visible, unconditionally. With re-entry impossible the host was
-        // always visible before this capture, and "restore what was there"
-        // is the pattern that once wrote `hidden` back as the baseline.
+        /*
+         * Visible, unconditionally. With re-entry impossible everything was
+         * visible before this capture, and "restore what was there" is the
+         * pattern that once wrote `hidden` back as the baseline. The host's
+         * own visibility is cleared too, in case an older build left it set.
+         */
         if (host) host.style.visibility = "";
+        unmaskOverlay?.();
         unmask?.();
         captureBusy.current = false;
         setCapturing(false);
@@ -1887,13 +1989,56 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   }, [liveSelected, board, api]);
 
   /**
-   * The shelf mirrors what is on screen: pin ids in the focus context are
-   * published for the panel, whose upright pin icons fill for exactly these.
+   * Restore the last focus on this page. A live edit's HMR reload remounts the
+   * overlay; without this the selected component would vanish even though the
+   * pin is still on the board.
    */
   useEffect(() => {
-    const onScreen = state.enabled ? [...liveSelected, ...focusCards] : [];
-    void chrome.storage.local.set({ onScreenPins: onScreen });
-  }, [state.enabled, liveSelected, focusCards]);
+    if (!state.enabled || !board || focusReady.current) return;
+    let cancelled = false;
+    void chrome.storage.local.get(OVERLAY_FOCUS_KEY).then((bag) => {
+      if (cancelled || focusReady.current) return;
+      const restored = applyOverlayFocusSnapshot(
+        bag[OVERLAY_FOCUS_KEY] as OverlayFocusSnapshot | undefined,
+        board.pins,
+        overlayFocusLocation(),
+      );
+      if (restored) {
+        setLiveSelected(restored.liveSelected);
+        setFocusCards(restored.focusCards);
+        setSelected(restored.selected);
+      }
+      focusReady.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.enabled, board]);
+
+  /**
+   * The shelf mirrors what is on screen: pin ids in the focus context are
+   * published for the panel, whose upright pin icons fill for exactly these.
+   * The same write keeps the focus snapshot for the next document.
+   */
+  useEffect(() => {
+    if (!state.enabled) {
+      void chrome.storage.local.set({ onScreenPins: [] });
+      return;
+    }
+    if (!focusReady.current) return;
+    const here = overlayFocusLocation();
+    const snapshot: OverlayFocusSnapshot = {
+      origin: here.origin,
+      route: here.route,
+      liveSelected,
+      focusCards,
+      selected,
+    };
+    void chrome.storage.local.set({
+      onScreenPins: [...liveSelected, ...focusCards],
+      [OVERLAY_FOCUS_KEY]: snapshot,
+    });
+  }, [state.enabled, liveSelected, focusCards, selected]);
 
   /* ------------------------------------------------------------ live dialog */
 
@@ -1972,7 +2117,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     suppressFocusRelationshipId.current = related.id;
     setFocusCards([source]);
     setLiveSelected(targets);
-  }, [liveSelected, createRelationship]);
+    // The reference steps back into its capture, seated on its own component.
+    const sourcePin = board?.pins.find((candidate) => candidate.id === source);
+    if (sourcePin) seatCardAtElement(sourcePin);
+  }, [liveSelected, createRelationship, board, seatCardAtElement]);
 
   if (!state.enabled && !highlight) return null;
 
@@ -2368,7 +2516,9 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           onLiveSent={flushLiveDrawings}
           onAddToBoard={addLiveNote}
           onRelate={liveSelectedPins.length > 1 ? () => void relateLiveSelection() : null}
-          onDismiss={() => setLiveSelected([])}
+          onDismiss={() => {
+            setLiveSelected([]);
+          }}
         />
       )}
 

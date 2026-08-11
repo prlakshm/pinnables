@@ -298,17 +298,117 @@ test("a same-board storage refresh cannot overwrite a freshly captured position"
   );
 });
 
+test("a stored focus snapshot restores only on the same page and surviving pins", async () => {
+  const overlay = await import("../packages/extension/src/content/Overlay.tsx");
+  const pins = [elementPin("source"), elementPin("target")];
+  const here = { origin: "http://localhost:5180", route: "/dashboard" };
+  const snapshot = {
+    origin: here.origin,
+    route: here.route,
+    liveSelected: ["source", "gone"],
+    focusCards: ["gone", "target"],
+    selected: ["source"],
+  };
+
+  const restored = overlay.applyOverlayFocusSnapshot(snapshot, pins, here);
+  assert.deepEqual(restored?.liveSelected, ["source"]);
+  assert.deepEqual(restored?.focusCards, ["target"]);
+  assert.deepEqual(restored?.selected, ["source"]);
+  assert.equal(
+    overlay.applyOverlayFocusSnapshot(snapshot, pins, { ...here, route: "/elsewhere" }),
+    null,
+  );
+});
+
+test("a focus snapshot on another route waits instead of consuming the stored selection", async () => {
+  const overlay = await import("../packages/extension/src/content/Overlay.tsx");
+  const here = { origin: "http://localhost:5180", route: "/" };
+  const snapshot = {
+    origin: here.origin,
+    route: "/catalogue",
+    liveSelected: ["source"],
+    focusCards: [] as string[],
+    selected: [] as string[],
+  };
+
+  assert.equal(overlay.overlayFocusRestoreDecision(snapshot, here), "wait");
+  assert.equal(
+    overlay.overlayFocusRestoreDecision(snapshot, { origin: here.origin, route: "/catalogue" }),
+    "apply",
+  );
+  assert.equal(
+    overlay.overlayFocusRestoreDecision(snapshot, { origin: "http://other.local", route: "/catalogue" }),
+    "skip",
+  );
+  assert.equal(overlay.overlayFocusRestoreDecision(null, here), "skip");
+});
+
+test("a missed live measure keeps the last box so HMR does not dismiss the bar", async () => {
+  const overlay = await import("../packages/extension/src/content/Overlay.tsx");
+  const previous = { daffodil: { top: 10 }, marigold: { top: 20 }, leftover: { top: 99 } };
+  const held = overlay.holdLiveRects(previous, ["daffodil", "marigold"], {
+    daffodil: { top: 12 },
+  });
+  assert.deepEqual(held, { daffodil: { top: 12 }, marigold: { top: 20 } });
+});
+
+test("a board refresh does not drop an in-flight selection the snapshot has not seen", async () => {
+  const overlay = await import("../packages/extension/src/content/Overlay.tsx");
+  const pins = [elementPin("source")];
+  const seen = new Set(["source"]);
+  assert.deepEqual(
+    overlay.retainFocusIds(["source", "daffodil"], pins, seen),
+    ["source", "daffodil"],
+  );
+  seen.add("daffodil");
+  assert.deepEqual(overlay.retainFocusIds(["source", "daffodil"], pins, seen), ["source"]);
+});
+
+test("empty focus is not persisted unless the user dismissed it", async () => {
+  const overlay = await import("../packages/extension/src/content/Overlay.tsx");
+  assert.equal(
+    overlay.shouldPersistOverlayFocus(
+      { origin: "http://localhost:5180", route: "/", liveSelected: [], focusCards: [], selected: [] },
+      false,
+    ),
+    false,
+  );
+  assert.equal(
+    overlay.shouldPersistOverlayFocus(
+      { origin: "http://localhost:5180", route: "/", liveSelected: [], focusCards: [], selected: [] },
+      true,
+    ),
+    true,
+  );
+  assert.equal(
+    overlay.shouldPersistOverlayFocus(
+      {
+        origin: "http://localhost:5180",
+        route: "/",
+        liveSelected: ["source"],
+        focusCards: [],
+        selected: [],
+      },
+      false,
+    ),
+    true,
+  );
+});
+
 test("board refreshes prune ids and hiding a pin removes it from active flows", () => {
   const overlay = source("packages/extension/src/content/Overlay.tsx");
   const pruneEffect = overlay.slice(
     overlay.indexOf("const positionScope"),
     overlay.indexOf("Live position, per frame"),
   );
+  assert.match(pruneEffect, /switchingBoards/);
   assert.match(pruneEffect, /setSelected\(\(previous\) => retainExistingPinIds/);
   // Both halves of the focus context prune with the board, like selection.
   assert.match(pruneEffect, /setLiveSelected\(\(previous\) => retainExistingPinIds/);
   assert.match(pruneEffect, /setFocusCards\(\(previous\) => retainExistingPinIds/);
   assert.match(pruneEffect, /validIds\.has\(current\.fromPinId\)/);
+  assert.match(overlay, /OVERLAY_FOCUS_KEY/);
+  assert.match(overlay, /applyOverlayFocusSnapshot/);
 
   const dismiss = overlay.slice(
     overlay.indexOf("const dismissPin"),

@@ -1086,17 +1086,42 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   cursor: grab;
 }
 .pin-object:active { cursor: grabbing; }
+/*
+ * A card is the size of its component, selected or not. The docked composer
+ * used to impose its own 300px minimum on the shared flex column, which both
+ * widened the object and stretched the card — filling the extra width with
+ * card background to the right of the picture.
+ */
+.pin-object__card { align-self: flex-start; }
+.pin-object > .pin-note {
+  /* Zero width contributes nothing to the column's max-content sizing, so the
+     card alone decides how wide the object is; the minimum then stretches the
+     composer back out to exactly that. Card and composer share one edge. */
+  width: 0;
+  min-width: 100%;
+}
 
 /* The component supplies its own edge. Pinnables only adds an outside glow
    while selected; painting another permanent outline over the screenshot turns
    one component into a visible inner and outer card. */
 .pin-object__card {
   position: relative;
+  /*
+   * Flex, so the card's box is exactly its picture. As a block it produced a
+   * line box around the inline-block frame inside it, and that box's descender
+   * space hung ~5px of card below the component it pictures.
+   */
+  display: flex;
   /* Set per pin from the element's own captured radius; the fallback is for
      region pins, which have no element to borrow from. */
   border-radius: var(--pin-card-radius, var(--pin-radius));
   background: var(--pin-paper);
-  box-shadow: var(--pin-shadow);
+  /*
+   * No shadow. A capture seated on its own component was lifting a shadow
+   * the component does not have — and when the pin is a relationship's
+   * source, that borrowed chrome is exactly the styling you are trying to
+   * read. The pin shows the component; it should add nothing to it.
+   */
   overflow: visible;
   transition: box-shadow 120ms ease;
 }
@@ -1104,6 +1129,9 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
  * Selection adds a glow outside the component and touches nothing else.
  */
 .pin-object[data-selected="true"] .pin-object__card {
+  /* Selected, the card lifts: the glow says "this one" and the shadow says it
+     is being handled. At rest it stays flat, so a capture seated on its own
+     component never adds a shadow the component does not have. */
   box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
 }
 
@@ -1215,7 +1243,6 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   column-gap: 8px;
   row-gap: 1px;
   width: 100%;
-  min-height: 38px;
   padding: 5px 4px 5px 11px;
   /* Rounded on top, square along the bottom — the picker's label profile. The
      flat edge is what points the label at the thing below it; rounding all four
@@ -1227,13 +1254,17 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   box-shadow: var(--pin-shadow);
 }
 
-/* Sans and heavier — this is the name of a thing, not a measurement. */
+/*
+ * Sans and heavier — this is the name of a thing, not a measurement.
+ *
+ * Type matches .pin-live-label__name exactly, and must keep matching: a
+ * component wears one identity plate whether it is live or a capture, so a
+ * card that adopts the pin must not change height as it does.
+ */
 .pin-object__name {
   grid-area: name;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.005em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1244,10 +1275,9 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-object__src {
   grid-area: source;
   font-family: var(--pin-mono);
-  font-size: 11px;
-  line-height: 1.25;
+  font-size: 10px;
   color: inherit;
-  opacity: 0.55;
+  opacity: 0.72;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

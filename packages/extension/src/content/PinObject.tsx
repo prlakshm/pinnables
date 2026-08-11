@@ -370,8 +370,11 @@ export function PinObject({
       }}
     >
       {/*
-        * The name floats above the card rather than sitting on it, and only
-        * while the pin is selected.
+        * The name floats above the card rather than sitting on it, and it
+        * always shows: a card on the page is a component standing there, and
+        * an unnamed one is a picture nobody can identify. Summoned from the
+        * shelf or seated as a relationship's source, the label arrives with
+        * it and travels with it.
         *
         * It is the picker's own label, kept after the click — one language for
         * "what is this", inverted to black so the two are not mistaken for each
@@ -379,24 +382,25 @@ export function PinObject({
         * card is a picture of the component, and a bar drawn across its top is a
         * lie about what that component looks like.
         */}
-      {selected && (
-        <div className="pin-object__label" style={frameStyle ? { width: frameStyle.width } : undefined}>
-          <span className="pin-object__name">{label}</span>
-          <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
-            {pin.sourceFile ?? pin.route}
-          </span>
-          <button
-            className="pin-icon-btn"
-            data-no-drag
-            style={{ width: 20, height: 20, flex: "0 0 auto" }}
-            onClick={onDismiss}
-            title="Hide from this page. The pin stays on the board"
-            aria-label="Hide pin from page"
-          >
-            <CloseIcon size={13} />
-          </button>
-        </div>
-      )}
+      <div
+        className="pin-object__label"
+        style={frameStyle ? { width: frameStyle.width } : undefined}
+      >
+        <span className="pin-object__name">{label}</span>
+        <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
+          {pin.sourceFile ?? pin.route}
+        </span>
+        <button
+          className="pin-icon-btn"
+          data-no-drag
+          style={{ width: 20, height: 20, flex: "0 0 auto" }}
+          onClick={onDismiss}
+          title="Hide from this page. The pin stays on the board"
+          aria-label="Hide pin from page"
+        >
+          <CloseIcon size={13} />
+        </button>
+      </div>
 
       <div
         className="pin-object__card"
