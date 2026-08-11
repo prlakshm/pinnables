@@ -69,7 +69,6 @@ body {
   color: var(--green);
   white-space: nowrap;
 }
-.mark span { color: var(--stamp); }
 .tagline {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -269,7 +268,7 @@ footer .stamp { color: var(--stamp); }
   <!-- ============================================================ CATALOGUE -->
   <section class="route" data-route="/catalogue">
     <div class="lede" data-pin-component="CatalogueLede" data-pin-source="src/routes/Catalogue.tsx:12">
-      <h1>Twelve months,<br />twelve <em>flowers</em>.</h1>
+      <h1>Twelve months,<br />twelve <em style="color: var(--ink)">flowers</em>.</h1>
       <p>One flower for every month of the year, the way they have been assigned since the Romans. Each is grown out, pressed, and held in the register as a living reference.</p>
     </div>
 
@@ -294,7 +293,7 @@ footer .stamp { color: var(--stamp); }
           </div>
         </article>
 
-        <article class="variety variety--legacy" data-pin-component="VarietyCardLegacy" data-pin-source="src/components/VarietyCardLegacy.tsx:9">
+        <article class="variety" data-pin-component="VarietyCardLegacy" data-pin-source="src/components/VarietyCardLegacy.tsx:9">
           <div class="plate">
             <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.2" d="M50 30V74"/><path fill="#dde7e0" stroke-width="1.05" d="M50 74C45 67 43 56 45.5 46C50.5 54 52 66 50 74Z"/><g fill="#dde7e0" stroke-width="1.1"><path transform="translate(50 26) rotate(0) scale(1) translate(-50 -26)" d="M50 26L45.6 13.4Q50 8.5 54.4 13.4Z"/><path transform="translate(50 26) rotate(60) scale(1) translate(-50 -26)" d="M50 26L45.6 13.4Q50 8.5 54.4 13.4Z"/><path transform="translate(50 26) rotate(120) scale(1) translate(-50 -26)" d="M50 26L45.6 13.4Q50 8.5 54.4 13.4Z"/><path transform="translate(50 26) rotate(180) scale(1) translate(-50 -26)" d="M50 26L45.6 13.4Q50 8.5 54.4 13.4Z"/><path transform="translate(50 26) rotate(240) scale(1) translate(-50 -26)" d="M50 26L45.6 13.4Q50 8.5 54.4 13.4Z"/><path transform="translate(50 26) rotate(300) scale(1) translate(-50 -26)" d="M50 26L45.6 13.4Q50 8.5 54.4 13.4Z"/></g><path fill="#dde7e0" stroke-width="1.15" d="M50 19.2Q54.2 18.7 55.9 22.6Q58.4 26 55.9 29.4Q54.2 33.3 50 32.8Q45.8 33.3 44.1 29.4Q41.6 26 44.1 22.6Q45.8 18.7 50 19.2Z"/><circle cx="50" cy="26" r="3.1" fill="none" stroke-width="0.9"/></svg>
             <span class="acc">ACC 0301</span>
@@ -308,7 +307,7 @@ footer .stamp { color: var(--stamp); }
           </div>
         </article>
 
-        <article class="variety variety--compact" data-pin-component="VarietyCardCompact" data-pin-source="src/components/VarietyCardCompact.tsx:6">
+        <article class="variety" data-pin-component="VarietyCardCompact" data-pin-source="src/components/VarietyCardCompact.tsx:6">
           <div class="plate">
             <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.2" d="M50 32V74"/><g stroke-width="1"><path d="M50 62l-8-4M50 58l-10-2M50 66l-7-6"/></g><path fill="#dde7e0" stroke-width="1.1" d="M50 70C56 70 62 66.3 63.5 60.3C56.8 59.5 50.8 64 50 70Z"/><path fill="#dde7e0" stroke-width="1.2" d="M50 13.4Q55.8 11.2 58.7 16.6Q64.6 18.6 63.4 24.6Q66.6 29.9 61.8 33.8Q60.8 39.9 54.7 39.8Q50 43.9 45.3 39.8Q39.2 39.9 38.2 33.8Q33.4 29.9 36.6 24.6Q35.4 18.6 41.3 16.6Q44.2 11.2 50 13.4Z"/><path fill="#dde7e0" stroke-width="1.05" transform="rotate(25.7 50 27)" d="M50 18.2Q54.7 17.2 56.9 21.5Q60.6 24.6 58.6 29Q58.5 33.8 53.8 34.9Q50 37.9 46.2 34.9Q41.5 33.8 41.4 29Q39.4 24.6 43.1 21.5Q45.3 17.2 50 18.2Z"/><path fill="#dde7e0" stroke-width="0.95" d="M50 23Q52.9 23 53.8 25.8Q54.7 28.5 52.4 30.2Q50 32 47.6 30.2Q45.3 28.5 46.2 25.8Q47.1 23 50 23Z"/></svg>
             <span class="acc">ACC 1017</span>
@@ -322,7 +321,7 @@ footer .stamp { color: var(--stamp); }
           </div>
         </article>
 
-        <article class="variety variety--feature" data-pin-component="VarietyCardFeature" data-pin-source="src/components/VarietyCardFeature.tsx:11">
+        <article class="variety" data-pin-component="VarietyCardFeature" data-pin-source="src/components/VarietyCardFeature.tsx:11">
           <div class="plate">
             <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.2" d="M50 32V74"/><path fill="#dde7e0" stroke-width="1.1" d="M50 64C40.5 64 31.9 58.3 29.1 48.8C39.5 47.9 48.1 54.5 50 64Z"/><g fill="#dde7e0" stroke-width="1"><path transform="translate(50 27) rotate(0) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(27.692307692307693) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(55.38461538461539) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(83.07692307692308) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(110.76923076923077) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(138.46153846153845) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(166.15384615384616) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(193.84615384615387) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(221.53846153846155) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(249.23076923076923) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(276.9230769230769) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(304.61538461538464) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/><path transform="translate(50 27) rotate(332.3076923076923) scale(1) translate(-50 -27)" d="M50 27L46.6 13.7Q50 8.5 53.4 13.7Z"/></g><circle cx="50" cy="27" r="7.6" fill="#dde7e0" stroke-width="1.2"/><g fill="#1d4a3a" stroke="none"><circle cx="47" cy="24.6" r="0.95"/><circle cx="53" cy="24.6" r="0.95"/><circle cx="44" cy="27.4" r="0.95"/><circle cx="50" cy="27.4" r="0.95"/><circle cx="56" cy="27.4" r="0.95"/><circle cx="47" cy="30.2" r="0.95"/><circle cx="53" cy="30.2" r="0.95"/></g></svg>
             <span class="acc">ACC 0803</span>
