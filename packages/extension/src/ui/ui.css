@@ -958,11 +958,27 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   gap: 8px;
   padding: 10px 8px 14px;
 }
-/* The group composer reuses the pill without its floating dress. */
+/*
+ * The group composer wears the annotation field's dress, not the floating
+ * pill's: same corners, same quiet border, no shadow, and a field's height.
+ * The pill chrome — stash chip and send arrow — stays out of sight until the
+ * field is engaged, exactly like the plain annotation box it sits beside.
+ */
 .pin-group__composer .pin-note {
   margin-top: 0;
   min-width: 0;
   box-shadow: none;
+  border-radius: var(--pin-radius-sm);
+}
+.pin-group__composer .pin-note__body {
+  align-items: flex-start;
+}
+.pin-group__composer .pin-note__input {
+  min-height: 46px;
+}
+.pin-group__composer .pin-note:not(:focus-within) .pin-kbd,
+.pin-group__composer .pin-note:not(:focus-within) .pin-note__send {
+  display: none;
 }
 
 /* The run's standing, worn on the message itself: black while it is the

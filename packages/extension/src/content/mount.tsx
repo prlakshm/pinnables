@@ -24,6 +24,8 @@ export interface OverlayState {
   focusRelationship: FocusRelationshipMessage | null;
   /** The shelf asked for a messaged group's combined bar back. */
   summonGroup: SummonGroupMessage | null;
+  /** The panel's relate flow: while set, page clicks pick targets. */
+  relateSourcePinId: string | null;
 }
 
 type RevealMessage = Extract<Broadcast, { kind: "reveal-pin" }>;
@@ -31,6 +33,7 @@ type SummonMessage = Extract<Broadcast, { kind: "summon-pins" }>;
 type DismissMessage = Extract<Broadcast, { kind: "dismiss-pins" }>;
 type FocusRelationshipMessage = Extract<Broadcast, { kind: "focus-relationship" }>;
 type SummonGroupMessage = Extract<Broadcast, { kind: "summon-group" }>;
+type RelateModeMessage = Extract<Broadcast, { kind: "relate-mode" }>;
 
 export interface OverlayApi {
   setEnabled(enabled: boolean): void;
@@ -40,6 +43,7 @@ export interface OverlayApi {
   dismiss(message: DismissMessage): void;
   focusRelationship(message: FocusRelationshipMessage): void;
   summonGroup(message: SummonGroupMessage): void;
+  relateMode(message: RelateModeMessage): void;
   destroy(): void;
   subscribe(listener: () => void): () => void;
   snapshot(): OverlayState;
@@ -54,6 +58,7 @@ function createApi(teardown: () => void): OverlayApi {
     dismiss: null,
     focusRelationship: null,
     summonGroup: null,
+    relateSourcePinId: null,
   };
   const listeners = new Set<() => void>();
 
@@ -70,6 +75,7 @@ function createApi(teardown: () => void): OverlayApi {
         summon: enabled ? state.summon : null,
         focusRelationship: enabled ? state.focusRelationship : null,
         summonGroup: enabled ? state.summonGroup : null,
+        relateSourcePinId: enabled ? state.relateSourcePinId : null,
       }),
     refresh: () => commit({ revision: state.revision + 1 }),
     reveal: (message) => commit({ reveal: message, revision: state.revision + 1 }),
@@ -78,6 +84,7 @@ function createApi(teardown: () => void): OverlayApi {
     focusRelationship: (message) =>
       commit({ focusRelationship: message, revision: state.revision + 1 }),
     summonGroup: (message) => commit({ summonGroup: message, revision: state.revision + 1 }),
+    relateMode: (message) => commit({ relateSourcePinId: message.sourcePinId }),
     destroy: teardown,
     subscribe: (listener) => {
       listeners.add(listener);

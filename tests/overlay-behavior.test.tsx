@@ -424,13 +424,13 @@ test("the page capture listener cannot start a duplicate capture while one is in
     overlay.indexOf("useEffect(() => {", overlay.indexOf("const capture = useCallback")),
     overlay.indexOf("/* -------------------------------------------------------- deselect on out */"),
   );
+  // The guard survives the relate-mode branch: still one capture per press,
+  // whichever intent the click resolves to.
+  assert.match(clickEffect, /if \(!capturing\)\s*void capture\(\s*target,/);
+  assert.match(clickEffect, /\{ kind: "select", additive: event\.shiftKey \}/);
   assert.match(
     clickEffect,
-    /if \(!capturing\) void capture\(target, \{ kind: "select", additive: event\.shiftKey \}\)/,
-  );
-  assert.match(
-    clickEffect,
-    /\[state\.enabled, mode, capture, capturing, stale, connecting, liveConnect\]/,
+    /\[state\.enabled, mode, capture, capturing, stale, connecting, liveConnect, state\.relateSourcePinId\]/,
   );
 });
 

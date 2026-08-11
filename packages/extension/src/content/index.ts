@@ -134,5 +134,12 @@ function listen(message: Broadcast | { kind: "ping" }, _sender: unknown, respond
 
   if (message.kind === "summon-group") {
     void ensureOverlay().then((o) => o.summonGroup(message));
+    return;
+  }
+
+  if (message.kind === "relate-mode") {
+    // Only a mounted overlay can be picking; no reason to inject for "off".
+    if (message.sourcePinId === null) overlay?.relateMode(message);
+    else void ensureOverlay().then((o) => o.relateMode(message));
   }
 }
