@@ -614,11 +614,11 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   user-select: none;
 }
 .pin-toolbar__board:hover { background: var(--pin-paper-sunk); }
-/* The count deepens with the button. A deeper step than the surrounding
-   plate's, so the circle stays legible as its own chip while the whole
-   control lifts — mixed from ink so it holds in either scheme. */
+/* The count inverts on hover: the plate behind it darkens, the circle goes
+   to paper. Figure and ground swap, which reads as a lift rather than a
+   deeper shade of the same grey. */
 .pin-toolbar__board:hover .pin-badge {
-  background: color-mix(in srgb, var(--pin-ink) 14%, var(--pin-off));
+  background: var(--pin-paper);
 }
 .pin-toolbar__board:focus-visible {
   outline: 2px solid var(--pin-measure-glow);
