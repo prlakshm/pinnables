@@ -194,7 +194,7 @@ export interface Contract {
    * recorded the moment the service confirms the agent started.
    */
   "agent/recordOutcome": {
-    req: { messageId: string; state: "working" | "done" | "failed" };
+    req: { messageId: string; state: "starting" | "working" | "done" | "failed" };
     res: Record<string, never>;
   };
 
@@ -203,6 +203,12 @@ export interface Contract {
    * single focus context. Navigates the active tab to the pin's page first
    * when needed — same delivery machinery as pin/revealSource.
    */
+  /**
+   * Open the side panel from the page. Chrome only honours sidePanel.open()
+   * while the click's user gesture is still live, so the worker answers this
+   * one before it awaits anything.
+   */
+  "panel/open": { req: Record<string, never>; res: { ok: boolean } };
   "pin/summon": { req: { pinId: string }; res: { ok: boolean } };
   /**
    * A multi-selection that received a message becomes a group — that is the

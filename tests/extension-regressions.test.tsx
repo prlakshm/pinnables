@@ -412,3 +412,24 @@ test("deleting pins or clearing a board drops screenshots after the queued mutat
   assert.ok(pinDelete.indexOf("store.mutateBoard") < pinDelete.indexOf("store.dropScreenshot"));
   assert.ok(boardClear.indexOf("store.mutateBoard") < boardClear.indexOf("store.dropScreenshot"));
 });
+
+test("a queued run records starting and working on the board, not only while its bar is open", async () => {
+  const liveSend = await import("../packages/extension/src/lib/live-send.ts");
+  assert.equal(liveSend.recordableLiveSendState("queued"), null);
+  assert.equal(liveSend.recordableLiveSendState("starting"), "starting");
+  assert.equal(liveSend.recordableLiveSendState("working"), "working");
+  assert.equal(liveSend.liveSendNeedsPoll("queued"), true);
+  assert.equal(liveSend.liveSendNeedsPoll("done"), false);
+
+  const dialog = source("packages/extension/src/content/SelectionDialog.tsx");
+  const composer = source("packages/extension/src/content/Composer.tsx");
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  const background = source("packages/extension/src/background/index.ts");
+  const messages = source("packages/extension/src/lib/messages.ts");
+
+  assert.match(dialog, /recordableLiveSendState/);
+  assert.match(composer, /recordableLiveSendState/);
+  assert.match(overlay, /liveSendNeedsPoll/);
+  assert.match(messages, /state: "starting" \| "working" \| "done" \| "failed"/);
+  assert.match(background, /sent\.messageId !== messageId \|\| sent\.state === state/);
+});

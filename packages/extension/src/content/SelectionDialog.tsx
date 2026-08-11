@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pinLabel, type Board, type Pin } from "@pinnables/shared";
+import { recordableLiveSendState } from "../lib/live-send";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
@@ -189,16 +190,21 @@ export function SelectionDialog({
           return;
         }
         // Queued behind an active Cursor run — keep polling; no starting timeout.
-        if (status.state === "queued" || status.state === "starting") {
+        if (status.state === "queued") {
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
-        if (status.state === "working") {
-          // First confirmation that the agent is actually on it. Recorded to
-          // the board so the history tag flips for every surface, not just
-          // whichever bar happens to be polling.
-          setPhase({ kind: "working", messageId });
-          void send("agent/recordOutcome", { messageId, state: "working" }).catch(() => {});
+        const recorded = recordableLiveSendState(status.state);
+        if (status.state === "starting" || status.state === "working") {
+          // Record leaving the queue, or the agent starting, onto the board —
+          // otherwise the history tag stays "Queued" for the whole run.
+          setPhase(
+            status.state === "working"
+              ? { kind: "working", messageId }
+              : { kind: "starting", messageId },
+          );
+          if (recorded)
+            void send("agent/recordOutcome", { messageId, state: recorded }).catch(() => {});
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
@@ -360,15 +366,14 @@ export function SelectionDialog({
               messageId: sent.messageId!,
               state: "failed",
             }).catch(() => {});
-          } else if (
-            status.state !== "queued" &&
-            status.state !== "starting" &&
-            status.state !== sent.state
-          ) {
-            void send("agent/recordOutcome", {
-              messageId: sent.messageId!,
-              state: status.state,
-            }).catch(() => {});
+          } else if (status.state !== sent.state) {
+            const recorded = recordableLiveSendState(status.state);
+            if (recorded) {
+              void send("agent/recordOutcome", {
+                messageId: sent.messageId!,
+                state: recorded,
+              }).catch(() => {});
+            }
           }
         } catch {
           if (cancelled) return;

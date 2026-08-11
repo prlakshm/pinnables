@@ -603,8 +603,21 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   font-size: 13px;
   font-weight: 500;
 }
-/* Not interactive — no hover, and the cursor stays an arrow. */
-.pin-toolbar__board { cursor: default; user-select: none; }
+/* A control now: it opens the panel, so it answers the pointer like one. */
+.pin-toolbar__board {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.pin-toolbar__board:hover { background: var(--pin-paper-sunk); }
+.pin-toolbar__board:focus-visible {
+  outline: 2px solid var(--pin-measure-glow);
+  outline-offset: 1px;
+}
 
 .pin-stale {
   position: fixed;

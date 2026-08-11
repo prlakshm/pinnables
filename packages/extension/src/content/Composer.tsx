@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hasModifier, submitHintLabel } from "../lib/platform";
+import { recordableLiveSendState } from "../lib/live-send";
 import { send } from "../lib/messages";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
 import { WorkingDots } from "../ui/WorkingDots";
@@ -136,13 +137,19 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
           return;
         }
         // Queued behind an active Cursor run — keep polling; no starting timeout.
-        if (status.state === "queued" || status.state === "starting") {
+        if (status.state === "queued") {
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
-        if (status.state === "working") {
-          setPhase({ kind: "working", messageId });
-          void send("agent/recordOutcome", { messageId, state: "working" }).catch(() => {});
+        const recorded = recordableLiveSendState(status.state);
+        if (status.state === "starting" || status.state === "working") {
+          setPhase(
+            status.state === "working"
+              ? { kind: "working", messageId }
+              : { kind: "starting", messageId },
+          );
+          if (recorded)
+            void send("agent/recordOutcome", { messageId, state: recorded }).catch(() => {});
           pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
           return;
         }
