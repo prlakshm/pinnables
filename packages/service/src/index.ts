@@ -673,13 +673,15 @@ const server = createServer((req, res) => {
 
     const liveMatch = /^\/messages\/([^/]+)$/.exec(url.pathname);
     if (req.method === "GET" && liveMatch) {
-      const found = await refreshMessageStatus(liveMatch[1]);
+      let found = await refreshMessageStatus(liveMatch[1]);
       if (!found) return send(res, 404, { error: "Unknown message" });
       // A status poll is also a chance to notice the active run finished and
       // start whatever is waiting — do not rely only on the finished message's
-      // own poller (the UI may have moved on).
+      // own poller (the UI may have moved on). Await so a queued poll can
+      // return "starting" in the same response once the previous run is done.
       if (found.state === "done" || found.state === "failed" || found.state === "queued") {
-        void refreshActiveCursorRuns();
+        await refreshActiveCursorRuns();
+        found = liveMessages.get(liveMatch[1]) ?? found;
       }
       return send(res, 200, found);
     }

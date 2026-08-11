@@ -402,13 +402,18 @@ test("board refreshes prune ids and hiding a pin removes it from active flows", 
     overlay.indexOf("Live position, per frame"),
   );
   assert.match(pruneEffect, /switchingBoards/);
-  assert.match(pruneEffect, /setSelected\(\(previous\) => retainExistingPinIds/);
+  assert.match(pruneEffect, /setSelected\(\(previous\) => retainFocusIds/);
   // Both halves of the focus context prune with the board, like selection.
-  assert.match(pruneEffect, /setLiveSelected\(\(previous\) => retainExistingPinIds/);
-  assert.match(pruneEffect, /setFocusCards\(\(previous\) => retainExistingPinIds/);
+  // In-flight captures are kept even if a racing board snapshot omitted them.
+  assert.match(pruneEffect, /setLiveSelected\(\(previous\) => retainFocusIds/);
+  assert.match(pruneEffect, /setFocusCards\(\(previous\) => retainFocusIds/);
   assert.match(pruneEffect, /validIds\.has\(current\.fromPinId\)/);
   assert.match(overlay, /OVERLAY_FOCUS_KEY/);
   assert.match(overlay, /applyOverlayFocusSnapshot/);
+  assert.match(overlay, /overlayFocusRestoreDecision\(snapshot, here\) === "wait"/);
+  assert.match(overlay, /shouldPersistOverlayFocus\(snapshot, focusDismissed\.current\)/);
+  assert.match(overlay, /holdLiveRects\(previous, liveSelected, nextLive\)/);
+  assert.match(overlay, /lastDomMutationAt\.current < 500/);
 
   const dismiss = overlay.slice(
     overlay.indexOf("const dismissPin"),

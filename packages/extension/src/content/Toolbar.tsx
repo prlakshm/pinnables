@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DRAW_COLORS } from "@pinnables/shared";
 import { CloseIcon, CursorIcon, EraserIcon, GripIcon, PencilIcon, PinIcon } from "../ui/icons";
+import { send } from "../lib/messages";
 
 export type DrawTool = "draw" | "erase";
 
@@ -210,14 +211,20 @@ export function Toolbar({
 
       <span className="pin-toolbar__divider" />
 
-      {/* A readout, not a control. Opening the panel from here needed a user
-          gesture the worker could not always be handed, so the affordance was
-          promising something it could not reliably do — and the extension icon
-          opens the panel anyway. */}
-      <span className="pin-toolbar__board" title={`${pinCount} pinned`}>
+      {/* The count, and the way back to it. The worker opens the panel from
+          the sender's own window id, so nothing is awaited before the call and
+          Chrome still sees the click — which is what the earlier attempt at
+          this was missing. */}
+      <button
+        type="button"
+        className="pin-toolbar__board"
+        onClick={() => void send("panel/open", {}).catch(() => {})}
+        title={`${pinCount} pinned · open the board`}
+        aria-label={`Open the board, ${pinCount} pinned`}
+      >
         Board
         <span className={pinCount > 99 ? "pin-badge pin-badge--wide" : "pin-badge"}>{pinCount}</span>
-      </span>
+      </button>
 
       <span className="pin-toolbar__divider" />
 

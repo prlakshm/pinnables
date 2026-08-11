@@ -835,6 +835,23 @@ const handlers: Handlers = {
     };
   },
 
+  async "panel/open"(_req, sender) {
+    /*
+     * Everything this needs comes off the sender synchronously. Looking the
+     * window up with chrome.tabs.query would spend the gesture before the
+     * call, which is why opening the panel from the page never worked
+     * reliably before — Chrome refuses sidePanel.open() once the gesture is
+     * gone, and the message dispatcher hands us the click still warm.
+     */
+    const windowId = sender.tab?.windowId;
+    if (windowId === undefined) return { ok: false };
+    const opening = chrome.sidePanel.open({ windowId });
+    return await opening.then(
+      () => ({ ok: true }),
+      () => ({ ok: false }),
+    );
+  },
+
   async "pin/summon"({ pinId }) {
     const board = await store.boardForPin(pinId);
     const pin = board.pins.find((p) => p.id === pinId)!;
@@ -1000,13 +1017,15 @@ const handlers: Handlers = {
         ...b,
         pins: b.pins.map((pin) => {
           if (!pin.liveSends.some((sent) => sent.messageId === messageId)) return pin;
+          let changed = false;
+          const liveSends = pin.liveSends.map((sent) => {
+            if (sent.messageId !== messageId || sent.state === state) return sent;
+            changed = true;
+            return { ...sent, state };
+          });
+          if (!changed) return pin;
           touched = true;
-          return {
-            ...pin,
-            liveSends: pin.liveSends.map((sent) =>
-              sent.messageId === messageId ? { ...sent, state } : sent,
-            ),
-          };
+          return { ...pin, liveSends };
         }),
       };
     });

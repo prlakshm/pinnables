@@ -26,6 +26,7 @@ import {
   refindElement,
   routeForLocation,
 } from "../lib/capture";
+import { liveSendNeedsPoll, recordableLiveSendState } from "../lib/live-send";
 import { ExtensionReloadedError, send, type Broadcast, type Contract } from "../lib/messages";
 import { CloseIcon } from "../ui/icons";
 import type { OverlayApi } from "./mount";
@@ -230,8 +231,7 @@ export function applyOverlayFocusSnapshot(
   pins: readonly Pin[],
   here: { origin: string; route: string },
 ): OverlayFocusSnapshot | null {
-  if (!snapshot) return null;
-  if (snapshot.origin !== here.origin || snapshot.route !== here.route) return null;
+  if (!snapshot || overlayFocusRestoreDecision(snapshot, here) !== "apply") return null;
   const next: OverlayFocusSnapshot = {
     origin: snapshot.origin,
     route: snapshot.route,
@@ -245,6 +245,64 @@ export function applyOverlayFocusSnapshot(
     next.selected.length === 0
   ) {
     return null;
+  }
+  return next;
+}
+
+export type OverlayFocusRestoreDecision = "apply" | "wait" | "skip";
+
+/**
+ * A live edit often reloads before the SPA has the stored route. Consuming
+ * the snapshot there would mark focus ready and persist an empty selection.
+ */
+export function overlayFocusRestoreDecision(
+  snapshot: OverlayFocusSnapshot | null | undefined,
+  here: { origin: string; route: string },
+): OverlayFocusRestoreDecision {
+  if (!snapshot) return "skip";
+  if (snapshot.origin !== here.origin) return "skip";
+  if (snapshot.route !== here.route) return "wait";
+  return "apply";
+}
+
+export function shouldPersistOverlayFocus(
+  snapshot: OverlayFocusSnapshot,
+  dismissed: boolean,
+): boolean {
+  if (
+    snapshot.liveSelected.length > 0 ||
+    snapshot.focusCards.length > 0 ||
+    snapshot.selected.length > 0
+  ) {
+    return true;
+  }
+  return dismissed;
+}
+
+/**
+ * Drop ids only once this board has shown them and then lost them. A pin
+ * created this click is not in a racing `recordOutcome` snapshot yet.
+ */
+export function retainFocusIds(
+  ids: string[],
+  pins: readonly Pin[],
+  seenPinIds: ReadonlySet<string>,
+): string[] {
+  const valid = new Set(pins.map((pin) => pin.id));
+  const retained = ids.filter((id) => valid.has(id) || !seenPinIds.has(id));
+  return retained.length === ids.length ? ids : retained;
+}
+
+/** Keep last-known boxes for pins still selected but missing from this pass. */
+export function holdLiveRects<T>(
+  previous: Record<string, T>,
+  selectedIds: readonly string[],
+  measured: Record<string, T>,
+): Record<string, T> {
+  const next: Record<string, T> = {};
+  for (const id of selectedIds) {
+    if (measured[id]) next[id] = measured[id];
+    else if (previous[id]) next[id] = previous[id];
   }
   return next;
 }
@@ -475,6 +533,12 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const visibleShapesRef = useRef<DrawShape[]>(NO_SHAPES);
   /** False until a stored focus snapshot has been applied or ruled out. */
   const focusReady = useRef(false);
+  /** True when the user cleared focus; empty snapshots may then overwrite storage. */
+  const focusDismissed = useRef(false);
+  /** Pin ids this board has already presented — in-flight captures are absent. */
+  const seenPinIds = useRef(new Set<string>());
+  /** Last DOM mutation, so a hot-reload swap is not treated as a click-outside. */
+  const lastDomMutationAt = useRef(0);
 
   useEffect(
     () => () => {
@@ -554,6 +618,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   useEffect(() => {
     let frame: number | null = null;
     const observer = new MutationObserver(() => {
+      lastDomMutationAt.current = Date.now();
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
         frame = null;
@@ -566,6 +631,49 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, []);
+
+  /*
+   * History tags live on the pin. The bar that sent the message may already
+   * be gone (another component selected), so the overlay watches every
+   * in-flight send on the board and records starting/working/done itself.
+   */
+  useEffect(() => {
+    if (!board) return;
+    const pending = board.pins.flatMap((pin) =>
+      pin.liveSends.filter(
+        (sent) => sent.messageId !== null && liveSendNeedsPoll(sent.state),
+      ),
+    );
+    if (pending.length === 0) return;
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = async () => {
+      for (const sent of pending) {
+        if (cancelled) return;
+        if (!sent.messageId) continue;
+        try {
+          const status = await send("agent/status", { messageId: sent.messageId });
+          if (cancelled) return;
+          if (status.state === sent.state) continue;
+          const recorded = recordableLiveSendState(status.state);
+          if (recorded) {
+            await send("agent/recordOutcome", {
+              messageId: sent.messageId,
+              state: recorded,
+            });
+          }
+        } catch {
+          /* The next tick retries; a blip must not fail the rest. */
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(() => void tick(), 2_500);
+    };
+    timer = window.setTimeout(() => void tick(), 400);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [board]);
 
   /* ------------------------------------------------------------- board sync */
 
@@ -616,10 +724,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     // First load is not a switch — wiping here would drop a restored focus.
     const switchingBoards = previousBoardId !== null && previousBoardId !== nextBoardId;
     stateBoardId.current = nextBoardId;
+    if (switchingBoards) seenPinIds.current = new Set();
+    const seen = seenPinIds.current;
+    for (const pin of pins) seen.add(pin.id);
 
-    setSelected((previous) => retainExistingPinIds(switchingBoards ? [] : previous, pins));
-    setLiveSelected((previous) => retainExistingPinIds(switchingBoards ? [] : previous, pins));
-    setFocusCards((previous) => retainExistingPinIds(switchingBoards ? [] : previous, pins));
+    setSelected((previous) => retainFocusIds(switchingBoards ? [] : previous, pins, seen));
+    setLiveSelected((previous) => retainFocusIds(switchingBoards ? [] : previous, pins, seen));
+    setFocusCards((previous) => retainFocusIds(switchingBoards ? [] : previous, pins, seen));
     setConnecting((current) =>
       !switchingBoards && current && validIds.has(current.fromPinId) ? current : null,
     );
@@ -1033,7 +1144,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           label: pinLabel(pin, board?.pins ?? []),
         };
       }
-      setLiveRects(nextLive);
+      setLiveRects((previous) => holdLiveRects(previous, liveSelected, nextLive));
     };
     measure();
     const frame = requestAnimationFrame(measure);
@@ -1307,6 +1418,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         } else {
           // Every click pins. Selecting is the conversation; the shelf entry
           // is the memory of it, whether or not anything gets said.
+          focusDismissed.current = false;
           setLiveSelected((previous) =>
             intent.additive
               ? [...previous.filter((id) => id !== pin.id), pin.id]
@@ -1605,7 +1717,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
     const onDown = (event: PointerEvent) => {
       const target = event.target as Element | null;
-      if (!target) return;
+      if (!target?.isConnected) return;
       // Composed path, because a click inside the shadow root reports the host
       // as its target from the page's perspective.
       const insideSelectionOwner = event
@@ -1618,11 +1730,16 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
        * draw tool to circle something is part of the conversation, not the end
        * of it. It clears only on genuinely empty page space: a press on a
        * capturable element is already a new selection via the picker.
+       *
+       * A live edit's DOM swap can land a press on html/body for a frame.
+       * That is not a dismissal.
        */
       const insideOurs = event
         .composedPath()
         .some((n) => n instanceof Element && n.id === OVERLAY_HOST_ID);
       if (!insideOurs && !isCapturablePageElement(target)) {
+        if (capturing || Date.now() - lastDomMutationAt.current < 500) return;
+        focusDismissed.current = true;
         pendingFocusRelationship.current = null;
         setLiveSelected([]);
         setFocusCards([]);
@@ -1631,7 +1748,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [state.enabled]);
+  }, [state.enabled, capturing]);
 
   /* -------------------------------------------------------------- esc layer */
 
@@ -1668,6 +1785,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       }
       if (liveSelected.length > 0 || focusCards.length > 0 || selected.length > 0) {
         event.preventDefault();
+        focusDismissed.current = true;
         pendingFocusRelationship.current = null;
         setLiveSelected([]);
         setFocusCards([]);
@@ -1791,6 +1909,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
      * single-focus flow that means the live element itself: the dialog opens
      * on it, ready to continue the conversation the shelf row started.
      */
+    focusDismissed.current = false;
     setLiveSelected([request.pinId]);
     setFocusCards([]);
     setSelected([]);
@@ -1995,15 +2114,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    */
   useEffect(() => {
     if (!state.enabled || !board || focusReady.current) return;
+    if (liveSelected.length > 0 || focusCards.length > 0 || selected.length > 0) {
+      focusReady.current = true;
+      return;
+    }
     let cancelled = false;
     void chrome.storage.local.get(OVERLAY_FOCUS_KEY).then((bag) => {
       if (cancelled || focusReady.current) return;
-      const restored = applyOverlayFocusSnapshot(
-        bag[OVERLAY_FOCUS_KEY] as OverlayFocusSnapshot | undefined,
-        board.pins,
-        overlayFocusLocation(),
-      );
+      const snapshot = bag[OVERLAY_FOCUS_KEY] as OverlayFocusSnapshot | undefined;
+      const here = overlayFocusLocation();
+      if (overlayFocusRestoreDecision(snapshot, here) === "wait") return;
+      const restored = applyOverlayFocusSnapshot(snapshot, board.pins, here);
       if (restored) {
+        focusDismissed.current = false;
         setLiveSelected(restored.liveSelected);
         setFocusCards(restored.focusCards);
         setSelected(restored.selected);
@@ -2013,7 +2136,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     return () => {
       cancelled = true;
     };
-  }, [state.enabled, board]);
+  }, [state.enabled, board, route, liveSelected.length, focusCards.length, selected.length]);
 
   /**
    * The shelf mirrors what is on screen: pin ids in the focus context are
@@ -2034,8 +2157,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       focusCards,
       selected,
     };
+    const onScreenPins = [...liveSelected, ...focusCards];
+    if (!shouldPersistOverlayFocus(snapshot, focusDismissed.current)) {
+      void chrome.storage.local.set({ onScreenPins });
+      return;
+    }
     void chrome.storage.local.set({
-      onScreenPins: [...liveSelected, ...focusCards],
+      onScreenPins,
       [OVERLAY_FOCUS_KEY]: snapshot,
     });
   }, [state.enabled, liveSelected, focusCards, selected]);
@@ -2392,7 +2520,11 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
                     className="pin-icon-btn pin-live-label__close"
                     data-no-drag
                     onClick={() =>
-                      setLiveSelected((previous) => previous.filter((id) => id !== pinId))
+                      setLiveSelected((previous) => {
+                        const next = previous.filter((id) => id !== pinId);
+                        if (next.length === 0) focusDismissed.current = true;
+                        return next;
+                      })
                     }
                     title="Deselect this one. The rest stay selected"
                     aria-label={`Deselect ${live.label}`}
@@ -2517,6 +2649,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           onAddToBoard={addLiveNote}
           onRelate={liveSelectedPins.length > 1 ? () => void relateLiveSelection() : null}
           onDismiss={() => {
+            focusDismissed.current = true;
             setLiveSelected([]);
           }}
         />
