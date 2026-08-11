@@ -26,7 +26,9 @@ type SendPhase =
   | { kind: "failed"; detail: string }
   /** Service offline: the text was staged on the board instead. */
   | { kind: "staged-offline" }
-  | { kind: "staged" };
+  | { kind: "staged" }
+  /** Saved bare — the pin kept for later, no message written anywhere. */
+  | { kind: "kept" };
 
 const STATUS_POLL_MS = 2_500;
 /** Still "starting" after this long means the run never truly began. */
@@ -130,7 +132,7 @@ export function SelectionDialog({
    * and a notice that clears itself reads as a problem that did.
    */
   useEffect(() => {
-    if (phase.kind !== "staged") return;
+    if (phase.kind !== "staged" && phase.kind !== "kept") return;
     const timer = window.setTimeout(() => setPhase({ kind: "idle" }), 2_500);
     return () => window.clearTimeout(timer);
   }, [phase]);
@@ -388,11 +390,29 @@ export function SelectionDialog({
     if (primary?.liveSends.some((sent) => sent.text === echo)) setEcho(null);
   }, [echo, primary?.liveSends]);
 
+  /*
+   * The empty stash: ⌘↵ with nothing typed keeps the pin without writing a
+   * message. The receipt is promoted so it survives dismissal and
+   * navigation; no annotation is recorded and nothing goes near the agent.
+   * The placeholder teaches it in the chip's own word: stash for later.
+   */
+  const keepNow = useCallback(async () => {
+    for (const pin of pins) {
+      await send("pin/update", { pinId: pin.id, patch: {} }).catch(() => {});
+    }
+    setDraft("");
+    setPhase({ kind: "kept" });
+  }, [pins]);
+
   const stageNow = useCallback(async () => {
     const message = draft.trim();
-    if (!message) return;
+    // The stash chord with nothing to stash keeps the pin itself.
+    if (!message) {
+      await keepNow();
+      return;
+    }
     await stage(message, false);
-  }, [draft, stage]);
+  }, [draft, stage, keepNow]);
 
   if (!primary) return null;
 
@@ -440,6 +460,10 @@ export function SelectionDialog({
         return `Couldn’t complete: ${(phase as { detail: string }).detail}`;
       case "staged-offline":
         return "No agent connected. Added to the board instead.";
+      // The one non-alarm: a bare save writes no history line, so this quiet
+      // receipt is its only acknowledgement. It confirms and leaves.
+      case "kept":
+        return "Saved to the board.";
       default:
         return null;
     }
@@ -457,7 +481,11 @@ export function SelectionDialog({
           className="pin-note__input"
           rows={1}
           value={draft}
-          placeholder={multi ? `Describe the change for all ${pins.length}` : "Describe the change"}
+          placeholder={
+            multi
+              ? `Describe the change for all ${pins.length}`
+              : "Describe the change or stash for later"
+          }
           aria-label={multi ? `Message for all ${pins.length} selected components` : `Message for ${name}`}
           onChange={(event) => {
             const next = event.target.value.replace(/\n/g, " ");
@@ -616,10 +644,10 @@ export function SelectionDialog({
       )}
       {statusLine && (
         <div
-          className="pin-note__rel pin-note__alert"
+          className={phase.kind === "kept" ? "pin-note__rel" : "pin-note__rel pin-note__alert"}
           data-state={phase.kind}
-          role="alert"
-          aria-live="assertive"
+          role={phase.kind === "kept" ? "status" : "alert"}
+          aria-live={phase.kind === "kept" ? "polite" : "assertive"}
         >
           {statusLine}
         </div>

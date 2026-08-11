@@ -361,7 +361,8 @@ export function App() {
           onClick={() => void toggleCapture()}
           aria-pressed={state?.captureMode ?? false}
           aria-busy={captureBusy}
-          disabled={!state}
+          data-progress={captureBusy}
+          disabled={!state || captureBusy}
         >
           <PinIcon size={14} />
           {state?.captureMode ? "Capturing" : "Capture"}
