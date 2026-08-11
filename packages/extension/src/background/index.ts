@@ -316,7 +316,13 @@ async function sweepSilentProvisionals(): Promise<void> {
 }
 
 async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
-  if (enabled) await sweepSilentProvisionals();
+  /*
+   * The sweep rides the mutation queue and can sit behind an in-flight
+   * capture for the better part of a second. Awaiting it here made the
+   * Capture button feel dead — the mode must flip now; stale-pin hygiene
+   * can happen right after, in queue order, without holding the answer.
+   */
+  if (enabled) void sweepSilentProvisionals();
   await store.patchState({ captureMode: enabled });
   const message: Broadcast = { kind: "capture-mode", enabled };
   // `tabs.sendMessage` below updates page overlays. Extension pages such as the

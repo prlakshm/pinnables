@@ -280,6 +280,14 @@
   color: var(--pin-paper);
   cursor: default;
 }
+/* Same rule for the quiet variant: a toggle answering its press keeps its
+   face; only unpressable buttons go gray. */
+.pin-btn--quiet:disabled[data-progress="true"],
+.pin-btn:disabled[data-progress="true"] {
+  opacity: 1;
+  color: inherit;
+}
+
 /*
  * Both off states darken a step on hover. The difference is the text: `--quiet`
  * is switched off but clickable, so its label comes up to full ink; a disabled
