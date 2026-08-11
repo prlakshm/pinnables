@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Toggle menu — Pinnables mock</title>
+<style>
+/*
+ * A mock of one interaction, on one real card.
+ *
+ * The card is lifted verbatim from fixtures/film-set/index.html — the same
+ * VarietyCard (ACC 0612, Rose) the extension pins in the demo — so the chrome
+ * is being judged against a component that actually exists rather than a grey
+ * rectangle. Its tokens are the Accession set; the overlay's are the --pin-*
+ * set from packages/extension/src/ui/ui.css, unchanged.
+ *
+ * Everything below the card is the thing being designed: a Toggle switch under
+ * the send button, a branch that offers add or replace, and a persistent menu
+ * of option keycaps beside the component.
+ *
+ * Light only. The page it overlays is paper by construction.
+ */
+
+/* ------------------------------------------------ accession (the set) */
+:root {
+  --paper: #ffffff;
+  --sheet: #f6f3ea;
+  --sheet-deep: #efeadb;
+  --rule: #e2ddcd;
+  --ink: #1b1a15;
+  --ink-soft: #6d6857;
+  --ink-faint: #a49d88;
+  --green: #1d4a3a;
+  --green-wash: #e9efe9;
+  --stamp: #a33726;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* ------------------------------------------ pinnables (the overlay) */
+  --pin-white: #ffffff;
+  --pin-grey-50: #f6f5f3;
+  --pin-grey-100: #efeeec;
+  --pin-grey-150: #e4e2de;
+  --pin-grey-200: #d3d2ce;
+  --pin-grey-400: #a1a4ab;
+  --pin-grey-500: #6b6f78;
+  --pin-grey-600: #454b55;
+  --pin-grey-900: #292c33;
+  --pin-red-400: #f4564b;
+  --pin-red-500: #ed1c24;
+
+  --pin-paper: var(--pin-white);
+  --pin-paper-soft: var(--pin-grey-50);
+  --pin-paper-sunk: var(--pin-grey-100);
+  --pin-rule: var(--pin-grey-150);
+  --pin-rule-strong: var(--pin-grey-200);
+  --pin-ink-faint: var(--pin-grey-400);
+  --pin-ink-muted: var(--pin-grey-500);
+  --pin-ink: var(--pin-grey-900);
+  --pin-ink-lift: var(--pin-grey-600);
+  --pin-on-fill: var(--pin-ink);
+  --pin-on-ink: var(--pin-paper);
+  --pin-red: var(--pin-red-500);
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-400) 30%, transparent);
+
+  --pin-label-gap: 3px;
+  --pin-radius-sm: 6px;
+  --pin-radius: 10px;
+  --pin-radius-lg: 16px;
+  --pin-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --pin-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 12px rgba(9, 9, 11, 0.08);
+  --pin-shadow-lg: 0 1px 2px rgba(9, 9, 11, 0.08), 0 8px 28px rgba(9, 9, 11, 0.12);
+
+  /* One number, so the collapse and the insert read as one motion. */
+  --beat: 260ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px 96px;
+}
+
+/* ------------------------------------------------------ the rose card */
+/* Verbatim from the film set, so what the chrome sits on is the real thing. */
+
+.plate {
+  background: var(--sheet);
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 4;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.plate svg { width: 62%; height: 62%; }
+.plate .acc {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.card-name { font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; margin: 14px 0 1px; }
+.card-latin { font-style: italic; color: var(--ink-soft); font-size: 13px; margin: 0 0 12px; }
+.traits { display: flex; gap: 14px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.traits b { display: block; font-family: var(--sans); font-size: 15px; font-weight: 500; color: var(--ink); letter-spacing: 0; text-transform: none; margin-top: 2px; }
+
+.variety {
+  width: 244px;
+  background: var(--paper);
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid var(--rule);
+  /* Every option is a set of overrides on these four, so switching has to be
+     watchable rather than instantaneous. */
+  transition: background var(--beat) var(--ease), border-color var(--beat) var(--ease),
+    border-radius var(--beat) var(--ease), padding var(--beat) var(--ease),
+    box-shadow var(--beat) var(--ease);
+}
+
+/* ------------------------------------------------------- pin: the card */
+
+.pin-object { position: relative; display: flex; flex-direction: column; width: max-content; }
+
+.pin-object__card {
+  position: relative;
+  align-self: flex-start;
+  display: flex;
+  border-radius: 14px;
+  background: var(--pin-paper);
+}
+.pin-object[data-selected="true"] .pin-object__card {
+  box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
+}
+
+.pin-object__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - var(--pin-label-gap)));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name close" "source close";
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  padding: 5px 4px 5px 11px;
+  border-radius: 8px 8px 0 0;
+  background: var(--pin-ink);
+  color: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font-family: var(--pin-font);
+}
+.pin-object__name { grid-area: name; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pin-object__src {
+  grid-area: source;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------- pin: the note */
+
+.pin-note {
+  margin-top: 8px;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-lg);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  min-width: 300px;
+  width: 0;
+  min-width: 100%;
+  font-family: var(--pin-font);
+  color: var(--pin-ink);
+  position: relative;
+}
+
+.pin-note__body { display: flex; align-items: center; gap: 8px; padding: 6px 7px 6px 16px; }
+
+.pin-note__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 0;
+  height: 26px;
+  color: var(--pin-ink);
+}
+.pin-note__input::placeholder { color: var(--pin-ink-muted); }
+
+.pin-note__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+.pin-note__send:hover { background: var(--pin-ink-lift); }
+.pin-note__send[data-idle="true"] { background: var(--pin-paper-sunk); color: var(--pin-ink-muted); }
+
+/*
+ * The switch sits directly under the send button, because the branch it opens
+ * flies out from here and both gestures end in the same corner of the pill.
+ */
+.pin-note__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 16px;
+  border-top: 1px solid var(--pin-rule);
+}
+.pin-note__toggle span { flex: 1; font-size: 12px; color: var(--pin-ink-muted); }
+
+.pin-switch {
+  width: 30px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: var(--pin-rule-strong);
+  padding: 0;
+  position: relative;
+  cursor: pointer;
+  transition: background 180ms var(--ease);
+}
+.pin-switch[aria-checked="true"] { background: var(--pin-on-fill); }
+.pin-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--pin-paper);
+  transition: left 180ms var(--ease);
+}
+.pin-switch[aria-checked="true"] i { left: 14px; }
+
+.pin-note__hint {
+  padding: 0 16px 9px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pin-ink-faint);
+  min-height: 17px;
+}
+.pin-note__hint b { color: var(--pin-ink); font-weight: 500; }
+
+/* ------------------------------------------------------- the branch */
+/*
+ * Two choices, drawn as branches rather than stacked in a menu: the shape says
+ * that one input is about to become two possible futures, which is the whole
+ * decision being made.
+ *
+ * It lives outside .pin-note, not inside it. The pill is overflow: hidden in
+ * ui.css — deliberately, so history can scroll inside it — and anything that
+ * has to reach past its edge is clipped at the border radius. So the branch is
+ * a sibling, seated in JS against the switch it grows out of.
+ */
+.pin-branch { position: absolute; z-index: 6; width: 0; height: 0; }
+.pin-branch svg { position: absolute; left: 0; top: 0; overflow: visible; }
+
+.pin-branch__opt {
+  position: absolute;
+  left: 34px;
+  white-space: nowrap;
+  border: 1px solid var(--pin-rule);
+  border-radius: 999px;
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pin-ink);
+  padding: 5px 13px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-12px);
+  animation: branch-in 220ms var(--ease) forwards;
+}
+.pin-branch__opt[data-role="add"] { top: -32px; animation-delay: 20ms; }
+.pin-branch__opt[data-role="replace"] { top: 10px; animation-delay: 80ms; }
+.pin-branch__opt:hover:not(:disabled) { background: var(--pin-on-fill); color: var(--pin-on-ink); border-color: transparent; }
+.pin-branch__opt:disabled { color: var(--pin-ink-faint); cursor: not-allowed; }
+@keyframes branch-in { to { opacity: 1; transform: none; } }
+
+.pin-branch__confirm {
+  position: absolute;
+  left: 34px;
+  top: -12px;
+  white-space: nowrap;
+  border: none;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 6px 13px;
+  cursor: pointer;
+  box-shadow: var(--pin-shadow);
+  opacity: 0;
+  transform: translateX(-12px);
+  animation: branch-in 200ms var(--ease) forwards;
+}
+
+/* ------------------------------------------------------- the menu */
+
+.pin-versions {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid var(--pin-rule);
+  border-radius: 999px;
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow-lg);
+  font-family: var(--pin-mono);
+}
+.pin-versions__mod {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pin-ink-faint);
+  padding: 0 3px;
+  user-select: none;
+  transition: color 120ms ease;
+}
+.pin-versions[data-armed="true"] .pin-versions__mod { color: var(--pin-ink); }
+
+/*
+ * A keycap, because the row is also the shortcut legend — the same mono chip
+ * .pin-kbd already uses, and it fills the same way when its modifier is held.
+ */
+.pin-key {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 4px;
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.pin-key[data-on="true"] { background: var(--pin-on-fill); color: var(--pin-on-ink); }
+.pin-key[data-locked="true"] { opacity: 0.32; cursor: not-allowed; }
+.pin-key[data-doomed="true"] {
+  background: var(--pin-red-tint);
+  color: var(--pin-red);
+  box-shadow: inset 0 0 0 1px var(--pin-red);
+}
+
+/* The collapse. Width, padding and margin all run to zero together, so the
+   survivors are carried left by ordinary flex reflow rather than a second
+   animation that has to be kept in step with this one. */
+.pin-key {
+  max-width: 90px;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease,
+    max-width var(--beat) var(--ease), min-width var(--beat) var(--ease),
+    padding var(--beat) var(--ease), margin var(--beat) var(--ease),
+    opacity 180ms ease, transform var(--beat) var(--ease);
+}
+.pin-key[data-collapsing="true"] {
+  max-width: 0;
+  min-width: 0;
+  padding: 0;
+  margin-left: -4px;
+  opacity: 0;
+  transform: scale(0.55);
+}
+
+/* The insert. Grown from nothing to its measured width, then handed back to
+   layout so it can never be stuck at a stale pixel value. */
+.pin-key[data-entering="true"] { max-width: 0; min-width: 0; padding: 0; opacity: 0; }
+
+@keyframes key-land {
+  0% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
+  40% { box-shadow: inset 0 0 0 2px var(--pin-ink), 0 0 0 4px var(--pin-measure-glow); }
+  100% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
+}
+.pin-key[data-landed="true"] { animation: key-land 520ms var(--ease); }
+
+.pin-key__num { transition: opacity 140ms ease; }
+.pin-key[data-renumbering="true"] .pin-key__num { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-key, .variety, .pin-switch, .pin-switch i { transition-duration: 1ms; }
+  .pin-branch__opt, .pin-branch__confirm, .pin-key[data-landed="true"] { animation-duration: 1ms; }
+}
+
+/* ------------------------------------------------------- mock scaffold */
+/* Not part of the design. It exists so all three placements and the reset are
+   reachable without resizing the window by hand. */
+
+.rig {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: var(--sheet);
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.rig button {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.rig button[data-on="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.stage { position: relative; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="pin-object" data-selected="true" id="obj">
+
+    <div class="pin-object__card">
+      <div class="pin-object__label">
+        <span class="pin-object__name">VarietyCard</span>
+        <span class="pin-object__src">src/components/VarietyCard.tsx:14</span>
+      </div>
+
+      <!-- The card, exactly as the film set serves it. -->
+      <article class="variety" id="card">
+        <div class="plate">
+          <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.2" d="M50 32V74"/><path fill="#dde7e0" stroke-width="1.1" d="M50 60C41.8 60 34.4 55.1 32 46.9C41 46.1 48.4 51.8 50 60Z"/><path fill="#dde7e0" stroke-width="1.1" d="M50 68C56.6 68 63.1 63.9 64.8 57.3C57.4 56.5 50.8 61.4 50 68Z"/><g fill="#dde7e0" stroke-width="1.2"><path transform="translate(50 28) rotate(0) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(72) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(144) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(216) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(288) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/></g><g fill="#dde7e0" stroke-width="1"><path transform="translate(50 28) rotate(36) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(108) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(180) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(252) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(324) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/></g><circle cx="50" cy="28" r="2.1" fill="#dde7e0" stroke-width="0.9"/></svg>
+          <span class="acc">ACC 0612</span>
+        </div>
+        <h3 class="card-name">Rose</h3>
+        <p class="card-latin">Rosa gallica</p>
+        <div class="traits">
+          <div>Days<b>78</b></div>
+          <div>Store<b>4y</b></div>
+          <div>Germ<b>94%</b></div>
+        </div>
+      </article>
+    </div>
+
+    <div class="pin-note">
+      <div class="pin-note__body">
+        <input class="pin-note__input" id="draft" placeholder="Describe a change" autocomplete="off" aria-label="Pin annotation" />
+        <button class="pin-note__send" id="send" data-idle="true" aria-label="Send to agent">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6"/></svg>
+        </button>
+      </div>
+
+      <div class="pin-note__toggle">
+        <span>Toggle</span>
+        <button class="pin-switch" id="switch" role="switch" aria-checked="true" aria-label="Keep more than one version"><i></i></button>
+      </div>
+
+      <div class="pin-note__hint" id="hint" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div class="pin-versions" id="menu" role="group" aria-label="Versions"></div>
+  <div class="pin-branch" id="branch"></div>
+</div>
+
+<div class="rig">
+  <span>placement</span>
+  <button data-place="auto" data-on="true">auto</button>
+  <button data-place="card-right">right of card</button>
+  <button data-place="note-right">right of box</button>
+  <button data-place="card-left">left of card</button>
+  <button id="reset" style="margin-left:18px">reset</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /*
+   * An option is a snapshot the agent produced, plus the words that asked for
+   * it. In the extension these carry a messageId and a patch; here they carry
+   * the CSS the patch would have written, which is enough to make switching
+   * mean something on screen.
+   */
+  var MAX = 5;
+  var seq = 0;
+  function opt(label, style) { return { id: "o" + ++seq, label: label, style: style || {} }; }
+
+  var BASE = { background: "", borderColor: "", borderRadius: "", padding: "", boxShadow: "" };
+
+  /* Stand-ins for real agent output, cycled so a typed message visibly lands. */
+  var LOOKS = [
+    { background: "#f6f3ea", borderColor: "#e2ddcd", borderRadius: "4px", padding: "20px", boxShadow: "" },
+    { background: "#ffffff", borderColor: "transparent", borderRadius: "20px", padding: "24px", boxShadow: "0 10px 30px rgba(27,26,21,0.09)" },
+    { background: "#ffffff", borderColor: "#e2ddcd", borderRadius: "6px", padding: "13px", boxShadow: "0 1px 2px rgba(27,26,21,0.06)" },
+    { background: "#f7ece6", borderColor: "#a33726", borderRadius: "14px", padding: "20px", boxShadow: "" }
+  ];
+  var lookAt = 0;
+  function nextLook() { var l = LOOKS[lookAt % LOOKS.length]; lookAt++; return l; }
+
+  var state = {
+    options: [
+      opt("original", BASE),
+      opt("green wash", { background: "#e9efe9", borderColor: "#cfdcd2", borderRadius: "14px", padding: "20px", boxShadow: "" }),
+      opt("stamp border, square", { background: "#ffffff", borderColor: "#a33726", borderRadius: "2px", padding: "20px", boxShadow: "" })
+    ],
+    current: 1,
+    on: true,
+    /* idle | branch | selecting */
+    mode: "idle",
+    pending: null,
+    doomed: {},
+    place: "auto",
+    kept: null,
+    busy: false
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var menu = $("menu"), card = $("card"), draft = $("draft"), branch = $("branch");
+
+  function doomedCount() { return Object.keys(state.doomed).length; }
+
+  /* ------------------------------------------------------------- the card */
+
+  function paintCard() {
+    var o = (state.mode !== "idle" && state.pending) ? state.pending : state.options[state.current];
+    if (!o) return;
+    var s = o.style;
+    card.style.background = s.background || "";
+    card.style.borderColor = s.borderColor || "";
+    card.style.borderRadius = s.borderRadius || "";
+    card.style.padding = s.padding || "";
+    card.style.boxShadow = s.boxShadow || "";
+    card.style.borderWidth = s.borderColor === "transparent" ? "0" : "";
+  }
+
+  /* ------------------------------------------------------------- the menu */
+
+  function keyFor(o, i) {
+    var b = document.createElement("button");
+    b.className = "pin-key";
+    b.type = "button";
+    b.dataset.key = o.id;
+    b.dataset.idx = String(i);
+    b.title = o.label;
+
+    var n = document.createElement("span");
+    n.className = "pin-key__num";
+    n.textContent = String(i + 1);
+    b.appendChild(n);
+
+    if (state.mode === "selecting") {
+      if (i === 0) {
+        b.dataset.locked = "true";
+        b.title = "the original stays";
+        b.setAttribute("aria-disabled", "true");
+      } else {
+        b.dataset.doomed = state.doomed[o.id] ? "true" : "false";
+        b.setAttribute("aria-pressed", state.doomed[o.id] ? "true" : "false");
+        b.onclick = function () {
+          if (state.doomed[o.id]) delete state.doomed[o.id];
+          else state.doomed[o.id] = true;
+          render();
+        };
+      }
+    } else {
+      b.dataset.on = (i === state.current) ? "true" : "false";
+      b.setAttribute("aria-pressed", b.dataset.on);
+      b.onclick = function () { if (!state.busy) { state.current = i; render(); } };
+    }
+    return b;
+  }
+
+  function renderMenu() {
+    menu.innerHTML = "";
+    if (!state.on) { menu.style.display = "none"; return; }
+    menu.style.display = "";
+    menu.dataset.armed = armed ? "true" : "false";
+
+    var mod = document.createElement("span");
+    mod.className = "pin-versions__mod";
+    mod.textContent = "⌥";
+    mod.title = "hold to arm the keys, tap to step forward";
+    menu.appendChild(mod);
+
+    state.options.forEach(function (o, i) { menu.appendChild(keyFor(o, i)); });
+    place();
+  }
+
+  /* --------------------------------------------------------- the placement */
+  /*
+   * Right of the card and low, so the row clears both the identity plate on top
+   * and the connector anchor that renders at the edge midpoint. Falls back the
+   * way a tooltip does: try the preferred side, then the note, then mirror.
+   */
+  function place() {
+    var host = $("obj").getBoundingClientRect();
+    var cardBox = card.getBoundingClientRect();
+    var note = document.querySelector(".pin-note").getBoundingClientRect();
+    var w = menu.offsetWidth || 140;
+    var gap = 10;
+
+    var order = state.place === "auto"
+      ? ["card-right", "note-right", "card-left"]
+      : [state.place];
+
+    function fits(where) {
+      if (where === "card-left") return cardBox.left - gap - w > 4;
+      var from = where === "card-right" ? cardBox.right : note.right;
+      return from + gap + w < window.innerWidth - 4;
+    }
+
+    var chosen = order.find(fits) || order[order.length - 1];
+
+    var x =
+      chosen === "card-right" ? cardBox.right + gap
+        : chosen === "note-right" ? note.right + gap
+          : cardBox.left - gap - w;
+
+    /* Nothing fitting is a real state on a narrow window. Clamp rather than let
+       the row leave the viewport, which is the one outcome worse than crowding. */
+    x = Math.max(4, Math.min(x, window.innerWidth - w - 4));
+
+    menu.style.right = "";
+    menu.style.left = (x - host.left) + "px";
+    menu.style.top = (cardBox.bottom - host.top - menu.offsetHeight) + "px";
+    menu.dataset.placed = chosen;
+  }
+
+  /* ------------------------------------------------------------ the branch */
+
+  /* Seated against the switch, because that is the control the two futures grow
+     out of. Recomputed on every render so it survives the note changing height. */
+  function placeBranch() {
+    if (state.mode === "idle") return;
+    var host = $("stage").getBoundingClientRect();
+    var sw = $("switch").getBoundingClientRect();
+    branch.style.left = (sw.right - host.left + 9) + "px";
+    branch.style.top = (sw.top - host.top + sw.height / 2) + "px";
+  }
+
+  function renderBranch() {
+    branch.innerHTML = "";
+    if (state.mode === "branch") {
+      var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "30");
+      svg.setAttribute("height", "1");
+      svg.innerHTML =
+        '<path d="M0 0 H12 Q22 0 22 -10 V-22" fill="none" stroke="var(--pin-rule-strong)" stroke-width="1"/>' +
+        '<path d="M0 0 H12 Q22 0 22 10 V22" fill="none" stroke="var(--pin-rule-strong)" stroke-width="1"/>';
+      branch.appendChild(svg);
+
+      var add = document.createElement("button");
+      add.className = "pin-branch__opt";
+      add.type = "button";
+      add.dataset.role = "add";
+      add.textContent = "add";
+      add.disabled = state.options.length >= MAX;
+      add.title = add.disabled ? "five is the cap. replace one instead" : "keep it alongside the others";
+      add.onclick = doAdd;
+      branch.appendChild(add);
+
+      var rep = document.createElement("button");
+      rep.className = "pin-branch__opt";
+      rep.type = "button";
+      rep.dataset.role = "replace";
+      rep.textContent = "replace";
+      rep.onclick = function () { state.mode = "selecting"; state.doomed = {}; render(); };
+      branch.appendChild(rep);
+    }
+
+    if (state.mode === "selecting" && doomedCount()) {
+      var go = document.createElement("button");
+      go.className = "pin-branch__confirm";
+      go.type = "button";
+      go.textContent = "collapse " + doomedCount() + " into it";
+      go.onclick = doReplace;
+      branch.appendChild(go);
+    }
+    placeBranch();
+  }
+
+  /* -------------------------------------------------------------- the hint */
+
+  function hint() {
+    if (!state.on) {
+      return state.kept
+        ? "Kept <b>" + state.kept + "</b>. The others were dropped."
+        : "Turn Toggle on to keep more than one version of this card.";
+    }
+    if (state.mode === "branch") {
+      return state.options.length >= MAX
+        ? "Five is the cap, so this one has to replace something."
+        : "Keep it alongside the others, or replace ones you already have.";
+    }
+    if (state.mode === "selecting") {
+      return doomedCount()
+        ? "Replacing <b>" + doomedCount() + "</b> with &ldquo;" + esc(state.pending.label) + "&rdquo;."
+        : "Select which options you want to replace.";
+    }
+    var o = state.options[state.current];
+    return "Showing <b>" + esc(o.label) + "</b>. ⌥ steps forward, ⌥ and a number jumps, ⌘↩ on an empty line keeps it.";
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+
+  function render() {
+    renderMenu();
+    renderBranch();
+    $("hint").innerHTML = hint();
+    $("switch").setAttribute("aria-checked", state.on ? "true" : "false");
+    $("send").dataset.idle = draft.value.trim() ? "false" : "true";
+    paintCard();
+  }
+
+  /* ------------------------------------------------------- add and replace */
+
+  /*
+   * FLIP, because the survivors have to be seen sliding into the gap. A plain
+   * re-render puts them at their new coordinates instantly, which reads as the
+   * row having been rebuilt rather than one option having left it.
+   */
+  function flip(mutate) {
+    var before = new Map();
+    menu.querySelectorAll(".pin-key").forEach(function (n) {
+      before.set(n.dataset.key, n.getBoundingClientRect().left);
+    });
+
+    mutate();
+
+    menu.querySelectorAll(".pin-key").forEach(function (n) {
+      var was = before.get(n.dataset.key);
+      if (was == null) return;
+      var d = was - n.getBoundingClientRect().left;
+      if (!d) return;
+      n.style.transition = "none";
+      n.style.transform = "translateX(" + d + "px)";
+      requestAnimationFrame(function () {
+        n.style.transition = "";
+        n.style.transform = "";
+      });
+    });
+  }
+
+  /* Grow the new keycap from nothing to whatever width it wants, then hand the
+     width back to layout so it can never be pinned at a stale pixel value. */
+  function enter(id) {
+    var n = menu.querySelector('.pin-key[data-key="' + id + '"]');
+    if (!n) return;
+    n.dataset.entering = "true";
+    var target = n.scrollWidth + 10;
+    requestAnimationFrame(function () {
+      n.dataset.entering = "false";
+      n.style.maxWidth = target + "px";
+      setTimeout(function () {
+        n.style.maxWidth = "";
+        n.dataset.landed = "true";
+        setTimeout(function () { n.removeAttribute("data-landed"); }, 560);
+      }, 300);
+    });
+  }
+
+  function doAdd() {
+    if (state.options.length >= MAX || !state.pending) return;
+    var added = state.pending;
+    state.options.push(added);
+    state.current = state.options.length - 1;
+    state.pending = null;
+    state.mode = "idle";
+    flip(render);
+    enter(added.id);
+  }
+
+  function doReplace() {
+    var dead = state.options.filter(function (o) { return state.doomed[o.id]; });
+    if (!dead.length || !state.pending) return;
+    state.busy = true;
+
+    /* 1. The doomed keys shrink where they stand. Flex carries the rest left. */
+    dead.forEach(function (o) {
+      var n = menu.querySelector('.pin-key[data-key="' + o.id + '"]');
+      if (n) { n.dataset.renumbering = "true"; n.dataset.collapsing = "true"; }
+    });
+
+    var beat = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 260;
+
+    setTimeout(function () {
+      /* 2. The new one takes the lowest seat the dead ones held, so the row
+            renumbers as little as it can get away with. */
+      var seat = Math.min.apply(null, dead.map(function (o) { return state.options.indexOf(o); }));
+      var added = state.pending;
+      var survivors = state.options.filter(function (o) { return !state.doomed[o.id]; });
+      survivors.splice(seat, 0, added);
+
+      state.options = survivors;
+      state.current = seat;
+      state.pending = null;
+      state.doomed = {};
+      state.mode = "idle";
+
+      flip(render);
+      enter(added.id);
+      state.busy = false;
+    }, beat);
+  }
+
+  /* ---------------------------------------------------------------- verbs */
+
+  function send() {
+    var text = draft.value.trim();
+
+    /* Empty is the keep verb, the same as it is everywhere else in the pill. */
+    if (!text) { keep(); return; }
+
+    var o = opt(text, nextLook());
+    draft.value = "";
+
+    /* Nothing to weigh it against yet, so it just becomes the second option. */
+    if (!state.on || state.options.length <= 1) {
+      state.options.push(o);
+      state.current = state.options.length - 1;
+      state.mode = "idle";
+      flip(render);
+      enter(o.id);
+      return;
+    }
+
+    state.pending = o;
+    state.mode = "branch";
+    render();
+  }
+
+  function keep() {
+    if (!state.on) return;
+    state.kept = "option " + (state.current + 1) + ", " + state.options[state.current].label;
+    var winner = state.options[state.current];
+    state.options = [state.options[0], winner].filter(function (o, i, a) { return a.indexOf(o) === i; });
+    state.current = state.options.length - 1;
+    state.on = false;
+    state.mode = "idle";
+    state.pending = null;
+    render();
+  }
+
+  function cancel() {
+    if (state.mode === "idle") return;
+    state.mode = "idle";
+    state.pending = null;
+    state.doomed = {};
+    render();
+  }
+
+  /* ------------------------------------------------------------ the chord */
+
+  var armed = false, armedAt = 0, armedUsed = false;
+
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Alt" && !e.repeat) {
+      e.preventDefault();
+      armed = true; armedAt = Date.now(); armedUsed = false;
+      if (state.on) menu.dataset.armed = "true";
+      return;
+    }
+
+    /* e.code, because Option and a digit emits ¡™£ on a Mac layout. */
+    if (e.altKey && /^Digit[1-9]$/.test(e.code)) {
+      e.preventDefault();
+      armedUsed = true;
+      var i = Number(e.code.slice(5)) - 1;
+      if (state.on && state.mode === "idle" && i < state.options.length && !state.busy) {
+        state.current = i;
+        render();
+        menu.dataset.armed = "true";
+      }
+      return;
+    }
+
+    if (e.key === "Escape") { cancel(); return; }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (e.metaKey || e.ctrlKey) keep();
+      else send();
+      return;
+    }
+
+    /* Arrows only reach the menu while there is no caret to move. */
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !draft.value && state.on && state.mode === "idle" && !state.busy) {
+      e.preventDefault();
+      var n = state.options.length;
+      state.current = (state.current + (e.key === "ArrowRight" ? 1 : n - 1)) % n;
+      render();
+    }
+  });
+
+  window.addEventListener("keyup", function (e) {
+    if (e.key !== "Alt") return;
+    /* A tap, with no digit inside it, steps forward the way Tab would. */
+    if (armed && !armedUsed && Date.now() - armedAt < 400 && state.on && state.mode === "idle" && !state.busy) {
+      state.current = (state.current + 1) % state.options.length;
+      render();
+    }
+    armed = false;
+    menu.dataset.armed = "false";
+  });
+  window.addEventListener("blur", function () { armed = false; menu.dataset.armed = "false"; });
+
+  /* ----------------------------------------------------------------- wire */
+
+  $("send").onclick = send;
+  draft.addEventListener("input", function () { $("send").dataset.idle = draft.value.trim() ? "false" : "true"; });
+  $("switch").onclick = function () {
+    if (state.on) keep();
+    else { state.on = true; state.kept = null; render(); }
+  };
+
+  document.querySelectorAll("[data-place]").forEach(function (b) {
+    b.onclick = function () {
+      state.place = b.dataset.place;
+      document.querySelectorAll("[data-place]").forEach(function (o) { o.dataset.on = String(o === b); });
+      place();
+    };
+  });
+
+  $("reset").onclick = function () { location.reload(); };
+  window.addEventListener("resize", place);
+
+  render();
+  draft.focus();
+})();
+</script>
+</body>
+</html>
