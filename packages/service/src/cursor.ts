@@ -13,7 +13,15 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Agent, Cursor, AgentBusyError, type Run, type SDKAgent } from "@cursor/sdk";
+import {
+  Agent,
+  Cursor,
+  AgentBusyError,
+  type ModelSelection,
+  type Run,
+  type SDKAgent,
+  type ToolName,
+} from "@cursor/sdk";
 import { pinnablesHome } from "@pinnables/shared/storage";
 
 function apiBase(): string {
@@ -90,9 +98,30 @@ export function projectDir(): string {
   return process.env.PINNABLES_PROJECT_DIR?.trim() || process.cwd();
 }
 
-function modelSelection(): { id: string } {
+/**
+ * Live pin edits are short, named-file changes. Fast Composer is the right
+ * default — full Composer 2.5 (and vision) is what made Send feel stuck.
+ * Set PINNABLES_CURSOR_FAST=0 for the slower, higher-quality variant.
+ */
+export function modelSelection(): ModelSelection {
   const id = process.env.PINNABLES_CURSOR_MODEL?.trim() || "composer-2.5";
-  return { id };
+  const fast = process.env.PINNABLES_CURSOR_FAST !== "0";
+  return fast ? { id, params: [{ id: "fast", value: "true" }] } : { id };
+}
+
+/**
+ * Screenshots are expensive. Local text pins already carry source file + styles.
+ * Pen marks are the exception: the agent cannot see a drawing without the PNG.
+ */
+export function sendImagesEnabled(): boolean {
+  if (process.env.PINNABLES_SEND_IMAGES === "1") return true;
+  if (process.env.PINNABLES_SEND_IMAGES === "0") return false;
+  return cursorRuntime() === "cloud";
+}
+
+export function shouldAttachScreenshots(hasDrawings: boolean): boolean {
+  if (hasDrawings) return true;
+  return sendImagesEnabled();
 }
 
 function isCloudAgentId(agentId: string): boolean {
@@ -250,7 +279,14 @@ async function obtainLocalAgent(preferredId?: string | null): Promise<{
   const base = {
     apiKey: key,
     model: modelSelection(),
-    local: { cwd },
+    // Pin Sends name the file. Extra tools (search, shell, subagents, web)
+    // are how a 10-second color change becomes a minute of exploration.
+    tools: ["read", "edit", "grep", "glob", "readLints"] as ToolName[],
+    local: {
+      cwd,
+      autoReview: false,
+      settingSources: [],
+    },
   };
 
   const tryResume = async (agentId: string): Promise<SDKAgent | null> => {

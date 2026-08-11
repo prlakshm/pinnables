@@ -921,8 +921,23 @@ const handlers: Handlers = {
     if (pinIds.length === 0) throw new Error("A live message needs at least one pin");
     const board = await store.boardForPin(pinIds[0]);
 
+    /*
+     * Pen marks are photographed onto the route's region pin, not the element
+     * crop. A live send that illustrated a component still has to carry that
+     * region shot or the agent never sees the drawing.
+     */
+    const screenshotIds = new Set(pinIds);
+    for (const pin of board.pins) {
+      if (pin.kind !== "region" || pin.drawings.length === 0) continue;
+      const relevant =
+        pinIds.includes(pin.id) ||
+        pin.drawings.some(
+          (shape) => shape.ownerPinId !== null && pinIds.includes(shape.ownerPinId),
+        );
+      if (relevant) screenshotIds.add(pin.id);
+    }
     const screenshots: Record<string, string> = {};
-    for (const pinId of pinIds) {
+    for (const pinId of screenshotIds) {
       const shot = await store.getScreenshot(pinId);
       if (shot) screenshots[pinId] = shot;
     }
