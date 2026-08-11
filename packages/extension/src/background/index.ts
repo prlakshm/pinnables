@@ -1003,13 +1003,32 @@ const handlers: Handlers = {
         involved.has(pin.id) && pin.provisional ? { ...pin, provisional: false } : pin,
       );
 
-      relationship = b.relationships.find(
-        (candidate) =>
-          candidate.sourcePinId === sourcePinId &&
-          candidate.targetPinIds.length === uniqueTargetIds.length &&
-          candidate.targetPinIds.every((targetId) => uniqueTargetIds.includes(targetId)),
+      /*
+       * One relationship per source. A second connector drawn from the same
+       * source does not open a parallel conversation about the same
+       * reference — it extends the existing one into a multi-target
+       * relationship, which is what dragging another wire visibly says.
+       */
+      const existingForSource = b.relationships.find(
+        (candidate) => candidate.sourcePinId === sourcePinId,
       );
-      if (relationship) return { ...b, pins: promoted };
+      if (existingForSource) {
+        const mergedTargets = [
+          ...existingForSource.targetPinIds,
+          ...uniqueTargetIds.filter((id) => !existingForSource.targetPinIds.includes(id)),
+        ];
+        relationship =
+          mergedTargets.length === existingForSource.targetPinIds.length
+            ? existingForSource
+            : { ...existingForSource, targetPinIds: mergedTargets };
+        return {
+          ...b,
+          pins: promoted,
+          relationships: b.relationships.map((candidate) =>
+            candidate.id === relationship!.id ? relationship! : candidate,
+          ),
+        };
+      }
 
       relationship = {
         id: store.nextId("rel"),

@@ -251,7 +251,22 @@ export function PinObject({
    * A wide element arrives at life size showing its left-hand portion; a tall
    * one is scaled down whole, which is what it needed anyway.
    */
-  const MAX_SHOT = { width: 420, height: 260 };
+  /*
+   * Actual size, unless it genuinely will not fit. The receipt reads truest
+   * standing exactly where — and exactly as large as — the component it
+   * pictures, so a seated card covers its element edge to edge instead of
+   * shrinking into a thumbnail with the live card poking out beneath. The
+   * viewport share is the only cap; the old fixed caps survive as floors so
+   * a tiny window never shrinks a card below its former size.
+   */
+  const viewport =
+    typeof window === "undefined"
+      ? { width: 1280, height: 800 }
+      : { width: window.innerWidth, height: window.innerHeight };
+  const MAX_SHOT = {
+    width: Math.max(420, Math.round(viewport.width * 0.72)),
+    height: Math.max(260, Math.round(viewport.height * 0.72)),
+  };
   /*
    * The pin is a receipt: the original capture, at its captured size, always.
    *

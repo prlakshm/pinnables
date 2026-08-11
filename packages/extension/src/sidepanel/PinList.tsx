@@ -59,8 +59,13 @@ export function PinList({
   const [relationshipBusy, setRelationshipBusy] = useState(false);
   const [relationshipIssue, setRelationshipIssue] = useState<string | null>(null);
 
-  // Unspoken pins are not on the shelf — that is the whole contract.
-  const pins = sortedByOrder(board.pins).filter((pin) => !pin.provisional);
+  /*
+   * Provisional pins show while they exist: selecting a component is how you
+   * read its metadata on the shelf. What keeps the shelf honest is the other
+   * half — a provisional that is dismissed unspoken is deleted, so the row
+   * vanishes with the selection it mirrored.
+   */
+  const pins = sortedByOrder(board.pins);
 
   /*
    * Messaged multi-selections, reopenable. A group exists only through its

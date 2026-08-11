@@ -321,7 +321,7 @@ export function App() {
     setPhase("idle");
   }, [reload]);
 
-  const pinCount = board?.pins.filter((pin) => !pin.provisional).length ?? 0;
+  const pinCount = board?.pins.length ?? 0;
   const relCount = board?.relationships.length ?? 0;
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -469,19 +469,13 @@ export function App() {
             </div>
           )}
           {state?.serviceOnline && !state.cursorOnline && (
-            <div className="pin-banner">
+            <div className="pin-banner pin-banner--prose">
               Set <code>CURSOR_API_KEY</code> on the local service for one-click Send.
               Point <code>PINNABLES_PROJECT_DIR</code> at the app repo so edits land live.
             </div>
           )}
-          {state?.cursorOnline && state.cursorRuntime === "local" && state.cursorProjectDir && (
-            <div className="pin-banner">
-              Send edits files in <code>{state.cursorProjectDir}</code> — your running app
-              should hot-reload. No PR branch.
-            </div>
-          )}
           {(agentUrl || state?.cursorAgentUrl) && state?.cursorRuntime === "cloud" && (
-            <div className="pin-banner">
+            <div className="pin-banner pin-banner--note pin-banner--prose">
               Cloud Agents run on the web, not in this panel.{" "}
               <a
                 href={agentUrl ?? state.cursorAgentUrl ?? undefined}
