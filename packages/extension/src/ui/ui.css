@@ -280,10 +280,10 @@
   color: var(--pin-paper);
   cursor: default;
 }
-/* Same rule for the quiet variant: a toggle answering its press keeps its
-   face; only unpressable buttons go gray. */
-.pin-btn--quiet:disabled[data-progress="true"],
-.pin-btn:disabled[data-progress="true"] {
+/* Same idea for the quiet variant only. The bare selector used to ride
+   along here and, tying the primary rule on specificity from later in the
+   file, painted the active Capturing pill's text ink-on-ink. */
+.pin-btn--quiet:disabled[data-progress="true"] {
   opacity: 1;
   color: inherit;
 }
@@ -897,37 +897,38 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   min-width: 0;
 }
 /*
- * A messaged multi-selection, living on the shelf as one object. The black
- * plate names the set in the same language the on-page labels use; members
- * sit inside as ordinary rows, and one composer at the bottom speaks to all
- * of them. Collapsed — the resting state — the group is just its name.
+ * A messaged multi-selection, living on the shelf as one object. A quiet
+ * gray field holds the set — container, not alarm — with members inside as
+ * ordinary white rows and one composer at the bottom speaking to all of
+ * them. Collapsed — the resting state — the group is just its name.
  */
 .pin-group {
   border: 1px solid var(--pin-rule);
   border-radius: var(--pin-radius);
-  background: var(--pin-paper);
+  background: var(--pin-paper-sunk);
   overflow: hidden;
 }
+/* Structurally a row: the rows' own height and left inset, the rows'
+   trailing icon pair — dressed in the container's quiet gray. */
 .pin-group__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   border: none;
-  background: var(--pin-on-fill);
-  color: var(--pin-on-ink);
-  padding: 6px 6px 6px 9px;
+  background: transparent;
+  color: var(--pin-ink);
+  padding: 9px 8px 9px 10px;
+  min-height: 58px;
   cursor: pointer;
   text-align: left;
   font: inherit;
 }
-.pin-group__caret {
-  flex: 0 0 auto;
-  display: inline-flex;
-  opacity: 0.75;
-  transition: transform 120ms ease;
+/* The rows' hover step (white → grey-50 is ~4% ink), applied from the
+   container's own gray so the delta feels identical one shade down. */
+.pin-group__head:hover {
+  background: color-mix(in srgb, var(--pin-ink) 4%, var(--pin-paper-sunk));
 }
-.pin-group[data-open="true"] .pin-group__caret { transform: rotate(90deg); }
 .pin-group__titles {
   flex: 1;
   min-width: 0;
@@ -937,7 +938,6 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 }
 .pin-group__title {
   font-size: 12.5px;
-  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -945,20 +945,7 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-group__sub {
   font-family: var(--pin-mono);
   font-size: 10px;
-  opacity: 0.72;
-}
-/* Icon buttons on the plate wear its ink; the hover plate is a white lift
-   rather than the light-surface gray. */
-.pin-group__head .pin-icon-btn { color: var(--pin-on-ink); }
-.pin-group__head .pin-icon-btn:hover {
-  background: color-mix(in srgb, var(--pin-on-ink) 16%, transparent);
-}
-.pin-group__head .pin-icon-btn.pin-summon[data-active="true"] {
-  color: var(--pin-on-ink);
-  background: transparent;
-}
-.pin-group__head .pin-icon-btn.pin-summon[data-active="true"]:hover {
-  background: color-mix(in srgb, var(--pin-on-ink) 16%, transparent);
+  color: var(--pin-ink-muted);
 }
 .pin-group__body {
   display: flex;
