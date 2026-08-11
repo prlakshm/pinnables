@@ -1361,9 +1361,10 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   margin: 0 11px 8px;
   padding: 8px 10px;
   border-radius: var(--pin-radius-sm);
-  border: 1px solid color-mix(in srgb, var(--pin-red) 24%, var(--pin-rule));
+  /* The same dress the shelf's alerts wear — one amber, both surfaces. */
+  border: 1px solid var(--pin-rule);
   background: var(--pin-amber-soft);
-  color: var(--pin-red);
+  color: var(--pin-amber);
   line-height: 1.5;
 }
 
@@ -2129,6 +2130,25 @@ button[aria-expanded="true"] .pin-row__chevron {
   background: var(--pin-red-tint);
   border-color: color-mix(in srgb, var(--pin-red) 30%, var(--pin-rule));
   color: var(--pin-red);
+}
+/* Notices inform without alarming: quiet paper, muted ink. The amber base
+   class is reserved for genuine alerts — something wrong, needing action. */
+/* Prose banners flow as text. The base class's flex layout is for icon
+   rows, and it fragments mixed inline content (code, links) into columns. */
+.pin-banner--prose {
+  display: block;
+}
+.pin-banner--prose code {
+  /* The banner's own color; mono alone marks it as literal. Weight stays
+     reserved for pressable things — links keep their 600. */
+  font-family: var(--pin-mono);
+  font-size: 11px;
+  color: inherit;
+}
+.pin-banner--note {
+  background: var(--pin-paper-sunk);
+  border-color: var(--pin-rule);
+  color: var(--pin-ink-muted);
 }
 
 /* ---------------------------------------------------------------- inspector */
