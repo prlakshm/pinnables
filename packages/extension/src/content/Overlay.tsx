@@ -26,7 +26,7 @@ import {
   refindElement,
   routeForLocation,
 } from "../lib/capture";
-import { ExtensionReloadedError, send, type Contract } from "../lib/messages";
+import { ExtensionReloadedError, send, type Broadcast, type Contract } from "../lib/messages";
 import { CloseIcon } from "../ui/icons";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type DrawTool, type ToolMode } from "./Toolbar";
@@ -1063,6 +1063,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   type CaptureIntent =
     /** A picker click: select the live element, dialog attached in place. */
     | { kind: "select"; additive: boolean }
+    /** Panel relate flow: pick as target, leave the focus context alone. */
+    | { kind: "relate" }
     /** A connect drop: this element becomes the target of a new relationship. */
     | { kind: "target"; sourcePinId: string };
 
@@ -1145,7 +1147,29 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           placeFloatingPinBeside(measured.rect, floatingSize, measured.viewport),
         );
 
-        if (intent.kind === "target") {
+        if (intent.kind === "relate") {
+          /*
+           * The panel owns this flow. The click's whole meaning is "this one
+           * too" — the pin exists (or refreshed), the panel hears about it
+           * and toggles its target chip. Selection, cards, dialogs: all
+           * untouched, so picking three targets never disturbs the shelf's
+           * matching state. A second click on the same component resolves to
+           * the same pin and toggles it back off.
+           */
+          chrome.runtime
+            .sendMessage({ kind: "relate-picked", pinId: pin.id } satisfies Broadcast)
+            .catch(() => {});
+          const rect = element.getBoundingClientRect();
+          setHighlight({
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            label: "picked as target",
+            radius: getComputedStyle(element).borderRadius,
+          });
+          window.setTimeout(() => setHighlight(null), 900);
+        } else if (intent.kind === "target") {
           /*
            * The drop that created this capture also creates the relationship,
            * and the focus follows the conversation: the dialog moves to the
@@ -1420,8 +1444,16 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       if (!isCapturablePageElement(target)) return;
       blockPageGesture(event);
       captureStartedOnPress.current = true;
-      // Shift adds to the selection, Cursor-style — the first stays the reference.
-      if (!capturing) void capture(target, { kind: "select", additive: event.shiftKey });
+      // Shift adds to the selection, Cursor-style — the first stays the
+      // reference. In the panel's relate flow the same click means "pick this
+      // as a target" instead.
+      if (!capturing)
+        void capture(
+          target,
+          state.relateSourcePinId !== null
+            ? { kind: "relate" }
+            : { kind: "select", additive: event.shiftKey },
+        );
     };
 
     // Some pages install mouse handlers rather than pointer handlers. Keep a
@@ -1445,7 +1477,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       }
       // Keyboard/synthetic clicks have no pointerdown. Preserve the old click
       // path as an accessibility fallback, with the same target validation.
-      if (!capturing) void capture(target, { kind: "select", additive: event.shiftKey });
+      if (!capturing)
+        void capture(
+          target,
+          state.relateSourcePinId !== null
+            ? { kind: "relate" }
+            : { kind: "select", additive: event.shiftKey },
+        );
     };
 
     document.addEventListener("pointerdown", onPickerPointerDown, true);
@@ -1456,7 +1494,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       document.removeEventListener("mousedown", onPickerMouseDown, true);
       document.removeEventListener("click", onPickerClick, true);
     };
-  }, [state.enabled, mode, capture, capturing, stale, connecting, liveConnect]);
+  }, [state.enabled, mode, capture, capturing, stale, connecting, liveConnect, state.relateSourcePinId]);
 
   /* -------------------------------------------------------- deselect on out */
 

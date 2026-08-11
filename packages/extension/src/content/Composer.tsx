@@ -11,6 +11,8 @@ interface ComposerProps {
   onCommit: (text: string) => Promise<void>;
   onRelate?: () => void;
   autoFocus?: boolean;
+  /** Override the placeholder — surfaces with their own copy rules pass it. */
+  placeholder?: string;
   /**
    * When set, this bar speaks both destinations like the live selection bar:
    * Enter/arrow sends the message to the agent for these pins, ⌘Enter
@@ -45,7 +47,7 @@ const WORKING_TIMEOUT_MS = 10 * 60_000;
  * because two bars that look identical and behave differently would be worse
  * than either behavior alone.
  */
-export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: ComposerProps) {
+export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, placeholder }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -217,7 +219,7 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds }: 
           className="pin-note__input"
           rows={1}
           value={draft}
-          placeholder={multi ? `Describe the change for all ${count}` : "Describe the change"}
+          placeholder={placeholder ?? (multi ? `Describe the change for all ${count}` : "Describe the change")}
           aria-label={multi ? `Annotation for all ${count} selected pins` : "Pin annotation"}
           onChange={(e) => setDraft(e.target.value.replace(/\n/g, " "))}
           onKeyDown={(e) => {

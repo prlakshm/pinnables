@@ -214,6 +214,12 @@ export interface Contract {
   /** Put the whole group back on screen as the live multi-selection. */
   "group/summon": { req: { groupId: string }; res: { ok: boolean } };
   /**
+   * The panel's relate flow, mirrored to the page. While a source is set,
+   * page clicks pick targets instead of selecting — the live page becomes
+   * the same picker the shelf rows are. Null ends the mode.
+   */
+  "relate/setMode": { req: { sourcePinId: string | null }; res: Record<string, never> };
+  /**
    * The other half of the shelf pin's toggle: take this pin's capture off the
    * page (and defocus it, if it was the live selection). No navigation — a
    * pin that is on screen is on the active tab by definition.
@@ -316,6 +322,10 @@ export type Broadcast =
    * so the combined annotation bar returns with the group's shared history.
    */
   | { kind: "summon-group"; pinIds: string[] }
+  /** The panel's target-picking state, on or off, mirrored to every page. */
+  | { kind: "relate-mode"; sourcePinId: string | null }
+  /** A page click picked this pin as a relate target; the panel toggles it. */
+  | { kind: "relate-picked"; pinId: string }
   /**
    * A relationship was just created, whichever surface did it. The panel
    * opens the Relationships tab scrolled to this card; the page puts the

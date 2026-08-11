@@ -99,6 +99,32 @@ export function PinList({
       return next;
     });
 
+  /*
+   * The matching state reaches the page: while a source is set, clicking
+   * components live picks them as targets — the page and the shelf are the
+   * same picker. The mode is announced on entry, revoked on any exit, and
+   * picks arrive back as broadcasts that toggle the same set the rows do.
+   */
+  useEffect(() => {
+    void send("relate/setMode", { sourcePinId: source }).catch(() => {});
+    if (source === null) return;
+    return () => {
+      void send("relate/setMode", { sourcePinId: null }).catch(() => {});
+    };
+  }, [source]);
+  useEffect(() => {
+    if (source === null) return;
+    const onMessage = (message: unknown) => {
+      const picked = message as { kind?: string; pinId?: string };
+      if (picked.kind !== "relate-picked" || !picked.pinId) return;
+      if (picked.pinId === source) return;
+      toggleTarget(picked.pinId);
+      onChanged();
+    };
+    chrome.runtime.onMessage.addListener(onMessage);
+    return () => chrome.runtime.onMessage.removeListener(onMessage);
+  }, [source, onChanged]);
+
   const confirmRelationship = useCallback(async () => {
     if (!source || targets.size === 0 || relationshipBusy) return;
     setRelationshipBusy(true);
@@ -212,9 +238,16 @@ export function PinList({
           <button
             className="pin-btn"
             onClick={() => {
+              // Targets picked from the page were captured for this flow; the
+              // silent ones go back to not existing. Spoken pins refuse the
+              // discard on their own.
+              for (const pinId of targets) {
+                void send("pin/discardProvisional", { pinId }).catch(() => {});
+              }
               setSource(null);
               setTargets(new Set());
               setRelationshipIssue(null);
+              onChanged();
             }}
           >
             Cancel
@@ -352,8 +385,30 @@ function GroupSection({
                 count={members.length}
                 agentPinIds={members.map((member) => member.id)}
                 onCommit={stashToGroup}
+                placeholder={`Describe the change for all ${members.length}…`}
               />
             </div>
+          </div>
+          {/* The same action the card rows carry, for the whole set: the page,
+              with every member selected and the combined bar up. */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button
+              className="pin-btn"
+              onClick={() => {
+                void (async () => {
+                  onIssue(null);
+                  try {
+                    const result = await send("group/summon", { groupId });
+                    if (!result.ok) onIssue("Couldn’t reach this group’s page.");
+                  } catch {
+                    onIssue("Couldn’t reach this group’s page.");
+                  }
+                })();
+              }}
+            >
+              <ArrowUpRightIcon />
+              Go to pin
+            </button>
           </div>
         </div>
       )}

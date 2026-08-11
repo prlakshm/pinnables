@@ -870,6 +870,13 @@ const handlers: Handlers = {
     return { groupId };
   },
 
+  async "relate/setMode"({ sourcePinId }) {
+    const message: Broadcast = { kind: "relate-mode", sourcePinId };
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) if (tab.id) broadcastToTab(tab.id, message);
+    return {};
+  },
+
   async "group/summon"({ groupId }) {
     const board = await store.ensureActiveBoard();
     const members = board.pins
