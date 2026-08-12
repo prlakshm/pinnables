@@ -297,6 +297,51 @@ async function deliverHere(message: Broadcast): Promise<boolean> {
   return deliverReveal(tab.id, message);
 }
 
+/**
+ * The tab the user was last looking at. Kept in storage, not a module variable:
+ * the MV3 worker is torn down between events and a plain `let` would forget it,
+ * so the first switch after any idle period would carry nothing.
+ */
+const LAST_ACTIVE_TAB_KEY = "lastActiveTabId";
+
+/**
+ * Focus follows you across a tab switch.
+ *
+ * A pin you are looking at is "focused" until you click somewhere else to let
+ * it go — and a tab switch is not clicking somewhere else. So the pins on screen
+ * on the tab you leave are re-seated on the tab you arrive at: a capture from
+ * another site, still floating where you left it, comes with you onto the page
+ * you are about to compare it against, instead of stranding you a manual
+ * re-summon away from the reference you just pinned.
+ *
+ * It reuses the summon path exactly, so the arriving page composes it the way it
+ * composes any summon — a pin native to this page lands live, everything else as
+ * a capture card. Additive and idempotent: pins already on screen here are not
+ * duplicated, and a page you dismissed something on keeps it gone until its own
+ * on-screen record says otherwise. Only ever runs mid-capture; browsing with the
+ * tool closed carries nothing.
+ */
+async function carryFocusToTab(newTabId: number): Promise<void> {
+  const bag = await chrome.storage.local.get(LAST_ACTIVE_TAB_KEY);
+  const previousTabId = bag[LAST_ACTIVE_TAB_KEY];
+  await chrome.storage.local.set({ [LAST_ACTIVE_TAB_KEY]: newTabId });
+  if (typeof previousTabId !== "number" || previousTabId === newTabId) return;
+  if (!(await store.getState()).captureMode) return;
+
+  const key = onScreenPinsKey(previousTabId);
+  const stored = (await chrome.storage.local.get(key))[key];
+  const carried = Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+  if (carried.length === 0) return;
+
+  // A pin deleted since it was last on screen does not travel.
+  const board = await store.ensureActiveBoard().catch(() => null);
+  if (!board) return;
+  const present = carried.filter((id) => board.pins.some((pin) => pin.id === id && pin.kind === "element"));
+  if (present.length === 0) return;
+
+  await deliverReveal(newTabId, { kind: "summon-pins", pinIds: present });
+}
+
 /** Raise a tab that already exists, in its own window. */
 async function focusTab(tab: chrome.tabs.Tab): Promise<void> {
   if (tab.id === undefined) return;
@@ -1361,6 +1406,7 @@ chrome.tabs.onActivated?.addListener(({ tabId }) => {
     .get(tabId)
     .then(rearmCaptureTab)
     .catch(() => {});
+  void carryFocusToTab(tabId).catch(() => {});
 });
 
 chrome.tabs.onCreated?.addListener((tab) => {
