@@ -37,6 +37,7 @@ Object.defineProperty(globalThis, "chrome", {
       setPanelBehavior: async () => {},
       open: async () => {},
     },
+    storage: { local: { remove: async () => {} } },
     tabs: {
       query: async (query: chrome.tabs.QueryInfo) => {
         queried.push(query);
@@ -49,6 +50,8 @@ Object.defineProperty(globalThis, "chrome", {
         if (tabId === 2) return true;
         throw new Error("No receiver");
       },
+      onUpdated: { addListener() {}, removeListener() {} },
+      onRemoved: { addListener() {}, removeListener() {} },
     },
     scripting: {
       executeScript: async ({ target }: chrome.scripting.ScriptInjection) => {

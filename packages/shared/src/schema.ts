@@ -153,6 +153,16 @@ export const PinSchema = z.object({
   elementText: z.string(),
   componentName: z.string().nullable(),
   /**
+   * The best name the element could give for itself when the build gave none —
+   * its `aria-label`, its heading, its landmark, and at the bottom the picker's
+   * own words for it. Read `describeElement` for the ladder.
+   *
+   * Captured rather than derived, because the panel only ever holds the pin: by
+   * the time a row needs a name the DOM it came from may be a tab away, or on a
+   * site nobody has open. Null on pins written before this existed.
+   */
+  elementLabel: z.string().nullable().default(null),
+  /**
    * What the user calls this pin. Null means "work it out from the element",
    * which is right almost always — a name only needs typing when two pins on a
    * board are the same component and the content does not tell them apart.
@@ -245,10 +255,18 @@ export type Project = z.infer<typeof ProjectSchema>;
  * longer than the row it sits in and changes the moment the page does.
  *
  * A typed name always wins. Nothing derived should outrank something chosen.
+ *
+ * Below the component name sits whatever the element could say for itself. That
+ * used to be its text and nothing else, which left every icon-only component
+ * anonymous — a row of logos has no text, so a pinned banner arrived on the
+ * board called "element". `elementLabel` carries the full ladder, worked out at
+ * capture time while the DOM was still there; `elementText` remains for pins
+ * captured before it existed.
  */
 export function pinLabel(pin: Pin, siblings: readonly Pin[] = []): string {
   if (pin.name?.trim()) return pin.name.trim();
-  const base = pin.componentName ?? pin.elementText.trim().slice(0, 24);
+  const described = pin.elementLabel?.trim() || pin.elementText.trim().slice(0, 24);
+  const base = pin.componentName ?? described;
   if (!pin.componentName) return base || "element";
 
   const family = siblings

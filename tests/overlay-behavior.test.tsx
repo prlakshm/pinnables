@@ -408,7 +408,10 @@ test("board refreshes prune ids and hiding a pin removes it from active flows", 
   assert.match(pruneEffect, /setLiveSelected\(\(previous\) => retainFocusIds/);
   assert.match(pruneEffect, /setFocusCards\(\(previous\) => retainFocusIds/);
   assert.match(pruneEffect, /validIds\.has\(current\.fromPinId\)/);
-  assert.match(overlay, /OVERLAY_FOCUS_KEY/);
+  assert.match(overlay, /overlayFocusKey\(location\.origin\)/);
+  // Presence is scoped: focus by origin, on-screen by tab. Never one shared key.
+  assert.match(overlay, /onScreenPinsKey\(tabId\)/);
+  assert.doesNotMatch(overlay, /storage\.local\.set\(\{ onScreenPins/);
   assert.match(overlay, /applyOverlayFocusSnapshot/);
   assert.match(overlay, /overlayFocusRestoreDecision\(snapshot, here\) === "wait"/);
   assert.match(overlay, /shouldPersistOverlayFocus\(snapshot, focusDismissed\.current\)/);

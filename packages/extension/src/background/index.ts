@@ -2,6 +2,7 @@ import {
   BoardSchema,
   SCHEMA_VERSION,
   expandProperties,
+  originOf,
   type Board,
   type Pin,
   type Relationship,
@@ -14,6 +15,7 @@ import {
   type RequestType,
   type TabArmState,
 } from "../lib/messages";
+import { LEGACY_PRESENCE_KEYS, onScreenPinsKey } from "../lib/presence";
 import * as store from "../lib/store";
 import {
   agentMessageStatus,
@@ -274,22 +276,94 @@ async function deliverReveal(tabId: number, message: Broadcast): Promise<boolean
   return false;
 }
 
-/** Bring the active tab to `url` when needed, then deliver one broadcast to it. */
-async function deliverToPage(url: string, message: Broadcast): Promise<boolean> {
+/**
+ * Deliver to the page in front of the user, wherever that is.
+ *
+ * The verbs split in two. "Summon" brings a capture *here* — the whole point of
+ * pinning something on another site is to stand it next to your own component,
+ * so the card lands on whatever page you are looking at and rides along as a
+ * capture, exactly as an off-route card already does. "Reveal" is the opposite
+ * request, "take me to where this lives", and that one travels (`deliverToPage`).
+ *
+ * Summon and dismiss are the two halves of one shelf toggle, so they must aim
+ * at the same place. Dismiss always went to the active tab; summon navigating
+ * instead is what made pressing the pin feel like it threw the page away.
+ */
+async function deliverHere(message: Broadcast): Promise<boolean> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return false;
+  if (tab?.id === undefined) return false;
+  // Through `deliverReveal` rather than a bare broadcast: the page in front of
+  // the user may never have been armed, and it still has to receive this.
+  return deliverReveal(tab.id, message);
+}
 
-  if (tab.url !== url) {
+/** Raise a tab that already exists, in its own window. */
+async function focusTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (tab.id === undefined) return;
+  await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+  if (tab.windowId !== undefined) {
+    await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  }
+}
+
+/**
+ * Find the page, and only travel if it is nowhere.
+ *
+ * Summoning used to mean `tabs.update(activeTab, { url })` unconditionally,
+ * which is fine while every pin lives on the one dev server you are looking at
+ * and catastrophic the moment one does not: pressing the shelf pin on a
+ * capture from vercel.com navigated the tab holding the app away from the app.
+ * You lost your work to ask a question about somebody else's banner.
+ *
+ * So, in order of how little it costs the user:
+ *
+ *   1. A tab already showing this page — raise it. Nothing is disturbed, and
+ *      after the first summon this is nearly always the branch that runs.
+ *   2. No such tab, but the active one is on the same origin — navigate it.
+ *      This is travel within one app, which is what "go to /catalogue for live
+ *      updates" means and what it should keep doing.
+ *   3. Otherwise — a new tab. Crossing from your app to a site you are
+ *      borrowing from is not travel, and it must never cost you the page you
+ *      were on.
+ */
+async function deliverToPage(url: string, message: Broadcast): Promise<boolean> {
+  const existing = await chrome.tabs.query({ url }).catch(() => [] as chrome.tabs.Tab[]);
+  const alreadyOpen = existing.find((candidate) => candidate.id !== undefined);
+  if (alreadyOpen?.id !== undefined) {
+    await focusTab(alreadyOpen);
+    if (alreadyOpen.status === "loading" && !(await waitForDestination(alreadyOpen.id, url))) {
+      return false;
+    }
+    return deliverReveal(alreadyOpen.id, message);
+  }
+
+  const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const sameApp = active?.url !== undefined && originOf(active.url) === originOf(url);
+
+  if (active?.id !== undefined && active.url === url) {
+    if (active.status === "loading" && !(await waitForDestination(active.id, url))) return false;
+    return deliverReveal(active.id, message);
+  }
+
+  if (active?.id !== undefined && sameApp) {
     try {
-      await chrome.tabs.update(tab.id, { url });
+      await chrome.tabs.update(active.id, { url });
     } catch {
       return false;
     }
-    if (!(await waitForDestination(tab.id, url))) return false;
-  } else if (tab.status === "loading" && !(await waitForDestination(tab.id, url))) {
+    if (!(await waitForDestination(active.id, url))) return false;
+    return deliverReveal(active.id, message);
+  }
+
+  let opened: chrome.tabs.Tab;
+  try {
+    opened = await chrome.tabs.create({ url, active: true });
+  } catch {
     return false;
   }
-  return deliverReveal(tab.id, message);
+  if (opened.id === undefined) return false;
+  if (!(await waitForDestination(opened.id, url))) return false;
+  return deliverReveal(opened.id, message);
 }
 
 /** Arms every tab, and reports what happened to the one in front. */
@@ -426,11 +500,17 @@ const handlers: Handlers = {
        * The screenshot and styles are refreshed (the page may have changed since);
        * the annotation, status, order and requested values are the user's and are
        * left alone.
+       *
+       * Origin is part of that identity for the same reason it gates what a page
+       * shows: `/` with a `div.container` describes half the web, and two sites
+       * matching on route and selector alone would fold into one pin.
        */
+      const captureOrigin = originOf(element.url);
       const existing = current.pins.find(
         (candidate) =>
           candidate.kind === "element" &&
           candidate.route === element.route &&
+          originOf(candidate.url) === captureOrigin &&
           candidate.selector === element.selector &&
           candidate.selector !== "" &&
           /*
@@ -452,6 +532,7 @@ const handlers: Handlers = {
           outerHtml: element.outerHtml,
           classList: element.classList,
           elementText: element.elementText,
+          elementLabel: element.elementLabel,
           componentName: element.componentName ?? existing.componentName,
           sourceFile: element.sourceFile ?? existing.sourceFile,
           computedStyles: element.computedStyles,
@@ -490,6 +571,7 @@ const handlers: Handlers = {
         outerHtml: element.outerHtml,
         classList: element.classList,
         elementText: element.elementText,
+        elementLabel: element.elementLabel,
         componentName: element.componentName,
         name: null,
         sourceFile: element.sourceFile,
@@ -625,6 +707,7 @@ const handlers: Handlers = {
         outerHtml: "",
         classList: [],
         elementText: `marks on ${route}`,
+        elementLabel: null,
         componentName: null,
         name: null,
         sourceFile: null,
@@ -852,10 +935,14 @@ const handlers: Handlers = {
     );
   },
 
+  async "tab/whoami"(_req, sender) {
+    return { tabId: sender.tab?.id ?? null };
+  },
+
   async "pin/summon"({ pinId }) {
     const board = await store.boardForPin(pinId);
-    const pin = board.pins.find((p) => p.id === pinId)!;
-    return { ok: await deliverToPage(pin.url, { kind: "summon-pins", pinIds: [pinId] }) };
+    if (!board.pins.some((p) => p.id === pinId)) return { ok: false };
+    return { ok: await deliverHere({ kind: "summon-pins", pinIds: [pinId] }) };
   },
 
   async "pin/dismiss"({ pinId }) {
@@ -871,11 +958,11 @@ const handlers: Handlers = {
     const board = await store.boardForRelationship(relationshipId);
     const relationship = board.relationships.find((r) => r.id === relationshipId)!;
     const pinIds = [relationship.sourcePinId, ...relationship.targetPinIds];
-    // The source's page hosts the cluster; a cross-route relationship still
-    // opens somewhere real rather than nowhere.
-    const anchor = board.pins.find((p) => p.id === relationship.sourcePinId);
-    if (!anchor) return { ok: false };
-    return { ok: await deliverToPage(anchor.url, { kind: "summon-pins", pinIds }) };
+    // The whole cluster lands on the page in front of the user. Members that
+    // live here become live targets; the rest ride along as capture cards,
+    // which is the arrangement a cross-site relationship exists to be seen in.
+    if (!board.pins.some((p) => p.id === relationship.sourcePinId)) return { ok: false };
+    return { ok: await deliverHere({ kind: "summon-pins", pinIds }) };
   },
 
   async "group/record"({ pinIds }) {
@@ -913,10 +1000,10 @@ const handlers: Handlers = {
       .filter((pin) => pin.groupId === groupId && pin.kind === "element")
       .sort((a, b) => a.order - b.order);
     if (members.length < 2) return { ok: false };
-    // The first member's page hosts the reunion; cross-route members ride
-    // along as capture cards, same as a relationship's cluster.
+    // Here, like every other summon. Members from elsewhere ride along as
+    // capture cards, same as a relationship's cluster.
     return {
-      ok: await deliverToPage(members[0].url, {
+      ok: await deliverHere({
         kind: "summon-group",
         pinIds: members.map((pin) => pin.id),
       }),
@@ -1103,11 +1190,20 @@ const handlers: Handlers = {
      * panel jumps to its diff card, and the page composes source-capture plus
      * live targets. One broadcast for both surfaces, from the one place every
      * creation path funnels through.
+     *
+     * It lands where the user is, never on the source's page. The source is the
+     * thing being referenced *from elsewhere* — its whole reason to exist as a
+     * capture is that you are standing somewhere else, looking at the target.
+     * Sending the scene to the source's url navigated the target's tab away to
+     * the source (vercel.com), which is the one place the relationship cannot be
+     * seen, since the target does not live there. Delivered here, the source
+     * rides along as a capture card beside the live target — the arrangement the
+     * relationship was made to be read in. On-page creation paths suppress their
+     * own echo (`suppressFocusRelationshipId`) and compose locally.
      */
     const focus: Broadcast = { kind: "focus-relationship", relationshipId: relationship!.id };
     chrome.runtime.sendMessage(focus).catch(() => {});
-    const anchor = board.pins.find((pin) => pin.id === sourcePinId);
-    if (anchor) void deliverToPage(anchor.url, focus);
+    void deliverHere(focus);
 
     return { board, relationship: relationship! };
   },
@@ -1275,8 +1371,20 @@ chrome.tabs.onCreated?.addListener((tab) => {
   void rearmCaptureTab(tab).catch(() => {});
 });
 
+/**
+ * A closed tab has nothing on screen. Its presence record would otherwise
+ * outlive it and, once Chrome reused the id, hand the shelf somebody else's
+ * answer.
+ */
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void chrome.storage.local.remove(onScreenPinsKey(tabId)).catch(() => {});
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+  // Presence used to live in two unscoped keys. Nothing reads them now, and a
+  // stale one would linger in local storage forever.
+  void chrome.storage.local.remove(LEGACY_PRESENCE_KEYS).catch(() => {});
   void reinjectOpenTabs();
 });
 

@@ -120,6 +120,172 @@ export function findComponentName(el: Element): string | null {
   return null;
 }
 
+const HEADING = "h1, h2, h3, h4, h5, h6, [role='heading']";
+/**
+ * Landmarks that wrap a whole region of the page rather than one piece of
+ * content. These are named before any heading found inside them: a heading in
+ * the site header belongs to some menu within it, not to the header — vercel.com
+ * has a mega-menu whose first heading is "Agent Stack", which is a true fact
+ * about a dropdown and a wrong name for the masthead.
+ *
+ * `figure`, `form`, `dialog` and `table` are deliberately not here. A heading
+ * inside those is genuinely theirs.
+ */
+const REGIONS = new Set(["header", "footer", "nav", "main", "aside"]);
+const LANDMARKS: Record<string, string> = {
+  nav: "nav",
+  header: "header",
+  footer: "footer",
+  main: "main",
+  aside: "aside",
+  form: "form",
+  figure: "figure",
+  dialog: "dialog",
+  table: "table",
+};
+
+/**
+ * Words a person typed into a class name, as opposed to a framework's output.
+ *
+ * Only compound classes qualify — `logo-strip`, `site-footer`, `hero_banner`.
+ * A bare `grid` or `banner` is as likely to be a utility class as a name, and
+ * on a Tailwind page every element would answer to one.
+ */
+const CLASS_VOCABULARY = new Set([
+  "banner", "hero", "masthead", "header", "footer", "nav", "navbar", "sidebar",
+  "logo", "logos", "marquee", "toolbar", "modal", "dialog", "drawer", "carousel",
+  "gallery", "testimonial", "pricing", "cta", "callout", "breadcrumb", "pagination",
+  "avatar", "thumbnail", "badge", "tooltip", "accordion", "tabs", "stepper",
+]);
+
+function humanize(token: string): string {
+  return token.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function classHint(el: Element): string {
+  for (const name of Array.from(el.classList)) {
+    if (!/[-_]/.test(name)) continue;
+    if (/^(ng-|css-|sc-|jsx-)/.test(name) || /\d{4,}/.test(name)) continue;
+    // Tailwind's variants (`@lg:flex`, `hover:bg-x`) are never authored names.
+    if (name.includes(":") || name.includes("[")) continue;
+    const words = name.toLowerCase().split(/[-_]+/);
+    if (words.some((word) => CLASS_VOCABULARY.has(word))) return humanize(name);
+  }
+  return "";
+}
+
+/**
+ * What the element is made of, when it is made of named pictures.
+ *
+ * This is the rung that names a logo strip. Marketing pages label their logos
+ * for screen readers and nothing else — no text, no heading, no landmark — so
+ * the only words in a row of eight customer marks are the eight names on the
+ * marks themselves. Naming it after the first one would be a lie about the
+ * other seven, so it says how many it stood among.
+ */
+function graphicNames(el: Element): string {
+  const seen: string[] = [];
+  el.querySelectorAll("img, svg, [role='img']").forEach((graphic) => {
+    const name =
+      graphic.getAttribute("aria-label") ??
+      graphic.getAttribute("alt") ??
+      (graphic.tagName === "svg" ? (graphic.querySelector("title")?.textContent ?? null) : null);
+    const trimmed = name?.replace(/\s+/g, " ").trim();
+    // Deduplicated: a marquee repeats its row to scroll seamlessly, and the
+    // second copy is the same logo, not a second customer.
+    if (trimmed && !seen.includes(trimmed)) seen.push(trimmed);
+  });
+
+  if (seen.length === 0) return "";
+  if (seen.length === 1) return seen[0];
+  const pair = `${seen[0]}, ${seen[1]}`;
+  const rest = seen.length - 2;
+  return rest > 0 ? `${pair} + ${rest}` : pair;
+}
+
+/** The name the page's author wrote for assistive tech, if they wrote one. */
+function authoredName(el: Element): string {
+  const label = el.getAttribute("aria-label");
+  if (label?.trim()) return label;
+
+  const labelledBy = el.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    const named = labelledBy
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    if (named.trim()) return named;
+  }
+
+  const title = el.getAttribute("title");
+  if (title?.trim()) return title;
+
+  if (el.tagName === "IMG") {
+    const alt = el.getAttribute("alt");
+    if (alt?.trim()) return alt;
+  }
+  const svgTitle = el.tagName === "svg" ? el.querySelector("title")?.textContent : null;
+  if (svgTitle?.trim()) return svgTitle;
+
+  return "";
+}
+
+/**
+ * What to call an element the build knows nothing about.
+ *
+ * On your own app the dev plugin stamps a component name and none of this runs.
+ * Off it — a competitor's page, a design you are borrowing from — there is no
+ * name anywhere, and the ladder below is a descent through progressively weaker
+ * evidence, each rung still something a person could point at on screen:
+ *
+ *   1. the name its author wrote for screen readers, which is the closest thing
+ *      to a component name that exists on a site you do not own
+ *   2. its region, when it is one of the five that wrap a whole page area
+ *   3. its heading, which names a section by what the section says — better than
+ *      the flattened text, where the heading arrives fused to the body copy
+ *   4. its own text
+ *   5. the names of the pictures inside it, for components made of icons
+ *   6. its remaining landmark or role
+ *   7. a class somebody wrote by hand, when the class says something
+ *   8. the picker's own words, exactly as the hover chip said them a moment ago
+ *
+ * Five is where the interesting case lives. Vercel's customer strip is a plain
+ * div of utility classes with no label, no heading, no text and no landmark —
+ * every rung above it comes back empty — and yet the words are right there, on
+ * the logos: `svg aria-label="OpenAI"`, seven times over. "Blackbox, Charles
+ * Schwab + 5" is a name; "div" is a shrug.
+ *
+ * Eight still exists because seven can miss, and "div · 1276×108" is at least
+ * true and already the language on screen.
+ */
+export function describeElement(el: Element): string {
+  const authored = authoredName(el);
+  if (authored) return truncate(authored, 28);
+
+  const tag = el.tagName.toLowerCase();
+  if (REGIONS.has(tag)) return tag;
+
+  const heading = el.matches(HEADING) ? el : el.querySelector(HEADING);
+  const headingText = heading?.textContent?.trim();
+  if (headingText) return truncate(headingText, 28);
+
+  const text = (el.textContent ?? "").trim();
+  if (text) return truncate(text, 28);
+
+  const graphics = graphicNames(el);
+  if (graphics) return truncate(graphics, 28);
+
+  const role = el.getAttribute("role");
+  const landmark = LANDMARKS[tag] ?? (role ? role.toLowerCase() : null);
+  if (landmark) return landmark;
+
+  const hint = classHint(el);
+  if (hint) return truncate(hint, 28);
+
+  const rect = el.getBoundingClientRect();
+  return `${el.tagName.toLowerCase()} · ${Math.round(rect.width)}×${Math.round(rect.height)}`;
+}
+
 /**
  * Password fields are redacted from the pixels, not just the DOM — a screenshot
  * shows whatever is on screen. Opaque covers go up, the shot is taken, the
@@ -214,6 +380,7 @@ export function measureElement(el: Element): CapturedElement {
     outerHtml: truncate(el.outerHTML, 600),
     classList: Array.from(el.classList),
     elementText: truncate(el.textContent ?? "", 120),
+    elementLabel: describeElement(el),
     componentName: findComponentName(el),
     sourceFile: findSourceFile(el),
     computedStyles: readComputedStyles(el),

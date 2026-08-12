@@ -397,12 +397,33 @@ test("hard failures use red while offline and blocked guidance stays amber", () 
   assert.match(css, /\.pin-banner--error\s*\{[\s\S]*var\(--pin-red-tint\)[\s\S]*var\(--pin-red\)/);
 });
 
-test("picker labels use readable semantic ink on both scheme surfaces", () => {
+test("identity labels keep one fixed plate in both schemes", () => {
   const css = source("packages/extension/src/ui/ui.css");
-  const label = css.slice(css.indexOf(".pin-highlight__label"), css.indexOf(".pin-highlight[data-label"));
 
-  assert.match(label, /background: var\(--pin-ink-muted\)/);
-  assert.match(label, /color: var\(--pin-paper\)/);
+  /*
+   * Panels follow the browser's preference; labels do not. They sit on
+   * someone else's page, so they use fixed tokens rather than --pin-ink /
+   * --pin-paper, which invert. A machine set to dark used to put white
+   * labels on light websites, and made recordings depend on the recorder's
+   * OS setting.
+   */
+  for (const selector of [".pin-live-label", ".pin-object__label"]) {
+    const start = css.indexOf(`${selector} {`);
+    const rule = css.slice(start, css.indexOf("}", start) + 1);
+    assert.match(rule, /background: var\(--pin-label-fill\)/, `${selector} plate is fixed`);
+    assert.match(rule, /color: var\(--pin-label-ink\)/, `${selector} text is fixed`);
+  }
+
+  // The picker's hover label becomes the selected label, so it is fixed too.
+  const picker = css.slice(css.indexOf(".pin-highlight__label"), css.indexOf(".pin-highlight[data-label"));
+  assert.match(picker, /--pin-label-fill/);
+  assert.match(picker, /color: var\(--pin-label-ink\)/);
+
+  // The invariant behind all of it: the dark block must not redefine them.
+  const dark = css.slice(css.indexOf('.pin-root[data-scheme="dark"]'));
+  const darkBlock = dark.slice(0, dark.indexOf("}"));
+  assert.doesNotMatch(darkBlock, /--pin-label-fill/, "label plate must not invert");
+  assert.doesNotMatch(darkBlock, /--pin-label-ink/, "label ink must not invert");
 });
 
 test("essential small text uses readable muted ink instead of faint disabled ink", () => {

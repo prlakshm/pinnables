@@ -64,6 +64,20 @@
   --pin-ink-faint: var(--pin-grey-400);
   --pin-ink-muted: var(--pin-grey-500);
   --pin-ink: var(--pin-grey-900);
+
+  /*
+   * The identity plate, fixed in both schemes.
+   *
+   * Panels are Pinnables' own room and follow the browser's preference. The
+   * labels are not: they sit on somebody else's page, and a name tag that
+   * inverts is a different object. Deliberately literal rather than
+   * `var(--pin-ink)`, because that token flips in the dark block below —
+   * which is exactly how a light site ended up wearing white labels on a
+   * machine set to dark. Fixing them also means a recording looks the same
+   * whatever the recorder's OS is set to.
+   */
+  --pin-label-fill: var(--pin-grey-900);
+  --pin-label-ink: var(--pin-white);
   /*
    * Hover for anything filled with ink. Lifting is the only direction available
    * to something already the strongest thing on screen. Sized between the two
@@ -545,9 +559,11 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   height: 18px;
   padding: 0 5px;
   /* The measuring stroke stays light enough not to compete with the page, but
-     its 10px label needs the stronger muted-ink plate to remain readable. */
-  background: var(--pin-ink-muted);
-  color: var(--pin-paper);
+     its 10px label needs the stronger muted-ink plate to remain readable.
+     Fixed like the selected label it becomes — hovering and clicking must not
+     change the plate's colour mid-gesture. */
+  background: color-mix(in srgb, var(--pin-label-fill) 72%, var(--pin-label-ink));
+  color: var(--pin-label-ink);
   font-family: var(--pin-mono);
   font-size: 10px;
   letter-spacing: -0.01em;
@@ -790,8 +806,8 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   max-width: min(100%, 500px);
   padding: 5px 4px 5px 11px;
   border-radius: var(--pin-radius-sm) var(--pin-radius-sm) 0 0;
-  background: var(--pin-ink);
-  color: var(--pin-paper);
+  background: var(--pin-label-fill);
+  color: var(--pin-label-ink);
   box-shadow: var(--pin-shadow);
   pointer-events: auto;
 }
@@ -827,7 +843,7 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   grid-area: source;
   font-family: var(--pin-mono);
   font-size: 10px;
-  color: color-mix(in srgb, var(--pin-paper) 72%, transparent);
+  color: color-mix(in srgb, var(--pin-label-ink) 72%, transparent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -837,11 +853,11 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   width: 20px;
   height: 20px;
   align-self: center;
-  color: color-mix(in srgb, var(--pin-paper) 80%, transparent);
+  color: color-mix(in srgb, var(--pin-label-ink) 80%, transparent);
 }
 .pin-live-label__close:hover {
-  background: color-mix(in srgb, var(--pin-paper) 18%, transparent);
-  color: var(--pin-paper);
+  background: color-mix(in srgb, var(--pin-label-ink) 18%, transparent);
+  color: var(--pin-label-ink);
 }
 .pin-live-outline .pin-anchor {
   pointer-events: auto;
@@ -1268,8 +1284,8 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
      corners made it read as a pill that happened to be nearby. */
   border-radius: var(--pin-label-radius, var(--pin-radius-sm))
     var(--pin-label-radius, var(--pin-radius-sm)) 0 0;
-  background: var(--pin-ink);
-  color: var(--pin-paper);
+  background: var(--pin-label-fill);
+  color: var(--pin-label-ink);
   box-shadow: var(--pin-shadow);
 }
 

@@ -18,6 +18,8 @@ export interface CapturedElement {
   outerHtml: string;
   classList: string[];
   elementText: string;
+  /** See `describeElement` — the element's own best name, for when the build has none. */
+  elementLabel: string;
   componentName: string | null;
   sourceFile: string | null;
   computedStyles: Record<string, string>;
@@ -209,6 +211,13 @@ export interface Contract {
    * one before it awaits anything.
    */
   "panel/open": { req: Record<string, never>; res: { ok: boolean } };
+
+  /**
+   * Which tab am I? A content script cannot ask Chrome directly, and it needs
+   * an answer because what is on screen is a fact about one tab — see
+   * `onScreenPinsKey`.
+   */
+  "tab/whoami": { req: Record<string, never>; res: { tabId: number | null } };
   "pin/summon": { req: { pinId: string }; res: { ok: boolean } };
   /**
    * A multi-selection that received a message becomes a group — that is the

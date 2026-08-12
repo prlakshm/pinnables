@@ -55,6 +55,7 @@ const chromeStub = {
     sendMessage: async () => undefined,
     update: async () => ({}),
     get: async () => ({}),
+    onRemoved: { addListener() {}, removeListener() {} },
     onUpdated: { addListener() {}, removeListener() {} },
   },
   scripting: { executeScript: async () => [] },
