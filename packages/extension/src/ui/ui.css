@@ -1130,27 +1130,26 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-object__card { align-self: flex-start; }
 .pin-object > .pin-note {
   /* Zero width contributes nothing to the column's max-content sizing, so the
-     card alone decides how wide the object is; the minimum then stretches the
-     composer back out to exactly that. Card and composer share one edge. */
+     card alone decides how wide the object is; the minimum then stretches a
+     collapsed note pill back out to exactly that. The composer opts out below. */
   width: 0;
   min-width: 100%;
 }
 /*
- * A docked composer needs room to read, even under a narrow card.
+ * The docked composer is the same 380px as the detached one (COMPOSER_WIDTH in
+ * overlay-geometry.ts), so the annotation box is one width wherever it appears
+ * — under a narrow capture, under a wide one, or floating under a live
+ * component. Sizing it from the card instead made a small capture's box too
+ * small to write in, which is the whole reason this rule exists.
  *
- * The card is the size of its component — a stat chip or an icon leaves the
- * composer barely wide enough to show a word before the shortcut, so its
- * placeholder truncated to "Describe a c". Raise the *object's* floor, not the
- * card's: the card stays flex-start at its own width (above) and the composer,
- * pinned to 100% of the object, stretches out to a legible line. Scoped to a
- * real composer so a collapsed note pill never inflates into a wide box.
- *
- * The floor is 316px — 130% of the ~243px card the composer felt cramped under
- * (a 4-up grid card: (1040 - 3*22) / 4). One fixed, comfortable width to type
- * in, the same under every capture. Capped at the viewport for a narrow window.
+ * Explicit, because `max-content` would take the textarea's intrinsic width
+ * (its full placeholder) instead. With a set width the textarea shrinks
+ * (min-width: 0) and ellipsises inside it. Scoped past the collapsed note pill
+ * so that keeps its own content-sized pill.
  */
-.pin-object:has(> .pin-note:not(.pin-note--collapsed)) {
-  min-width: min(316px, calc(100vw - 8px));
+.pin-object > .pin-note:not(.pin-note--collapsed) {
+  width: min(380px, calc(100vw - 8px));
+  min-width: 0;
 }
 
 /* The component supplies its own edge. Pinnables only adds an outside glow
