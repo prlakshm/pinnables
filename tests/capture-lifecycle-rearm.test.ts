@@ -77,6 +77,7 @@ Object.defineProperty(globalThis, "chrome", {
       },
       update: async () => undefined,
       captureVisibleTab: async () => "data:image/png;base64,frame",
+      onRemoved: { addListener() {}, removeListener() {} },
       onUpdated: {
         addListener(listener: UpdatedListener) {
           updatedListeners.push(listener);

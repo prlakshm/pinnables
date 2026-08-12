@@ -60,9 +60,14 @@
   --pin-ink-muted: var(--pin-grey-500);
   --pin-ink: var(--pin-grey-900);
   --pin-ink-lift: var(--pin-grey-600);
+  --pin-off: var(--pin-grey-100);
+  --pin-off-hover: var(--pin-grey-150);
   --pin-on-fill: var(--pin-ink);
   --pin-on-ink: var(--pin-paper);
   --pin-red: var(--pin-red-500);
+  /* Darker than --pin-red for text on the tint, which the red itself does not
+     clear at this size. Same hue, one step down. */
+  --pin-red-ink: #b3151b;
   --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, transparent);
   --pin-measure-glow: color-mix(in srgb, var(--pin-grey-400) 30%, transparent);
 
@@ -98,6 +103,16 @@ body {
   padding: 56px 24px 96px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ------------------------------------------------------ the rose card */
 /* Verbatim from the film set, so what the chrome sits on is the real thing. */
 
@@ -131,7 +146,7 @@ body {
   border-radius: 14px;
   padding: 20px;
   border: 1px solid var(--rule);
-  /* Every option is a set of overrides on these four, so switching has to be
+  /* Every option is a set of overrides on these, so switching has to be
      watchable rather than instantaneous. */
   transition: background var(--beat) var(--ease), border-color var(--beat) var(--ease),
     border-radius var(--beat) var(--ease), padding var(--beat) var(--ease),
@@ -193,11 +208,20 @@ body {
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   min-width: 300px;
-  width: 0;
-  min-width: 100%;
   font-family: var(--pin-font);
   color: var(--pin-ink);
   position: relative;
+}
+/*
+ * Kept as two selectors, the way ui.css writes it. Docked under a card the
+ * note takes the card's width exactly (the more specific min-width wins), so
+ * the two share one edge; the 300px floor above is for a note that is not
+ * inside a pin object. Flattening them into one block reads like a 300px
+ * minimum that silently never applies.
+ */
+.pin-object > .pin-note {
+  width: 0;
+  min-width: 100%;
 }
 
 .pin-note__body { display: flex; align-items: center; gap: 8px; padding: 6px 7px 6px 16px; }
@@ -232,7 +256,12 @@ body {
   transition: background 120ms ease, color 120ms ease;
 }
 .pin-note__send:hover { background: var(--pin-ink-lift); }
-.pin-note__send[data-idle="true"] { background: var(--pin-paper-sunk); color: var(--pin-ink-muted); }
+/* The same "will not act" grey the disabled send uses in ui.css. */
+.pin-note__send[data-idle="true"] {
+  background: var(--pin-off);
+  color: var(--pin-ink-faint);
+  cursor: default;
+}
 
 /*
  * The switch sits directly under the send button, because the branch it opens
@@ -245,7 +274,7 @@ body {
   padding: 7px 10px 7px 16px;
   border-top: 1px solid var(--pin-rule);
 }
-.pin-note__toggle span { flex: 1; font-size: 12px; color: var(--pin-ink-muted); }
+.pin-note__toggle label { flex: 1; font-size: 12px; color: var(--pin-ink-muted); }
 
 .pin-switch {
   width: 30px;
@@ -253,13 +282,17 @@ body {
   flex: 0 0 auto;
   border: none;
   border-radius: 999px;
-  background: var(--pin-rule-strong);
+  background: var(--pin-off);
+  box-shadow: inset 0 0 0 1px var(--pin-rule-strong);
   padding: 0;
   position: relative;
   cursor: pointer;
-  transition: background 180ms var(--ease);
+  transition: background 180ms var(--ease), box-shadow 180ms var(--ease);
 }
-.pin-switch[aria-checked="true"] { background: var(--pin-on-fill); }
+.pin-switch[aria-checked="true"] {
+  background: var(--pin-on-fill);
+  box-shadow: none;
+}
 .pin-switch i {
   position: absolute;
   top: 2px;
@@ -268,6 +301,7 @@ body {
   height: 14px;
   border-radius: 999px;
   background: var(--pin-paper);
+  box-shadow: 0 1px 1px rgba(9, 9, 11, 0.14);
   transition: left 180ms var(--ease);
 }
 .pin-switch[aria-checked="true"] i { left: 14px; }
@@ -276,10 +310,25 @@ body {
   padding: 0 16px 9px;
   font-size: 11px;
   line-height: 1.45;
-  color: var(--pin-ink-faint);
+  /* Muted, not faint. Faint is for decoration; this line is the only place the
+     interaction is explained, so it has to clear contrast on paper. */
+  color: var(--pin-ink-muted);
   min-height: 17px;
 }
 .pin-note__hint b { color: var(--pin-ink); font-weight: 500; }
+/* Keeping drops the losing snapshots, so the receipt carries a way back. */
+.pin-note__undo {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--pin-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
 
 /* ------------------------------------------------------- the branch */
 /*
@@ -304,7 +353,7 @@ body {
   background: var(--pin-paper);
   box-shadow: var(--pin-shadow);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--pin-ink);
   padding: 5px 13px;
   cursor: pointer;
@@ -314,8 +363,9 @@ body {
 }
 .pin-branch__opt[data-role="add"] { top: -32px; animation-delay: 20ms; }
 .pin-branch__opt[data-role="replace"] { top: 10px; animation-delay: 80ms; }
+.pin-branch__opt[data-role="cancel"] { top: 48px; animation-delay: 140ms; color: var(--pin-ink-muted); }
 .pin-branch__opt:hover:not(:disabled) { background: var(--pin-on-fill); color: var(--pin-on-ink); border-color: transparent; }
-.pin-branch__opt:disabled { color: var(--pin-ink-faint); cursor: not-allowed; }
+.pin-branch__opt:disabled { color: var(--pin-ink-faint); cursor: default; }
 @keyframes branch-in { to { opacity: 1; transform: none; } }
 
 .pin-branch__confirm {
@@ -328,7 +378,7 @@ body {
   background: var(--pin-on-fill);
   color: var(--pin-on-ink);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   padding: 6px 13px;
   cursor: pointer;
   box-shadow: var(--pin-shadow);
@@ -352,6 +402,9 @@ body {
   box-shadow: var(--pin-shadow-lg);
   font-family: var(--pin-mono);
 }
+/* Selecting is a different job, so the row says so without changing shape. */
+.pin-versions[data-mode="selecting"] { box-shadow: 0 0 0 2px var(--pin-red-tint), var(--pin-shadow-lg); }
+
 .pin-versions__mod {
   font-size: 10px;
   line-height: 1;
@@ -365,6 +418,10 @@ body {
 /*
  * A keycap, because the row is also the shortcut legend — the same mono chip
  * .pin-kbd already uses, and it fills the same way when its modifier is held.
+ *
+ * The max-width cap is deliberately close to the natural width. It is what the
+ * collapse and the insert animate, and a cap far above the content means most
+ * of the transition runs before anything visibly moves.
  */
 .pin-key {
   font-family: var(--pin-mono);
@@ -372,6 +429,7 @@ body {
   line-height: 1;
   min-width: 19px;
   height: 19px;
+  max-width: 44px;
   padding: 0 5px;
   border: none;
   border-radius: 4px;
@@ -382,26 +440,35 @@ body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
-}
-.pin-key[data-on="true"] { background: var(--pin-on-fill); color: var(--pin-on-ink); }
-.pin-key[data-locked="true"] { opacity: 0.32; cursor: not-allowed; }
-.pin-key[data-doomed="true"] {
-  background: var(--pin-red-tint);
-  color: var(--pin-red);
-  box-shadow: inset 0 0 0 1px var(--pin-red);
-}
-
-/* The collapse. Width, padding and margin all run to zero together, so the
-   survivors are carried left by ordinary flex reflow rather than a second
-   animation that has to be kept in step with this one. */
-.pin-key {
-  max-width: 90px;
   transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease,
     max-width var(--beat) var(--ease), min-width var(--beat) var(--ease),
     padding var(--beat) var(--ease), margin var(--beat) var(--ease),
     opacity 180ms ease, transform var(--beat) var(--ease);
 }
+.pin-key[data-on="true"] { background: var(--pin-on-fill); color: var(--pin-on-ink); }
+.pin-key:focus-visible { outline: 2px solid var(--pin-ink); outline-offset: 2px; }
+
+/* The original. Sunk plate and a hairline rather than a faded one, so it reads
+   as a key that is present and not up for replacement, not one half-drawn. */
+.pin-key[data-locked="true"] {
+  background: var(--pin-paper);
+  color: var(--pin-ink-muted);
+  box-shadow: inset 0 0 0 1px var(--pin-rule);
+  cursor: default;
+}
+/* Marked for replacement. Struck as well as tinted, so the state survives
+   being read by someone who cannot see the red. */
+.pin-key[data-doomed="true"] {
+  background: var(--pin-red-tint);
+  color: var(--pin-red-ink);
+  box-shadow: inset 0 0 0 1px var(--pin-red);
+}
+.pin-key[data-doomed="true"] .pin-key__num { text-decoration: line-through; }
+
+/* The collapse. Width, padding and margin run to zero together, so the
+   survivors are carried left by ordinary flex reflow rather than a second
+   animation that has to be kept in step with this one. The starting width is
+   measured first, so the transition begins moving immediately. */
 .pin-key[data-collapsing="true"] {
   max-width: 0;
   min-width: 0;
@@ -411,9 +478,17 @@ body {
   transform: scale(0.55);
 }
 
-/* The insert. Grown from nothing to its measured width, then handed back to
-   layout so it can never be stuck at a stale pixel value. */
-.pin-key[data-entering="true"] { max-width: 0; min-width: 0; padding: 0; opacity: 0; }
+/* The insert. The key is built already collapsed, so its first resolved style
+   is the zero state and nothing can flush it to full size before the frame
+   that starts the growth. */
+.pin-key[data-entering="true"] {
+  max-width: 0;
+  min-width: 0;
+  padding: 0;
+  margin-left: -4px;
+  opacity: 0;
+  transform: scale(0.55);
+}
 
 @keyframes key-land {
   0% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
@@ -422,6 +497,7 @@ body {
 }
 .pin-key[data-landed="true"] { animation: key-land 520ms var(--ease); }
 
+/* The survivors renumber after they have finished moving, not during. */
 .pin-key__num { transition: opacity 140ms ease; }
 .pin-key[data-renumbering="true"] .pin-key__num { opacity: 0; }
 
@@ -448,7 +524,7 @@ body {
   font-size: 10.5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
 }
 .rig button {
   font: inherit;
@@ -496,16 +572,17 @@ body {
       <div class="pin-note__body">
         <input class="pin-note__input" id="draft" placeholder="Describe a change" autocomplete="off" aria-label="Pin annotation" />
         <button class="pin-note__send" id="send" data-idle="true" aria-label="Send to agent">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6"/></svg>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6"/></svg>
         </button>
       </div>
 
       <div class="pin-note__toggle">
-        <span>Toggle</span>
-        <button class="pin-switch" id="switch" role="switch" aria-checked="true" aria-label="Keep more than one version"><i></i></button>
+        <label id="toggle-label" for="switch">Toggle</label>
+        <button class="pin-switch" id="switch" role="switch" aria-checked="true" aria-labelledby="toggle-label" aria-describedby="hint"><i aria-hidden="true"></i></button>
       </div>
 
-      <div class="pin-note__hint" id="hint" aria-live="polite"></div>
+      <div class="pin-note__hint" id="hint"></div>
+      <p class="sr-only" id="live" aria-live="polite" aria-atomic="true"></p>
     </div>
   </div>
 
@@ -551,7 +628,7 @@ body {
   var state = {
     options: [
       opt("original", BASE),
-      opt("green wash", { background: "#e9efe9", borderColor: "#cfdcd2", borderRadius: "14px", padding: "20px", boxShadow: "" }),
+      opt("green wash", { background: "#e9efe9", borderColor: "#e2ddcd", borderRadius: "14px", padding: "20px", boxShadow: "" }),
       opt("stamp border, square", { background: "#ffffff", borderColor: "#a33726", borderRadius: "2px", padding: "20px", boxShadow: "" })
     ],
     current: 1,
@@ -560,20 +637,35 @@ body {
     mode: "idle",
     pending: null,
     doomed: {},
+    /* Set while a keycap is hovered in selecting mode, so you see what you are
+       about to throw away rather than only which numeral it wears. */
+    preview: null,
     place: "auto",
     kept: null,
-    busy: false
+    dropped: null,
+    busy: false,
+    /* Bumped by anything that invalidates an in-flight collapse. */
+    gen: 0,
+    timer: null,
+    entering: null,
+    renumbering: {}
   };
 
   var $ = function (id) { return document.getElementById(id); };
   var menu = $("menu"), card = $("card"), draft = $("draft"), branch = $("branch");
 
   function doomedCount() { return Object.keys(state.doomed).length; }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+    });
+  }
 
   /* ------------------------------------------------------------- the card */
 
   function paintCard() {
-    var o = (state.mode !== "idle" && state.pending) ? state.pending : state.options[state.current];
+    var o = state.preview
+      || ((state.mode !== "idle" && state.pending) ? state.pending : state.options[state.current]);
     if (!o) return;
     var s = o.style;
     card.style.background = s.background || "";
@@ -591,8 +683,8 @@ body {
     b.className = "pin-key";
     b.type = "button";
     b.dataset.key = o.id;
-    b.dataset.idx = String(i);
-    b.title = o.label;
+    if (o.id === state.entering) b.dataset.entering = "true";
+    if (state.renumbering[o.id]) b.dataset.renumbering = "true";
 
     var n = document.createElement("span");
     n.className = "pin-key__num";
@@ -602,39 +694,65 @@ body {
     if (state.mode === "selecting") {
       if (i === 0) {
         b.dataset.locked = "true";
-        b.title = "the original stays";
         b.setAttribute("aria-disabled", "true");
+        b.setAttribute("aria-label", "Option 1, " + o.label + ", cannot be replaced");
       } else {
-        b.dataset.doomed = state.doomed[o.id] ? "true" : "false";
-        b.setAttribute("aria-pressed", state.doomed[o.id] ? "true" : "false");
+        var marked = !!state.doomed[o.id];
+        b.dataset.doomed = marked ? "true" : "false";
+        b.setAttribute("aria-pressed", marked ? "true" : "false");
+        b.setAttribute("aria-label", "Option " + (i + 1) + ", " + o.label + (marked ? ", marked to replace" : ""));
         b.onclick = function () {
+          if (state.busy) return;
           if (state.doomed[o.id]) delete state.doomed[o.id];
           else state.doomed[o.id] = true;
           render();
         };
+        b.onmouseenter = function () { state.preview = o; paintCard(); };
+        b.onmouseleave = function () { state.preview = null; paintCard(); };
       }
     } else {
       b.dataset.on = (i === state.current) ? "true" : "false";
       b.setAttribute("aria-pressed", b.dataset.on);
-      b.onclick = function () { if (!state.busy) { state.current = i; render(); } };
+      b.setAttribute("aria-label", "Option " + (i + 1) + ", " + o.label);
+      b.onclick = function () {
+        if (state.busy) return;
+        armedUsed = true;
+        state.current = i;
+        render();
+      };
     }
     return b;
   }
 
+  /* A rebuild throws away whatever had focus, which makes marking several
+     options for replacement impossible from the keyboard. So the key that had
+     it gets it back. */
+  function withFocusKept(node, fn) {
+    var active = document.activeElement;
+    var key = (active && node.contains(active)) ? active.dataset.key || active.dataset.role : null;
+    fn();
+    if (!key) return;
+    var next = node.querySelector('[data-key="' + key + '"], [data-role="' + key + '"]');
+    if (next) next.focus();
+  }
+
   function renderMenu() {
-    menu.innerHTML = "";
-    if (!state.on) { menu.style.display = "none"; return; }
-    menu.style.display = "";
-    menu.dataset.armed = armed ? "true" : "false";
+    withFocusKept(menu, function () {
+      menu.innerHTML = "";
+      if (!state.on) { menu.style.display = "none"; return; }
+      menu.style.display = "";
+      menu.dataset.armed = armed ? "true" : "false";
+      menu.dataset.mode = state.mode;
 
-    var mod = document.createElement("span");
-    mod.className = "pin-versions__mod";
-    mod.textContent = "⌥";
-    mod.title = "hold to arm the keys, tap to step forward";
-    menu.appendChild(mod);
+      var mod = document.createElement("span");
+      mod.className = "pin-versions__mod";
+      mod.textContent = "⌥";
+      mod.title = "hold to arm the keys, tap to step forward";
+      menu.appendChild(mod);
 
-    state.options.forEach(function (o, i) { menu.appendChild(keyFor(o, i)); });
-    place();
+      state.options.forEach(function (o, i) { menu.appendChild(keyFor(o, i)); });
+    });
+    if (state.on) place();
   }
 
   /* --------------------------------------------------------- the placement */
@@ -642,16 +760,23 @@ body {
    * Right of the card and low, so the row clears both the identity plate on top
    * and the connector anchor that renders at the edge midpoint. Falls back the
    * way a tooltip does: try the preferred side, then the note, then mirror.
+   *
+   * The note tier is only offered when the note is genuinely wider than the
+   * card. Docked under a card it is exactly the card's width (ui.css makes the
+   * two share one edge), so trying it there would be the same placement under
+   * a second name. It earns its place for the floating multi-select composer,
+   * which is 380px regardless of what it is parked beneath.
    */
   function place() {
-    var host = $("obj").getBoundingClientRect();
+    var host = $("stage").getBoundingClientRect();
     var cardBox = card.getBoundingClientRect();
     var note = document.querySelector(".pin-note").getBoundingClientRect();
     var w = menu.offsetWidth || 140;
     var gap = 10;
 
+    var noteIsWider = note.right > cardBox.right + 1;
     var order = state.place === "auto"
-      ? ["card-right", "note-right", "card-left"]
+      ? (noteIsWider ? ["card-right", "note-right", "card-left"] : ["card-right", "card-left"])
       : [state.place];
 
     function fits(where) {
@@ -671,7 +796,6 @@ body {
        the row leave the viewport, which is the one outcome worse than crowding. */
     x = Math.max(4, Math.min(x, window.innerWidth - w - 4));
 
-    menu.style.right = "";
     menu.style.left = (x - host.left) + "px";
     menu.style.top = (cardBox.bottom - host.top - menu.offsetHeight) + "px";
     menu.dataset.placed = chosen;
@@ -689,44 +813,56 @@ body {
     branch.style.top = (sw.top - host.top + sw.height / 2) + "px";
   }
 
+  function branchOpt(role, label, onClick, disabled, title) {
+    var b = document.createElement("button");
+    b.className = "pin-branch__opt";
+    b.type = "button";
+    b.dataset.role = role;
+    b.textContent = label;
+    if (disabled) b.disabled = true;
+    if (title) b.title = title;
+    b.onclick = onClick;
+    return b;
+  }
+
   function renderBranch() {
-    branch.innerHTML = "";
-    if (state.mode === "branch") {
-      var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("width", "30");
-      svg.setAttribute("height", "1");
-      svg.innerHTML =
-        '<path d="M0 0 H12 Q22 0 22 -10 V-22" fill="none" stroke="var(--pin-rule-strong)" stroke-width="1"/>' +
-        '<path d="M0 0 H12 Q22 0 22 10 V22" fill="none" stroke="var(--pin-rule-strong)" stroke-width="1"/>';
-      branch.appendChild(svg);
+    withFocusKept(branch, function () {
+      branch.innerHTML = "";
+      if (state.mode === "branch") {
+        var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("width", "30");
+        svg.setAttribute("height", "1");
+        svg.setAttribute("aria-hidden", "true");
+        svg.innerHTML =
+          '<path d="M0 0 H12 Q22 0 22 -10 V-22" fill="none" stroke="var(--pin-rule-strong)" stroke-width="1"/>' +
+          '<path d="M0 0 H12 Q22 0 22 10 V22" fill="none" stroke="var(--pin-rule-strong)" stroke-width="1"/>';
+        branch.appendChild(svg);
 
-      var add = document.createElement("button");
-      add.className = "pin-branch__opt";
-      add.type = "button";
-      add.dataset.role = "add";
-      add.textContent = "add";
-      add.disabled = state.options.length >= MAX;
-      add.title = add.disabled ? "five is the cap. replace one instead" : "keep it alongside the others";
-      add.onclick = doAdd;
-      branch.appendChild(add);
+        var full = state.options.length >= MAX;
+        branch.appendChild(branchOpt("add", "add", doAdd, full,
+          full ? "five is the cap. replace one instead" : "keep it alongside the others"));
+        branch.appendChild(branchOpt("replace", "replace", function () {
+          if (state.busy) return;
+          state.mode = "selecting";
+          state.doomed = {};
+          render();
+        }));
+        branch.appendChild(branchOpt("cancel", "never mind", cancel));
+      }
 
-      var rep = document.createElement("button");
-      rep.className = "pin-branch__opt";
-      rep.type = "button";
-      rep.dataset.role = "replace";
-      rep.textContent = "replace";
-      rep.onclick = function () { state.mode = "selecting"; state.doomed = {}; render(); };
-      branch.appendChild(rep);
-    }
-
-    if (state.mode === "selecting" && doomedCount()) {
-      var go = document.createElement("button");
-      go.className = "pin-branch__confirm";
-      go.type = "button";
-      go.textContent = "collapse " + doomedCount() + " into it";
-      go.onclick = doReplace;
-      branch.appendChild(go);
-    }
+      if (state.mode === "selecting") {
+        if (doomedCount()) {
+          var go = document.createElement("button");
+          go.className = "pin-branch__confirm";
+          go.type = "button";
+          go.dataset.role = "confirm";
+          go.textContent = "collapse " + doomedCount() + " into it";
+          go.onclick = doReplace;
+          branch.appendChild(go);
+        }
+        branch.appendChild(branchOpt("cancel", "never mind", cancel));
+      }
+    });
     placeBranch();
   }
 
@@ -735,7 +871,7 @@ body {
   function hint() {
     if (!state.on) {
       return state.kept
-        ? "Kept <b>" + state.kept + "</b>. The others were dropped."
+        ? "Kept <b>" + esc(state.kept) + "</b>. The others were dropped."
         : "Turn Toggle on to keep more than one version of this card.";
     }
     if (state.mode === "branch") {
@@ -745,132 +881,181 @@ body {
     }
     if (state.mode === "selecting") {
       return doomedCount()
-        ? "Replacing <b>" + doomedCount() + "</b> with &ldquo;" + esc(state.pending.label) + "&rdquo;."
+        ? "Replacing <b>" + doomedCount() + "</b> with &ldquo;" + esc(state.pending.label) + "&rdquo;. Escape backs out."
         : "Select which options you want to replace.";
     }
     var o = state.options[state.current];
     return "Showing <b>" + esc(o.label) + "</b>. ⌥ steps forward, ⌥ and a number jumps, ⌘↩ on an empty line keeps it.";
   }
 
-  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+  /* Only the part that changes, so a switch does not re-read the whole legend. */
+  function announce() {
+    if (!state.on) { $("live").textContent = state.kept ? "Kept " + state.kept : ""; return; }
+    if (state.mode !== "idle") { $("live").textContent = ""; return; }
+    $("live").textContent =
+      "Showing " + state.options[state.current].label +
+      ", option " + (state.current + 1) + " of " + state.options.length;
+  }
 
   function render() {
     renderMenu();
     renderBranch();
     $("hint").innerHTML = hint();
+    if (!state.on && state.dropped) {
+      var u = document.createElement("button");
+      u.className = "pin-note__undo";
+      u.type = "button";
+      u.textContent = "undo";
+      u.onclick = undoKeep;
+      $("hint").appendChild(u);
+    }
     $("switch").setAttribute("aria-checked", state.on ? "true" : "false");
     $("send").dataset.idle = draft.value.trim() ? "false" : "true";
+    announce();
     paintCard();
   }
 
   /* ------------------------------------------------------- add and replace */
 
   /*
-   * FLIP, because the survivors have to be seen sliding into the gap. A plain
-   * re-render puts them at their new coordinates instantly, which reads as the
-   * row having been rebuilt rather than one option having left it.
+   * The key is created already collapsed, then released a frame later. Doing it
+   * the other way round — build at full size, then shrink, then grow — loses
+   * the entrance, because any layout read in between resolves it at full width
+   * and the growth has nothing left to travel.
    */
-  function flip(mutate) {
-    var before = new Map();
-    menu.querySelectorAll(".pin-key").forEach(function (n) {
-      before.set(n.dataset.key, n.getBoundingClientRect().left);
-    });
-
-    mutate();
-
-    menu.querySelectorAll(".pin-key").forEach(function (n) {
-      var was = before.get(n.dataset.key);
-      if (was == null) return;
-      var d = was - n.getBoundingClientRect().left;
-      if (!d) return;
-      n.style.transition = "none";
-      n.style.transform = "translateX(" + d + "px)";
-      requestAnimationFrame(function () {
-        n.style.transition = "";
-        n.style.transform = "";
-      });
-    });
-  }
-
-  /* Grow the new keycap from nothing to whatever width it wants, then hand the
-     width back to layout so it can never be pinned at a stale pixel value. */
   function enter(id) {
+    state.entering = id;
+    render();
     var n = menu.querySelector('.pin-key[data-key="' + id + '"]');
-    if (!n) return;
-    n.dataset.entering = "true";
-    var target = n.scrollWidth + 10;
-    requestAnimationFrame(function () {
+    if (!n) { state.entering = null; return; }
+
+    /*
+     * Released on the next painted frame, so the collapsed state is on screen
+     * once before the growth starts. The timer is not belt and braces: rAF is
+     * throttled to nothing in a background tab, and without a second way out
+     * the key would sit at zero width — invisible, and permanently so, since
+     * nothing else ever clears the flag.
+     */
+    var done = false;
+    function release() {
+      if (done) return;
+      done = true;
       n.dataset.entering = "false";
-      n.style.maxWidth = target + "px";
-      setTimeout(function () {
-        n.style.maxWidth = "";
-        n.dataset.landed = "true";
-        setTimeout(function () { n.removeAttribute("data-landed"); }, 560);
-      }, 300);
-    });
+      state.entering = null;
+      n.dataset.landed = "true";
+      window.setTimeout(function () { n.removeAttribute("data-landed"); }, 560);
+    }
+    requestAnimationFrame(function () { requestAnimationFrame(release); });
+    window.setTimeout(release, 80);
   }
 
   function doAdd() {
-    if (state.options.length >= MAX || !state.pending) return;
+    if (state.busy || state.options.length >= MAX || !state.pending) return;
     var added = state.pending;
     state.options.push(added);
     state.current = state.options.length - 1;
     state.pending = null;
+    state.preview = null;
     state.mode = "idle";
-    flip(render);
     enter(added.id);
   }
 
   function doReplace() {
+    if (state.busy) return;
     var dead = state.options.filter(function (o) { return state.doomed[o.id]; });
     if (!dead.length || !state.pending) return;
+
+    /*
+     * Everything the delayed half needs is captured now. Reading state inside
+     * the timeout meant an Escape or a second click during the collapse could
+     * null the pending option and splice it into the row, which threw halfway
+     * through the next render and left the menu inert until reload.
+     */
+    var added = state.pending;
+    var seat = Math.min.apply(null, dead.map(function (o) { return state.options.indexOf(o); }));
+    var survivors = state.options.filter(function (o) { return !state.doomed[o.id]; });
+    var gen = ++state.gen;
     state.busy = true;
 
-    /* 1. The doomed keys shrink where they stand. Flex carries the rest left. */
+    /* The survivors that are about to renumber drop their digit now and get it
+       back once they have arrived, so no numeral changes while it is moving. */
+    state.renumbering = {};
+    survivors.forEach(function (o, i) {
+      var was = state.options.indexOf(o);
+      if (was !== i) state.renumbering[o.id] = true;
+    });
+    Object.keys(state.renumbering).forEach(function (id) {
+      var n = menu.querySelector('.pin-key[data-key="' + id + '"]');
+      if (n) n.dataset.renumbering = "true";
+    });
+
+    /* Collapse from the width they actually have. Left at the class cap, the
+       first two thirds of the transition would run before anything narrowed. */
     dead.forEach(function (o) {
       var n = menu.querySelector('.pin-key[data-key="' + o.id + '"]');
-      if (n) { n.dataset.renumbering = "true"; n.dataset.collapsing = "true"; }
+      if (!n) return;
+      n.style.maxWidth = n.offsetWidth + "px";
+      void n.offsetWidth;
+      n.dataset.collapsing = "true";
     });
+
+    /* The confirm goes immediately, so it cannot be pressed a second time
+       while the first press is still playing out. */
+    var go = branch.querySelector('[data-role="confirm"]');
+    if (go) go.remove();
 
     var beat = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 260;
 
-    setTimeout(function () {
-      /* 2. The new one takes the lowest seat the dead ones held, so the row
-            renumbers as little as it can get away with. */
-      var seat = Math.min.apply(null, dead.map(function (o) { return state.options.indexOf(o); }));
-      var added = state.pending;
-      var survivors = state.options.filter(function (o) { return !state.doomed[o.id]; });
-      survivors.splice(seat, 0, added);
+    state.timer = window.setTimeout(function () {
+      state.timer = null;
+      if (gen !== state.gen) { state.busy = false; return; }
 
+      /* The new one takes the lowest seat the dead ones held, so the row
+         renumbers as little as it can get away with. */
+      survivors.splice(seat, 0, added);
       state.options = survivors;
       state.current = seat;
       state.pending = null;
+      state.preview = null;
       state.doomed = {};
       state.mode = "idle";
-
-      flip(render);
-      enter(added.id);
       state.busy = false;
+
+      enter(added.id);
+
+      window.setTimeout(function () {
+        state.renumbering = {};
+        menu.querySelectorAll('[data-renumbering="true"]').forEach(function (n) {
+          n.dataset.renumbering = "false";
+        });
+      }, 60);
     }, beat);
   }
 
   /* ---------------------------------------------------------------- verbs */
 
   function send() {
+    if (state.busy) return;
     var text = draft.value.trim();
+    /* Empty is not a send. Keeping is deliberate and lives on ⌘↩ alone. */
+    if (!text) return;
 
-    /* Empty is the keep verb, the same as it is everywhere else in the pill. */
-    if (!text) { keep(); return; }
+    /* A send while the comparison is closed reopens it rather than quietly
+       stacking options behind a hidden menu. */
+    if (!state.on) {
+      state.on = true;
+      state.kept = null;
+      state.dropped = null;
+    }
 
     var o = opt(text, nextLook());
     draft.value = "";
 
     /* Nothing to weigh it against yet, so it just becomes the second option. */
-    if (!state.on || state.options.length <= 1) {
+    if (state.options.length <= 1) {
       state.options.push(o);
       state.current = state.options.length - 1;
       state.mode = "idle";
-      flip(render);
       enter(o.id);
       return;
     }
@@ -881,23 +1066,47 @@ body {
   }
 
   function keep() {
-    if (!state.on) return;
+    if (!state.on || state.busy) return;
+    state.gen++;
     state.kept = "option " + (state.current + 1) + ", " + state.options[state.current].label;
+    /* The losing snapshots go, so the whole set is stashed for the undo. */
+    state.dropped = { options: state.options.slice(), current: state.current };
     var winner = state.options[state.current];
     state.options = [state.options[0], winner].filter(function (o, i, a) { return a.indexOf(o) === i; });
     state.current = state.options.length - 1;
     state.on = false;
     state.mode = "idle";
     state.pending = null;
+    state.preview = null;
     render();
+  }
+
+  function undoKeep() {
+    if (!state.dropped) return;
+    state.options = state.dropped.options;
+    state.current = state.dropped.current;
+    state.dropped = null;
+    state.kept = null;
+    state.on = true;
+    render();
+    draft.focus();
   }
 
   function cancel() {
     if (state.mode === "idle") return;
+    state.gen++;
+    if (state.timer !== null) { window.clearTimeout(state.timer); state.timer = null; }
+    state.busy = false;
+    /* Backing out returns the words, which the send took out of the field.
+       Losing a typed sentence to an Escape is not a cancel, it is a deletion. */
+    if (state.pending) draft.value = state.pending.label;
     state.mode = "idle";
     state.pending = null;
+    state.preview = null;
     state.doomed = {};
+    state.renumbering = {};
     render();
+    draft.focus();
   }
 
   /* ------------------------------------------------------------ the chord */
@@ -911,11 +1120,12 @@ body {
       if (state.on) menu.dataset.armed = "true";
       return;
     }
+    /* Any other key pressed inside the hold means it was a chord, not a tap. */
+    if (armed) armedUsed = true;
 
     /* e.code, because Option and a digit emits ¡™£ on a Mac layout. */
     if (e.altKey && /^Digit[1-9]$/.test(e.code)) {
       e.preventDefault();
-      armedUsed = true;
       var i = Number(e.code.slice(5)) - 1;
       if (state.on && state.mode === "idle" && i < state.options.length && !state.busy) {
         state.current = i;
@@ -927,15 +1137,28 @@ body {
 
     if (e.key === "Escape") { cancel(); return; }
 
-    if (e.key === "Enter") {
+    /*
+     * Enter belongs to the input, not the page. Left on window it cancelled the
+     * native activation of every button — so Enter on "add" ran the empty-send
+     * path instead, and quietly ended the comparison.
+     */
+    if (e.key === "Enter" && e.target === draft) {
       e.preventDefault();
-      if (e.metaKey || e.ctrlKey) keep();
-      else send();
+      if (e.metaKey || e.ctrlKey) {
+        /* Empty keeps. With words in the field it is the stash chord, which
+           still has somewhere to go: the same branch a send opens. */
+        if (draft.value.trim()) send();
+        else keep();
+      } else {
+        send();
+      }
       return;
     }
 
-    /* Arrows only reach the menu while there is no caret to move. */
-    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !draft.value && state.on && state.mode === "idle" && !state.busy) {
+    /* Arrows only reach the menu while there is no caret to move, and never
+       while Option is down — that combination belongs to the chord. */
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        !e.altKey && !draft.value && state.on && state.mode === "idle" && !state.busy) {
       e.preventDefault();
       var n = state.options.length;
       state.current = (state.current + (e.key === "ArrowRight" ? 1 : n - 1)) % n;
@@ -945,7 +1168,7 @@ body {
 
   window.addEventListener("keyup", function (e) {
     if (e.key !== "Alt") return;
-    /* A tap, with no digit inside it, steps forward the way Tab would. */
+    /* A tap, with nothing pressed inside it, steps forward the way Tab would. */
     if (armed && !armedUsed && Date.now() - armedAt < 400 && state.on && state.mode === "idle" && !state.busy) {
       state.current = (state.current + 1) % state.options.length;
       render();
@@ -955,11 +1178,20 @@ body {
   });
   window.addEventListener("blur", function () { armed = false; menu.dataset.armed = "false"; });
 
+  /* A click anywhere else backs out of a decision, the way any transient
+     picker does. Without it, selecting mode had no mouse exit at all. */
+  document.addEventListener("pointerdown", function (e) {
+    if (state.mode === "idle" || state.busy) return;
+    if (e.target.closest(".pin-note, .pin-versions, .pin-branch")) return;
+    cancel();
+  });
+
   /* ----------------------------------------------------------------- wire */
 
   $("send").onclick = send;
   draft.addEventListener("input", function () { $("send").dataset.idle = draft.value.trim() ? "false" : "true"; });
   $("switch").onclick = function () {
+    if (state.busy) return;
     if (state.on) keep();
     else { state.on = true; state.kept = null; render(); }
   };
@@ -973,7 +1205,7 @@ body {
   });
 
   $("reset").onclick = function () { location.reload(); };
-  window.addEventListener("resize", place);
+  window.addEventListener("resize", function () { if (state.on) place(); placeBranch(); });
 
   render();
   draft.focus();

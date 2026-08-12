@@ -1,31 +1,67 @@
 import { useCallback, useEffect, useState } from "react";
-import { describeDrawings, pinLabel, sortedByOrder, type Board, type Pin } from "@pinnables/shared";
+import {
+  describeDrawings,
+  isLocalUrl,
+  pinLabel,
+  sortedByOrder,
+  sourceLabel,
+  type Board,
+  type Pin,
+} from "@pinnables/shared";
 import { send, type Contract } from "../lib/messages";
+import { onScreenPinsKey } from "../lib/presence";
 import { ArrowUpRightIcon, CheckIcon, LinkIcon, PinUprightIcon, TrashIcon } from "../ui/icons";
 
 /**
  * Which pins are currently part of the page's focus context, published by the
  * overlay. The upright pin icon fills for exactly these rows — the shelf
  * answering "is this one on screen right now" at a glance.
+ *
+ * "Right now" means the tab in front of the user, so this follows the active
+ * tab rather than reading one shared key. Every overlay used to write that one
+ * key, which made the answer belong to whichever tab had spoken last: seated
+ * pins on a background tab reported themselves as being in front of you, and
+ * pins genuinely on screen reported themselves as gone. Pressing the hollow pin
+ * that produced was what sent the summon that navigated the tab away.
  */
 function useOnScreenPins(): ReadonlySet<string> {
   const [onScreen, setOnScreen] = useState<ReadonlySet<string>>(() => new Set<string>());
   useEffect(() => {
     let cancelled = false;
-    void chrome.storage.local.get("onScreenPins").then((bag) => {
-      if (!cancelled) setOnScreen(new Set((bag.onScreenPins as string[]) ?? []));
-    });
+    let key: string | null = null;
+
+    const read = async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (cancelled) return;
+      if (tab?.id === undefined) {
+        key = null;
+        setOnScreen(new Set<string>());
+        return;
+      }
+      key = onScreenPinsKey(tab.id);
+      const bag = await chrome.storage.local.get(key);
+      if (!cancelled) setOnScreen(new Set((bag[key] as string[]) ?? []));
+    };
+
     const onChanged = (
-      changes: { [key: string]: chrome.storage.StorageChange },
+      changes: { [name: string]: chrome.storage.StorageChange },
       areaName: string,
     ) => {
-      if (areaName !== "local" || !changes.onScreenPins) return;
-      setOnScreen(new Set((changes.onScreenPins.newValue as string[]) ?? []));
+      if (areaName !== "local" || key === null || !changes[key]) return;
+      setOnScreen(new Set((changes[key].newValue as string[]) ?? []));
     };
+    const onActivated = () => void read();
+    const onWindowFocus = () => void read();
+
+    void read();
     chrome.storage.onChanged.addListener(onChanged);
+    chrome.tabs.onActivated.addListener(onActivated);
+    chrome.windows?.onFocusChanged?.addListener(onWindowFocus);
     return () => {
       cancelled = true;
       chrome.storage.onChanged.removeListener(onChanged);
+      chrome.tabs.onActivated.removeListener(onActivated);
+      chrome.windows?.onFocusChanged?.removeListener(onWindowFocus);
     };
   }, []);
   return onScreen;
@@ -580,7 +616,9 @@ function PinRow({
                 readOnly={relating}
               />
               {pin.kind === "region" && <span className="pin-chip pin-chip--mono">region</span>}
-              <span className="pin-row__route">{pin.route}</span>
+              <span className="pin-row__route" title={pin.url}>
+                {sourceLabel(pin)}
+              </span>
               {linked && (
                 <span
                   style={{ color: "var(--pin-ink-muted)", display: "inline-flex" }}
@@ -683,8 +721,11 @@ function PinRow({
           {pin.kind === "region" ? (
             <div className="pin-metrics">
               <div className="pin-metric pin-metric--fact">
-                <span className="pin-metric__name">route</span>
-                <span className="pin-metric__value">{pin.route}</span>
+                {/* More room here than in the row, so the budget is looser. */}
+                <span className="pin-metric__name">{isLocalUrl(pin.url) ? "route" : "source"}</span>
+                <span className="pin-metric__value" title={pin.url}>
+                  {sourceLabel(pin, 48)}
+                </span>
                 <span />
               </div>
               <div className="pin-metric pin-metric--fact">

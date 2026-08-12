@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Board, Pin } from "@pinnables/shared";
+import { pinLabel, sourceLabel, type Board, type Pin } from "@pinnables/shared";
 import { CloseIcon, LinkIcon } from "../ui/icons";
 import { defaultEdgeFor, nearestEdge, type AnchorEdge } from "../ui/theme";
 import { Composer } from "./Composer";
@@ -56,11 +56,12 @@ interface PinObjectProps {
   /** Direction cue shown only on the pin where the connector drag began. */
   connectionRole?: "source";
   /**
-   * Set when this capture's component lives on another page. The chip names
-   * the honest limitation — a capture cannot update live — and pressing it
-   * goes where the live one is.
+   * Set when this capture's component lives on another page. The chip names the
+   * honest limitation and pressing it goes where the original is. `live` is
+   * false for a page you do not own, where the limitation is permanent rather
+   * than a matter of being on the wrong route.
    */
-  awayRoute?: { route: string; onOpen: () => void };
+  awayRoute?: { where: string; live: boolean; onOpen: () => void };
   onSelect: (additive: boolean) => void;
   /** Live, per frame — state only, never storage. */
   onMove: (position: FloatPosition) => void;
@@ -206,8 +207,13 @@ export function PinObject({
 
   const relationships = board.relationships.filter((r) => r.sourcePinId === pin.id);
   const targetCount = relationships.reduce((sum, r) => sum + r.targetPinIds.length, 0);
-  /** The component name where the build provides one, else the text it wraps. */
-  const label = pin.componentName ?? pin.elementText.slice(0, 28).trim() ?? "";
+  /*
+   * The same name the shelf shows, from the same ladder — component name, then
+   * whatever the element could say for itself. It used to be computed here out
+   * of `componentName ?? elementText`, which is how a pinned row of logos came
+   * to float with no name at all: no build metadata, no text, nothing left.
+   */
+  const label = pinLabel(pin, board.pins);
 
   /*
    * The card keeps the element's own corners.
@@ -336,15 +342,29 @@ export function PinObject({
    * One anchor, on one edge.
    *
    * Anchors are a connection affordance, so they stay hidden until there is
-   * something to connect *to* — one pin on the board means dots offering an
-   * action that cannot be completed. Beyond that: the edge with the most room
-   * to run a wire into is offered by default (a card against the right of the
-   * screen offers its left, one at the top offers its bottom), and moving
-   * toward any other edge midpoint offers that one instead. All four stay
-   * reachable without four dots sitting on every card.
+   * something to connect *to*. For a pin on its own page that means another pin:
+   * a lone pin there has only its own live element around it, and a wire back
+   * onto itself is not a relationship — so dots would offer an action that
+   * cannot be completed.
+   *
+   * A reference card is the opposite case. It is a capture from elsewhere,
+   * sitting on a page full of live components precisely so it can be matched to
+   * one — dropping the wire on any of them captures it as the target and relates
+   * it in a single gesture. So the whole page is something to connect to, and
+   * withholding the dots until a *second* pin already exists made the one thing
+   * the card is for impossible: you cannot connect a lone imported reference to
+   * the component you imported it to compare against.
+   *
+   * Beyond that: the edge with the most room to run a wire into is offered by
+   * default (a card against the right of the screen offers its left, one at the
+   * top offers its bottom), and moving toward any other edge midpoint offers
+   * that one instead. All four stay reachable without four dots on every card.
    */
+  const isReferenceCard = awayRoute !== undefined;
   const canConnect =
-    pin.kind === "element" && board.pins.some((candidate) => candidate.id !== pin.id && candidate.kind === "element");
+    pin.kind === "element" &&
+    (isReferenceCard ||
+      board.pins.some((candidate) => candidate.id !== pin.id && candidate.kind === "element"));
   const showAnchor = canConnect && (hovered || selected || connecting);
   const rect = card.current?.getBoundingClientRect();
   const fallbackEdge: AnchorEdge = rect
@@ -388,7 +408,7 @@ export function PinObject({
       >
         <span className="pin-object__name">{label}</span>
         <span className="pin-object__src" title={pin.sourceFile ?? pin.url}>
-          {pin.sourceFile ?? pin.route}
+          {sourceLabel(pin)}
         </span>
         <button
           className="pin-icon-btn"
@@ -424,10 +444,20 @@ export function PinObject({
             className="pin-chip pin-object__away"
             data-no-drag
             onClick={awayRoute.onOpen}
-            title={`This component lives on ${awayRoute.route}. A capture here can’t update live`}
-            aria-label={`Go to ${awayRoute.route} for live updates`}
+            title={
+              awayRoute.live
+                ? `This component lives on ${awayRoute.where}. A capture here can’t update live`
+                : `This capture came from ${awayRoute.where}. It's a reference, not a page your agent can edit`
+            }
+            aria-label={
+              awayRoute.live
+                ? `Go to ${awayRoute.where} for live updates`
+                : `Open ${awayRoute.where}, where this was captured`
+            }
           >
-            go to {awayRoute.route} for live updates ↗
+            {awayRoute.live
+              ? `go to ${awayRoute.where} for live updates ↗`
+              : `captured from ${awayRoute.where} ↗`}
           </button>
         )}
         <button

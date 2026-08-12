@@ -13,7 +13,10 @@ import {
   applicabilityGuard,
   describeDrawings,
   expandProperties,
+  isLocalUrl,
+  isPinOnPage,
   pinLabel,
+  sourceLabel,
   type Board,
   type DrawShape,
   type Pin,
@@ -28,6 +31,7 @@ import {
 } from "../lib/capture";
 import { liveSendNeedsPoll, recordableLiveSendState } from "../lib/live-send";
 import { ExtensionReloadedError, send, type Broadcast, type Contract } from "../lib/messages";
+import { onScreenPinsKey, overlayFocusKey } from "../lib/presence";
 import { CloseIcon } from "../ui/icons";
 import type { OverlayApi } from "./mount";
 import { Toolbar, type DrawTool, type ToolMode } from "./Toolbar";
@@ -210,10 +214,9 @@ export function retainExistingPinIds(ids: string[], pins: readonly Pin[]): strin
 /**
  * Focus context survives a page reload (Vite HMR after a live edit). The overlay
  * is a content script: a new document is a new React tree, so selection has to
- * live in extension storage, not in component state.
+ * live in extension storage, not in component state. See `overlayFocusKey` for
+ * why the key carries the origin.
  */
-export const OVERLAY_FOCUS_KEY = "overlayFocus";
-
 export interface OverlayFocusSnapshot {
   origin: string;
   route: string;
@@ -224,6 +227,16 @@ export interface OverlayFocusSnapshot {
 
 export function overlayFocusLocation(): { origin: string; route: string } {
   return { origin: location.origin, route: routeForLocation() };
+}
+
+/**
+ * The same question as `onThisPage`, asked of the live document rather than of
+ * the rendered route. Callbacks that fire on the same tick as a navigation run
+ * before React has the new route, and seating a card against a stale one puts
+ * it on the wrong page.
+ */
+export function pinIsHereNow(pin: Pin): boolean {
+  return isPinOnPage(pin, overlayFocusLocation());
 }
 
 export function applyOverlayFocusSnapshot(
@@ -506,6 +519,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * because pushState and replaceState fire no event of their own.
    */
   const [route, setRoute] = useState(() => routeForLocation());
+  /**
+   * This page, origin included. Route alone answered "is this pin mine?" while
+   * every page was the one dev server; a capture from vercel.com has route `/`
+   * and so does every other site's homepage. See `isPinOnPage`.
+   */
+  const here = useMemo(() => ({ origin: location.origin, route }), [route]);
+  /** Against the rendered route. For callbacks that run ahead of it, see `pinIsHereNow`. */
+  const onThisPage = useCallback(
+    (pin: Pin | undefined) => (pin === undefined ? false : isPinOnPage(pin, here)),
+    [here],
+  );
+  /** Which tab this is, from the background — Chrome never tells the page. */
+  const [tabId, setTabId] = useState<number | null>(null);
   const hovered = useRef<Element | null>(null);
   const pressStartedInOurs = useRef(false);
   const captureStartedOnPress = useRef(false);
@@ -572,6 +598,23 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     const host = document.getElementById(OVERLAY_HOST_ID);
     if (host) host.style.visibility = "";
   }, [state.enabled]);
+
+  /**
+   * Ask which tab this is, once. A content script has no way to find out for
+   * itself, and `onScreenPinsKey` needs the answer before the shelf can be told
+   * anything true about what is in front of the user.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void send("tab/whoami", {})
+      .then(({ tabId: id }) => {
+        if (!cancelled && id !== null) setTabId(id);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const read = () => setRoute(routeForLocation());
@@ -763,7 +806,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    */
   const seatCardAtElement = useCallback(
     (pin: Pin): boolean => {
-      if (pin.kind !== "element" || pin.route !== routeForLocation()) return false;
+      if (pin.kind !== "element" || !pinIsHereNow(pin)) return false;
       const found = refindElement(pin);
       if (!found) return false;
       const rect = found.element.getBoundingClientRect();
@@ -781,7 +824,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
   /* ------------------------------------------------------------------ ink */
 
-  const regionPin = board?.pins.find((p) => p.kind === "region" && p.route === route) ?? null;
+  const regionPin = board?.pins.find((p) => p.kind === "region" && onThisPage(p)) ?? null;
   /*
    * Memoised, and `?? []` would not be. A fresh array literal on every render is
    * a fresh dependency, which rebuilt the measure callback, which re-ran its
@@ -964,7 +1007,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
     for (const [targetId, styles] of previews) {
       const target = board.pins.find((p) => p.id === targetId);
-      if (!target || target.route !== route) continue;
+      if (!target || !onThisPage(target)) continue;
       const found = refindElement(target);
       if (!found) continue;
       const element = found.element as HTMLElement;
@@ -1135,7 +1178,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       const nextLive: Record<string, LiveRect> = {};
       for (const pinId of liveSelected) {
         const pin = board?.pins.find((candidate) => candidate.id === pinId);
-        if (!pin || pin.kind !== "element" || pin.route !== routeForLocation()) continue;
+        if (!pin || pin.kind !== "element" || !pinIsHereNow(pin)) continue;
         const found = refindElement(pin);
         if (!found) continue;
         nextLive[pinId] = {
@@ -1399,7 +1442,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             ? related.targetPinIds.filter(
                 (targetId) =>
                   targetId === pin.id ||
-                  board?.pins.find((candidate) => candidate.id === targetId)?.route === route,
+                  onThisPage(board?.pins.find((candidate) => candidate.id === targetId)),
               )
             : [pin.id];
           const cardTargets = related
@@ -1470,7 +1513,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
      */
     const sourcePin = board?.pins.find((candidate) => candidate.id === connecting.fromPinId);
     const sourceElement =
-      sourcePin && sourcePin.route === route ? (refindElement(sourcePin)?.element ?? null) : null;
+      sourcePin && onThisPage(sourcePin) ? (refindElement(sourcePin)?.element ?? null) : null;
 
     const onMove = (event: PointerEvent) => {
       const under = document.elementFromPoint(event.clientX, event.clientY);
@@ -1521,7 +1564,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       if (!under || isOurs(under) || !isCapturablePageElement(under)) return;
       const sourcePin = board?.pins.find((candidate) => candidate.id === from);
       const sourceElement =
-        sourcePin && sourcePin.route === route ? (refindElement(sourcePin)?.element ?? null) : null;
+        sourcePin && onThisPage(sourcePin) ? (refindElement(sourcePin)?.element ?? null) : null;
       // Dropping back onto the source's own component is not a relationship.
       if (sourceElement && (under === sourceElement || sourceElement.contains(under))) return;
       void capture(under, { kind: "target", sourcePinId: from });
@@ -1978,7 +2021,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         if (!pin) continue;
         if (seatCardAtElement(pin)) continue;
         if (bag[posKey(pinId)]) continue;
-        const found = pin.route === route ? refindElement(pin) : null;
+        const found = onThisPage(pin) ? refindElement(pin) : null;
         if (!found) continue;
         const rect = found.element.getBoundingClientRect();
         const fit = Math.min(1, 260 / Math.max(1, pin.elementSize.height || 1));
@@ -2045,7 +2088,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       board.pins.some((pin) => pin.id === pinId && pin.kind === "element"),
     );
     const live = targets.filter(
-      (pinId) => board.pins.find((pin) => pin.id === pinId)?.route === route,
+      (pinId) => onThisPage(board.pins.find((pin) => pin.id === pinId)),
     );
     const cardTargets = targets.filter((pinId) => !live.includes(pinId));
     setSelected([]);
@@ -2073,7 +2116,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     );
     if (members.length === 0) return;
     const live = members.filter(
-      (pinId) => board.pins.find((pin) => pin.id === pinId)?.route === route,
+      (pinId) => onThisPage(board.pins.find((pin) => pin.id === pinId)),
     );
     pendingFocusRelationship.current = null;
     setSelected([]);
@@ -2119,9 +2162,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       return;
     }
     let cancelled = false;
-    void chrome.storage.local.get(OVERLAY_FOCUS_KEY).then((bag) => {
+    const key = overlayFocusKey(location.origin);
+    void chrome.storage.local.get(key).then((bag) => {
       if (cancelled || focusReady.current) return;
-      const snapshot = bag[OVERLAY_FOCUS_KEY] as OverlayFocusSnapshot | undefined;
+      const snapshot = bag[key] as OverlayFocusSnapshot | undefined;
       const here = overlayFocusLocation();
       if (overlayFocusRestoreDecision(snapshot, here) === "wait") return;
       const restored = applyOverlayFocusSnapshot(snapshot, board.pins, here);
@@ -2144,8 +2188,12 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * The same write keeps the focus snapshot for the next document.
    */
   useEffect(() => {
+    // Until Chrome has said which tab this is there is nowhere to file the
+    // answer. The id arrives once, early, and re-runs this.
+    if (tabId === null) return;
+    const presenceKey = onScreenPinsKey(tabId);
     if (!state.enabled) {
-      void chrome.storage.local.set({ onScreenPins: [] });
+      void chrome.storage.local.set({ [presenceKey]: [] });
       return;
     }
     if (!focusReady.current) return;
@@ -2159,14 +2207,14 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     };
     const onScreenPins = [...liveSelected, ...focusCards];
     if (!shouldPersistOverlayFocus(snapshot, focusDismissed.current)) {
-      void chrome.storage.local.set({ onScreenPins });
+      void chrome.storage.local.set({ [presenceKey]: onScreenPins });
       return;
     }
     void chrome.storage.local.set({
-      onScreenPins,
-      [OVERLAY_FOCUS_KEY]: snapshot,
+      [presenceKey]: onScreenPins,
+      [overlayFocusKey(here.origin)]: snapshot,
     });
-  }, [state.enabled, liveSelected, focusCards, selected]);
+  }, [state.enabled, liveSelected, focusCards, selected, tabId]);
 
   /* ------------------------------------------------------------ live dialog */
 
@@ -2577,9 +2625,16 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           connecting={connecting !== null}
           connectionRole={connecting?.fromPinId === pin.id ? "source" : undefined}
           awayRoute={
-            pin.route !== route
+            !onThisPage(pin)
               ? {
-                  route: pin.route,
+                  where: sourceLabel(pin),
+                  /*
+                   * A capture from a site you do not own can never update live —
+                   * there is no dev server behind it and no file to edit. The
+                   * chip still travels there, because seeing the original is
+                   * worth the trip, but it must not promise an edit.
+                   */
+                  live: isLocalUrl(pin.url),
                   onOpen: () => {
                     /*
                      * Prefer reopening the relationship that put this card on
