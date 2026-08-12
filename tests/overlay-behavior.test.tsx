@@ -395,6 +395,27 @@ test("empty focus is not persisted unless the user dismissed it", async () => {
   );
 });
 
+test("turning capture off clears the focus context and the stored snapshot", () => {
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  const clearOnOff = overlay.slice(
+    overlay.indexOf("const captureWasOn = useRef(state.enabled)"),
+    overlay.indexOf("The shelf mirrors what is on screen"),
+  );
+  // Fires only on the on->off transition, never on mount or on turning it back on.
+  assert.match(clearOnOff, /const turnedOff = captureWasOn\.current && !state\.enabled/);
+  assert.match(clearOnOff, /if \(!turnedOff\) return;/);
+  // A clean break: live selection, cards, and plain selection all clear, and the
+  // snapshot is removed so re-enabling — or a later reload — starts empty.
+  assert.match(clearOnOff, /setLiveSelected\(\[\]\)/);
+  assert.match(clearOnOff, /setFocusCards\(\[\]\)/);
+  assert.match(clearOnOff, /setSelected\(\[\]\)/);
+  assert.match(clearOnOff, /focusDismissed\.current = true/);
+  assert.match(clearOnOff, /storage\.local\.remove\(overlayFocusKey\(location\.origin\)\)/);
+  // Depends only on capture state — HMR reloads never toggle it, so a live
+  // edit's selection still survives via the snapshot.
+  assert.match(clearOnOff, /\}, \[state\.enabled\]\);/);
+});
+
 test("board refreshes prune ids and hiding a pin removes it from active flows", () => {
   const overlay = source("packages/extension/src/content/Overlay.tsx");
   const pruneEffect = overlay.slice(
@@ -415,7 +436,11 @@ test("board refreshes prune ids and hiding a pin removes it from active flows", 
   assert.match(overlay, /applyOverlayFocusSnapshot/);
   assert.match(overlay, /overlayFocusRestoreDecision\(snapshot, here\) === "wait"/);
   assert.match(overlay, /shouldPersistOverlayFocus\(snapshot, focusDismissed\.current\)/);
-  assert.match(overlay, /holdLiveRects\(previous, liveSelected, nextLive\)/);
+  // Only pins on THIS page hold a rect — an off-route selection leaves with its
+  // element instead of ghosting a stale label onto a page that reuses the same
+  // component.
+  assert.match(overlay, /holdLiveRects\(previous, hereSelected, nextLive\)/);
+  assert.match(overlay, /if \(!pin \|\| pin\.kind !== "element" \|\| !pinIsHereNow\(pin\)\) continue;\n\s*hereSelected\.push/);
   assert.match(overlay, /lastDomMutationAt\.current < 500/);
 
   const dismiss = overlay.slice(
