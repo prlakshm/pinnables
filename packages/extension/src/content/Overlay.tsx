@@ -1803,13 +1803,26 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       // Draw mode owns Escape while it is up — it has a frozen frame to discard.
       if (mode === "draw") return;
 
-      const target = event.target as Element | null;
-      const typingInOurs =
-        target instanceof Element &&
-        (target.closest(`#${OVERLAY_HOST_ID}`) !== null ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA");
-      if (typingInOurs) return;
+      /*
+       * Yield Escape to the *page's* own text fields, never to ours.
+       *
+       * The composer is where Escape matters most — it is the "clear what's on
+       * screen" gesture, and pressing it with the note focused should dismiss
+       * the whole context, cards included. It did the opposite: the overlay
+       * lives in a shadow root, so a keydown from our textarea is retargeted to
+       * the host element, which matched the `closest(host)` guard and bailed.
+       * The card was left stranded on the page while the note vanished — the one
+       * thing this handler exists to prevent. Only a field that is genuinely the
+       * page's (outside our host) gets to keep Escape for itself.
+       */
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const inPageField =
+        target !== null &&
+        target.closest(`#${OVERLAY_HOST_ID}`) === null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (inPageField) return;
 
       // Layered: drop the wire, then the focus context, then the mode, and
       // only then exit. Escape belongs to the page until we have something of

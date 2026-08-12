@@ -571,6 +571,30 @@ test("the detached multi-select composer owns selection during capture-phase poi
   );
 });
 
+test("Escape dismisses the whole focus context even from inside our own composer", () => {
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  const esc = overlay.slice(
+    overlay.indexOf("/* -------------------------------------------------------------- esc layer */"),
+    overlay.indexOf("/* --------------------------------------------------------- reveal a pin */"),
+  );
+
+  // Only the page's OWN fields keep Escape — recognised by being outside our
+  // host. Our composer (inside the host) must fall through to the dismissal.
+  assert.match(esc, /closest\(`#\$\{OVERLAY_HOST_ID\}`\) === null/);
+  assert.doesNotMatch(esc, /closest\(`#\$\{OVERLAY_HOST_ID\}`\) !== null/);
+
+  // The stranded-card bug: one Escape clears live selection, cards, and the
+  // plain selection together — the note and the vercel capture leave as one.
+  const contextBranch = esc.slice(
+    esc.indexOf("liveSelected.length > 0 || focusCards.length > 0"),
+    esc.indexOf("mode === \"browse\""),
+  );
+  assert.match(contextBranch, /setLiveSelected\(\[\]\)/);
+  assert.match(contextBranch, /setFocusCards\(\[\]\)/);
+  assert.match(contextBranch, /setSelected\(\[\]\)/);
+  assert.match(contextBranch, /focusDismissed\.current = true/);
+});
+
 test("region reveal scrolls to and frames the live union of its marks", async () => {
   const geometry = await import("../packages/extension/src/content/overlay-geometry.ts").catch(
     () => null,
@@ -622,6 +646,56 @@ test("relationship connections stay neutral and leave red to destructive or auth
   assert.match(anchors, /background:\s*var\(--pin-ink\)/);
   assert.match(anchors, /background:\s*var\(--pin-ink-lift\)/);
   assert.doesNotMatch(anchors, /var\(--pin-red/);
+});
+
+function renderCard(pin: Pin, extra: Partial<React.ComponentProps<typeof PinObject>> = {}) {
+  return renderToStaticMarkup(
+    <PinObject
+      pin={pin}
+      board={{ ...relationshipBoard(pin, elementPin("other")), pins: [pin], relationships: [] }}
+      position={{ x: 20, y: 20 }}
+      pulse={false}
+      selected
+      primary={false}
+      selectionCount={1}
+      connecting={false}
+      onSelect={() => {}}
+      onMove={() => {}}
+      onMoveEnd={() => {}}
+      onDismiss={() => {}}
+      onCommit={async () => {}}
+      onRelate={() => {}}
+      onAnchorDown={() => {}}
+      onAnchorKeyboardActivate={() => {}}
+      onAnchorEnter={() => {}}
+      onAnchorLeave={() => {}}
+      {...extra}
+    />,
+  );
+}
+
+/*
+ * The bug: a reference card is imported precisely so it can be matched to a live
+ * component on the page you are standing on, but the anchor stayed hidden until
+ * a *second* pin already existed — so the one thing the card is for, connecting
+ * a lone import to the component you imported it to compare against, was
+ * impossible.
+ */
+test("a lone reference card still offers its connector, because the live page is the target", () => {
+  const refPin = elementPin("source");
+
+  const asReference = renderCard(refPin, {
+    awayRoute: { where: "vercel.com", live: false, onOpen: () => {} },
+  });
+  assert.match(asReference, /<button[^>]*class="pin-anchor"[^>]*aria-label="Start relationship from SourceCard"/);
+  // The honest chip for a page you do not own: a reference, not an editable target.
+  assert.match(asReference, /captured from vercel.com/);
+  assert.doesNotMatch(asReference, /for live updates/);
+
+  // Same lone pin, but native to this page — no second pin, nothing to connect
+  // to, so the old restraint still holds and no anchor is offered.
+  const asNative = renderCard(refPin);
+  assert.doesNotMatch(asNative, /class="pin-anchor"/);
 });
 
 test("floating pin selection and connector anchors expose keyboard semantics", () => {

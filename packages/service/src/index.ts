@@ -734,7 +734,7 @@ server.listen(PORT, HOST, () => {
   if (cursorConfigured()) {
     const runtime = cursorRuntime();
     if (runtime === "local") {
-      console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
+      console.log(`Cursor local agent: edits ${projectDir()} (grok-4.5, no screenshot vision)`);
     } else {
       console.log("Cursor Cloud Agents: configured (Send will push to remote)");
     }
