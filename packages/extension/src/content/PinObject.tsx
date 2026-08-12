@@ -451,12 +451,12 @@ export function PinObject({
             }
             aria-label={
               awayRoute.live
-                ? `Go to ${awayRoute.where} for live updates`
+                ? `Go to ${awayRoute.where}`
                 : `Open ${awayRoute.where}, where this was captured`
             }
           >
             {awayRoute.live
-              ? `go to ${awayRoute.where} for live updates ↗`
+              ? `go to ${awayRoute.where} ↗`
               : `captured from ${awayRoute.where} ↗`}
           </button>
         )}
