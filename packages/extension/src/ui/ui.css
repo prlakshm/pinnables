@@ -1135,6 +1135,23 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   width: 0;
   min-width: 100%;
 }
+/*
+ * A docked composer needs room to read, even under a narrow card.
+ *
+ * The card is the size of its component — a stat chip or an icon leaves the
+ * composer barely wide enough to show a word before the shortcut, so its
+ * placeholder truncated to "Describe a c". Raise the *object's* floor, not the
+ * card's: the card stays flex-start at its own width (above) and the composer,
+ * pinned to 100% of the object, stretches out to a legible line. Scoped to a
+ * real composer so a collapsed note pill never inflates into a wide box.
+ *
+ * The floor is 316px — 130% of the ~243px card the composer felt cramped under
+ * (a 4-up grid card: (1040 - 3*22) / 4). One fixed, comfortable width to type
+ * in, the same under every capture. Capped at the viewport for a narrow window.
+ */
+.pin-object:has(> .pin-note:not(.pin-note--collapsed)) {
+  min-width: min(316px, calc(100vw - 8px));
+}
 
 /* The component supplies its own edge. Pinnables only adds an outside glow
    while selected; painting another permanent outline over the screenshot turns

@@ -1176,9 +1176,22 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
        * disagree about where the element is mid-scroll.
        */
       const nextLive: Record<string, LiveRect> = {};
+      /*
+       * Only pins on this exact page get a live rect held.
+       *
+       * A held rect is what lets an outline survive a transient measure miss
+       * mid-scroll or across a hot-reload's DOM swap. But a pin selected on
+       * another route is not a transient miss — its element is genuinely gone —
+       * so holding its last rect painted a stale ghost label on the wrong page
+       * (a component that only matched because the new page reuses the same one).
+       * Off-route selections keep their rect out of the held set, so the outline
+       * and its label simply leave with the element.
+       */
+      const hereSelected: string[] = [];
       for (const pinId of liveSelected) {
         const pin = board?.pins.find((candidate) => candidate.id === pinId);
         if (!pin || pin.kind !== "element" || !pinIsHereNow(pin)) continue;
+        hereSelected.push(pinId);
         const found = refindElement(pin);
         if (!found) continue;
         nextLive[pinId] = {
@@ -1187,7 +1200,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           label: pinLabel(pin, board?.pins ?? []),
         };
       }
-      setLiveRects((previous) => holdLiveRects(previous, liveSelected, nextLive));
+      setLiveRects((previous) => holdLiveRects(previous, hereSelected, nextLive));
     };
     measure();
     const frame = requestAnimationFrame(measure);
@@ -2194,6 +2207,34 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       cancelled = true;
     };
   }, [state.enabled, board, route, liveSelected.length, focusCards.length, selected.length]);
+
+  /**
+   * Turning capture off is a clean break.
+   *
+   * The overlay stays mounted while capture is off — it just renders nothing —
+   * so a live selection left in state used to sit there through the toggle and
+   * a hash navigation, then reappear the moment capture came back on, stranded
+   * on whatever page and element it now happened to match. Clearing on the way
+   * out means turning capture back on always starts empty: a stashed pin waits
+   * on the shelf and returns with its pin icon; an unstashed one was already
+   * discarded. The stored snapshot goes too, so a later reload starts empty.
+   *
+   * HMR reloads never come through here — a live edit keeps capture on — so the
+   * selection a designer is mid-edit on still survives, restored from the
+   * snapshot that only an explicit toggle-off clears.
+   */
+  const captureWasOn = useRef(state.enabled);
+  useEffect(() => {
+    const turnedOff = captureWasOn.current && !state.enabled;
+    captureWasOn.current = state.enabled;
+    if (!turnedOff) return;
+    focusDismissed.current = true;
+    pendingFocusRelationship.current = null;
+    setSelected([]);
+    setLiveSelected([]);
+    setFocusCards([]);
+    void chrome.storage.local.remove(overlayFocusKey(location.origin)).catch(() => {});
+  }, [state.enabled]);
 
   /**
    * The shelf mirrors what is on screen: pin ids in the focus context are
