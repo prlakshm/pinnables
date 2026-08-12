@@ -111,13 +111,29 @@ export function placeFloatingPinBeside(
   );
 }
 
-/** Center a group composer under its selection without clipping narrow views. */
+/**
+ * The annotation bar is one width, everywhere: 380px.
+ *
+ * It was briefly sized from the selection, so a bar under a small card came out
+ * small. That reads tidier in a screenshot and worse in use — the box is where
+ * you write a sentence, and how wide the component happens to be says nothing
+ * about how much room that sentence needs. A single width also means the bar
+ * never resizes as the selection moves between components, so it stays a fixed
+ * place on screen to type into.
+ *
+ * 380 comfortably clears the placeholder ("Describe a change or stash for
+ * later", 216.2px at 13px SF Pro, plus 126px of padding, ⌘↵ chip and send
+ * button — 342 total), with headroom for stacks whose metrics run wider than
+ * SF Pro. It narrows only when the viewport genuinely cannot fit it.
+ */
+export const COMPOSER_WIDTH = 380;
+
 export function placeGroupComposer(
   group: { left: number; right: number; bottom: number },
   viewport: ViewportSize,
 ): GroupComposerPlacement {
   const gutter = 12;
-  const width = Math.max(0, Math.min(380, viewport.width - gutter * 2));
+  const width = Math.max(0, Math.min(COMPOSER_WIDTH, viewport.width - gutter * 2));
   const centered = (group.left + group.right) / 2 - width / 2;
   return {
     x: clampAxis(centered, gutter, viewport.width - gutter - width),

@@ -133,6 +133,8 @@ test("drag clamping accounts for an absolute label above the floating card", asy
 test("the multi-pin composer fits narrow review viewports without a negative origin", async () => {
   const geometry = await import("../packages/extension/src/content/overlay-geometry.ts");
 
+  // Narrower than the bar plus both gutters: it takes all the room there is
+  // rather than overflowing.
   assert.deepEqual(
     geometry.placeGroupComposer(
       { left: 24, right: 336, bottom: 180 },
@@ -140,12 +142,38 @@ test("the multi-pin composer fits narrow review viewports without a negative ori
     ),
     { x: 12, y: 192, width: 336 },
   );
+  // Otherwise it is always the full width, centred under the selection.
   assert.deepEqual(
     geometry.placeGroupComposer(
       { left: 100, right: 700, bottom: 520 },
       { width: 900, height: 700 },
     ),
     { x: 210, y: 532, width: 380 },
+  );
+});
+
+/*
+ * One width, everywhere. Sizing the bar from the selection made a box under a
+ * small card too small to write in — how wide a component is says nothing about
+ * how long a sentence about it needs to be.
+ */
+test("the annotation bar is one width regardless of what it is annotating", async () => {
+  const geometry = await import("../packages/extension/src/content/overlay-geometry.ts");
+  const viewport = { width: 1512, height: 900 };
+  const widthFor = (left: number, right: number) =>
+    geometry.placeGroupComposer({ left, right, bottom: 400 }, viewport).width;
+
+  assert.equal(geometry.COMPOSER_WIDTH, 380);
+  // A 244px catalogue card, a 320px component and a 800px section all agree.
+  assert.equal(widthFor(335, 579), 380);
+  assert.equal(widthFor(100, 420), 380);
+  assert.equal(widthFor(100, 900), 380);
+
+  // It yields only to a viewport that genuinely cannot fit it.
+  assert.equal(
+    geometry.placeGroupComposer({ left: 8, right: 60, bottom: 100 }, { width: 200, height: 400 })
+      .width,
+    176,
   );
 });
 
