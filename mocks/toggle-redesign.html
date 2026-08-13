@@ -232,17 +232,18 @@ body {
   background: var(--pin-paper);
 }
 /*
+ * No ring on the selected card. The glow sat 3px outside the component's own
+ * border and made its real edge impossible to judge — which is the one thing
+ * you are here to look at. The pin is already unmistakable without it: only
+ * the live one carries an identity plate and a composer.
+ *
  * Deselected, the pin is just the component standing there. Everything that
- * lets you act on it — the identity plate, the composer, the version rail —
- * belongs to the selection, and leaves with it.
+ * lets you act on it — the plate, the composer, the rail — belongs to the
+ * selection and leaves with it.
  */
 .pin-object:not([data-selected="true"]) .pin-object__label,
 .pin-object:not([data-selected="true"]) .pin-note { display: none; }
 .pin-object:not([data-selected="true"]) .pin-object__card { cursor: pointer; }
-
-.pin-object[data-selected="true"] .pin-object__card {
-  box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
-}
 
 .pin-object__label {
   position: absolute;
@@ -488,21 +489,21 @@ body {
  * No identity plate and no composer: it sits next to the thing it came from,
  * so its name would only repeat what you can already see. The rail under it is
  * the whole of what it needs to say, which is also what distinguishes it at a
- * glance from the live component — that one has a plate, a composer and the
- * selection glow, and this has none of them.
+ * glance from the live component — that one has a plate and a composer, and
+ * this has neither.
  */
 .pin-capture {
   position: absolute;
   z-index: 4;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
 }
+/*
+ * A capture's rail is not welded to its card. It starts in the same seat the
+ * main rail takes — right edge, sitting on the bottom — and is seated by the
+ * same routine, which means it walks the same ring when the card is pushed
+ * against a screen edge, and stays put once dragged.
+ */
 .pin-capture .variety { cursor: grab; }
 .pin-capture[data-moving="true"] .variety { cursor: grabbing; }
-/* The capture's rail rides under it rather than floating free. */
-.pin-versions--own { position: static; }
 
 /* The key being carried. The one left behind stays in place but recedes, so
    the row does not reflow mid-drag and you can still see where it came from. */
@@ -513,10 +514,22 @@ body {
   pointer-events: none;
   box-shadow: var(--pin-shadow-lg);
 }
-/* A rail that will take the key if you let go here. */
-.pin-versions[data-drop="true"] {
-  box-shadow: 0 0 0 2px var(--pin-ink), var(--pin-shadow-lg);
+/*
+ * Where the key will land, opened in its own numeric place. It says which rail
+ * and which seat at once, which a ring around the whole pill cannot.
+ */
+.pin-key--slot {
+  background: transparent;
+  border: 1px solid var(--pin-rule-strong);
+  cursor: default;
+  pointer-events: none;
 }
+/*
+ * No ring on a receiving rail, whatever is arriving. A whole rail coming in
+ * opens one placeholder per key it carries, so the target says how many are
+ * about to land and where each one sits — which a border round the pill can
+ * never do.
+ */
 
 /* ------------------------------------------------------- the history */
 /*
@@ -1046,19 +1059,56 @@ body {
     ghost.style.maxWidth = "none";
     document.body.appendChild(ghost);
     el.dataset.dragging = "true";
-    drag = { o: o, from: railId, ghost: ghost, dx: ev.clientX - box.left, dy: ev.clientY - box.top };
+    drag = {
+      o: o, from: railId, ghost: ghost, carrying: [o],
+      dx: ev.clientX - box.left, dy: ev.clientY - box.top
+    };
     dragTo(ev);
+  }
+
+  function clearSlots() {
+    document.querySelectorAll(".pin-key--slot").forEach(function (n) { n.remove(); });
+  }
+
+  /*
+   * Opened in the seat the key would actually take, found by number, so the
+   * rail shows where it is going and not merely that it will take it.
+   */
+  function openSlots(railEl, versions) {
+    clearSlots();
+    if (!railEl || !versions.length) return;
+    versions.forEach(function (o) {
+      var slot = document.createElement("span");
+      slot.className = "pin-key pin-key--slot";
+      var after = null;
+      railEl.querySelectorAll(".pin-key").forEach(function (k) {
+        if (after || !k.dataset.key) return;
+        var v = byId(k.dataset.key);
+        if (v && v.no > o.no) after = k;
+      });
+      railEl.insertBefore(slot, after);
+      /* Grown rather than popped, on the same transition every key uses. */
+      slot.dataset.entering = "true";
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { slot.dataset.entering = "false"; });
+      });
+      window.setTimeout(function () { slot.dataset.entering = "false"; }, 60);
+    });
   }
 
   function dragTo(ev) {
     if (!drag) return;
     drag.ghost.style.left = (ev.clientX - drag.dx) + "px";
     drag.ghost.style.top = (ev.clientY - drag.dy) + "px";
-    /* Light the rail that would take it, so the drop is never a guess. */
+
     var over = railUnder(ev);
-    document.querySelectorAll(".pin-versions").forEach(function (r) {
-      r.dataset.drop = (over && r === over && r.dataset.rail !== drag.from) ? "true" : "false";
-    });
+    var target = (over && over.dataset.rail !== drag.from) ? over : null;
+
+    if (target !== drag.slotIn) {
+      drag.slotIn = target;
+      if (target) openSlots(target, drag.carrying);
+      else clearSlots();
+    }
   }
 
   function railUnder(ev) {
@@ -1068,6 +1118,7 @@ body {
 
   /* Whatever happens, no ghost survives the gesture that made it. */
   function sweepGhosts() {
+    clearSlots();
     document.querySelectorAll("body > .pin-key--ghost").forEach(function (g) { g.remove(); });
     document.querySelectorAll(".pin-versions").forEach(function (r) { r.dataset.drop = "false"; });
     document.querySelectorAll('.pin-key[data-dragging="true"]').forEach(function (k) {
@@ -1142,6 +1193,108 @@ body {
     r.current = o.id;
   }
 
+  /*
+   * Merging always deletes a secondary rail, whichever way it was dragged.
+   * The main rail is the remainder, so keys returning to it need no move — the
+   * secondary simply ceases to hold them. The target keeps the version it was
+   * already showing, because the target is the thing that stays.
+   */
+  function absorb(sourceRail, targetRailId) {
+    if (!sourceRail) return;
+    if (targetRailId !== "main") {
+      var t = railById(targetRailId);
+      if (!t) return;
+      sourceRail.keys.forEach(function (id) {
+        if (t.keys.indexOf(id) === -1) t.keys.push(id);
+      });
+    }
+    state.rails = state.rails.filter(function (r) { return r.id !== sourceRail.id; });
+  }
+
+  /*
+   * Carrying a rail rather than a key. Dropped on another rail the two combine;
+   * dropped anywhere else the capture simply moves. The primary can never be
+   * absorbed, so dragging it onto a secondary reverses the merge and brings
+   * that capture home instead — the gesture always resolves toward the rail
+   * that cannot disappear.
+   */
+  function railDown(e, railId, wrap, r) {
+    if (e.button !== 0 || state.busy) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    var host = $("stage").getBoundingClientRect();
+    var railEl = railId === "main"
+      ? menu
+      : document.querySelector('.pin-versions[data-rail="' + railId + '"]');
+    if (!railEl) return;
+    var box = railEl.getBoundingClientRect();
+    var dx = e.clientX - box.left, dy = e.clientY - box.top;
+    var moved = false;
+    /* Everything this rail is carrying, so the target can show a seat for each. */
+    var cargo = railId === "main" ? railOrder() : keysOf(r);
+    drag = { whole: true, from: railId, o: null, slotIn: null, carrying: cargo };
+
+    /*
+     * The thing being carried travels under the cursor, so it is the first
+     * thing elementFromPoint finds — and the rail you are aiming at is never
+     * seen. Made transparent to hit-testing for the length of the drag, the
+     * way the key's ghost already is.
+     */
+    var restore = railEl.style.pointerEvents;
+    railEl.style.pointerEvents = "none";
+
+    function move(ev) {
+      moved = true;
+      var over = railUnder(ev);
+      var target = (over && over.dataset.rail !== railId) ? over : null;
+
+      /* One placeholder per key on its way in, each in its own numeric seat.
+         A ring around the pill would say which rail but never how many. */
+      if (target !== drag.slotIn) {
+        drag.slotIn = target;
+        if (target) openSlots(target, cargo);
+        else clearSlots();
+      }
+
+      /* The rail moves on its own. It is not welded to its card. */
+      var at = { x: ev.clientX - dx - host.left, y: ev.clientY - dy - host.top };
+      if (railId === "main") state.railPos = at;
+      else r.railPos = at;
+      railEl.style.left = at.x + "px";
+      railEl.style.top = at.y + "px";
+      railEl.dataset.placed = "moved";
+    }
+
+    function finish(ev, commit) {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancelled);
+
+      /* Read the drop while the carried rail is still transparent. Restoring
+         first put it back under the cursor and it answered for itself. */
+      var over = commit && moved ? railUnder(ev) : null;
+
+      railEl.style.pointerEvents = restore;
+      drag = null;
+      clearSlots();
+
+      if (!commit || !moved) { render(); return; }
+      var to = over ? over.dataset.rail : null;
+      if (!to || to === railId) { render(); return; }
+
+      if (railId === "main") absorb(railById(to), "main");
+      else absorb(r, to);
+      render();
+    }
+    function up(ev) { finish(ev, true); }
+    function cancelled(ev) { finish(ev, false); }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancelled);
+  }
+
   function layDown(o, fromRailId, x, y) {
     detach(o, fromRailId);
     state.railSeq += 1;
@@ -1149,7 +1302,9 @@ body {
       id: "r" + state.railSeq,
       keys: [o.id],
       current: o.id,
-      pos: { x: Math.max(4, x), y: Math.max(4, y) }
+      pos: { x: Math.max(4, x), y: Math.max(4, y) },
+      /* Null until dragged, exactly like the main rail's. */
+      railPos: null
     });
   }
 
@@ -1173,10 +1328,11 @@ body {
       menu.hidden = false;
 
       menu.dataset.rail = "main";
-      fillRail(menu, railOrder(), "main", startDrag);
+      fillRail(menu, railOrder(), "main", function (e) { railDown(e, "main", null, null); });
     });
-    if (!menu.hidden) place();
+    /* Captures first: place() seats their rails too, so they have to exist. */
     renderCaptures();
+    if (!menu.hidden) place();
   }
 
   /* Every rail is furnished the same way: a grip, the modifier, the keys. A
@@ -1214,7 +1370,7 @@ body {
 
   function renderCaptures() {
     var stage = $("stage");
-    stage.querySelectorAll(".pin-capture").forEach(function (n) { n.remove(); });
+    stage.querySelectorAll(".pin-capture, .pin-versions--own").forEach(function (n) { n.remove(); });
     if (!state.selected) return;
 
     state.rails.forEach(function (r) {
@@ -1223,6 +1379,7 @@ body {
 
       var wrap = document.createElement("div");
       wrap.className = "pin-capture";
+      wrap.dataset.cap = r.id;
       wrap.style.left = r.pos.x + "px";
       wrap.style.top = r.pos.y + "px";
 
@@ -1231,23 +1388,29 @@ body {
       applyLook(shot, o.style);
       wrap.appendChild(shot);
 
+      /* The card only ever moves the capture. Dropping one next to another can
+         never swallow it, because merging is the rail's gesture, not the
+         card's. */
+      wrap.addEventListener("pointerdown", function (e) {
+        var el = e.target instanceof Element ? e.target : null;
+        if (el && el.closest(".pin-key, .pin-versions")) return;
+        moveCapture(e, r, wrap);
+      });
+      stage.appendChild(wrap);
+
+      /* A sibling, not a child — it has a position of its own. */
       var rail = document.createElement("div");
       rail.className = "pin-versions pin-versions--own";
       rail.dataset.rail = r.id;
       rail.setAttribute("role", "group");
       rail.setAttribute("aria-label", "Versions set down beside the component");
-      fillRail(rail, keysOf(r), r.id, function () {});
-      wrap.appendChild(rail);
-
-      /* Anywhere on the capture picks it up — the card, the grip, the pill
-         around the keys. Only a key itself opts out, because a key has its own
-         job. Card and rail move together because they are one object. */
-      wrap.addEventListener("pointerdown", function (e) {
-        if (e.target instanceof Element && e.target.closest(".pin-key")) return;
-        moveCapture(e, r, wrap);
+      fillRail(rail, keysOf(r), r.id, function (e) { railDown(e, r.id, null, r); });
+      rail.addEventListener("pointerdown", function (e) {
+        var el = e.target instanceof Element ? e.target : null;
+        if (el && el.closest(".pin-key")) return;
+        railDown(e, r.id, null, r);
       });
-
-      stage.appendChild(wrap);
+      stage.appendChild(rail);
     });
   }
 
@@ -1375,95 +1538,67 @@ body {
    * Note-right is omitted — docked under a card the note is the card's width.
    */
   /*
-   * Dragging is a takeover, not a nudge: once the rail has been put somewhere
-   * by hand, auto-placement stops second-guessing it. Anything else means the
-   * rail springs back the next time a take lands, which reads as a bug.
+   * One routine seats every rail, the main one and each capture's alike.
+   *
+   * A rail that has been dragged has a position of its own and only gets
+   * clamped. One that has not walks a ring around its card — right edge on the
+   * bottom, then underneath right-aligned, then the left edge — so a component
+   * pushed against a screen edge takes its rail round with it instead of
+   * letting it be cut off.
    */
-  function startDrag(e) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
+  function seatRail(el, cardEl, manual, footEl) {
+    if (!el || el.hidden) return manual;
     var host = $("stage").getBoundingClientRect();
-    var box = menu.getBoundingClientRect();
-    var grab = { x: e.clientX - box.left, y: e.clientY - box.top };
-    menu.dataset.dragging = "true";
-    e.currentTarget.setPointerCapture(e.pointerId);
+    var w = el.offsetWidth || 140;
+    var h = el.offsetHeight || 27;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var x, y, chosen;
 
-    function move(ev) {
-      var w = menu.offsetWidth, h = menu.offsetHeight;
-      var x = Math.max(4, Math.min(ev.clientX - grab.x, window.innerWidth - w - 4));
-      var y = Math.max(4, Math.min(ev.clientY - grab.y, window.innerHeight - h - 4));
-      state.railPos = { x: x - host.left, y: y - host.top };
-      menu.style.left = state.railPos.x + "px";
-      menu.style.top = state.railPos.y + "px";
+    if (manual) {
+      x = Math.max(4, Math.min(manual.x + host.left, vw - w - 4));
+      y = Math.max(4, Math.min(manual.y + host.top, vh - h - 4));
+      chosen = "moved";
+    } else {
+      var cardBox = cardEl.getBoundingClientRect();
+      /* The foot is whatever the rail must clear when it drops underneath —
+         the composer for the live pin, the card itself for a capture. */
+      var footBox = (footEl || cardEl).getBoundingClientRect();
+      var gap = 10;
+      var spots = {
+        "card-right": { x: cardBox.right + gap, y: cardBox.bottom - h },
+        "below": { x: cardBox.right - w, y: footBox.bottom + gap },
+        "card-left": { x: cardBox.left - gap - w, y: cardBox.bottom - h }
+      };
+      function fits(where) {
+        var s = spots[where];
+        return s.x > 4 && s.x + w < vw - 4 && s.y > 4 && s.y + h < vh - 4;
+      }
+      var order = ["card-right", "below", "card-left"];
+      chosen = order.find(fits) || order[order.length - 1];
+      var at = spots[chosen];
+      /* Clamped as a last resort, so it is crowded rather than gone. */
+      x = Math.max(4, Math.min(at.x, vw - w - 4));
+      y = Math.max(4, Math.min(at.y, vh - h - 4));
     }
-    function up(ev) {
-      menu.dataset.dragging = "false";
-      try { e.currentTarget.releasePointerCapture(ev.pointerId); } catch (err) {}
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    }
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+
+    el.style.left = (x - host.left) + "px";
+    el.style.top = (y - host.top) + "px";
+    el.dataset.placed = chosen;
+    return { x: x - host.left, y: y - host.top };
   }
 
   function place() {
     if (menu.hidden) return;
-
-    /* Put by hand, so it stays where it was put. Only clamped, never moved. */
-    if (state.railPos) {
-      var hostBox = $("stage").getBoundingClientRect();
-      var mw = menu.offsetWidth, mh = menu.offsetHeight;
-      var cx = Math.max(4, Math.min(state.railPos.x + hostBox.left, window.innerWidth - mw - 4));
-      var cy = Math.max(4, Math.min(state.railPos.y + hostBox.top, window.innerHeight - mh - 4));
-      state.railPos = { x: cx - hostBox.left, y: cy - hostBox.top };
-      menu.style.left = state.railPos.x + "px";
-      menu.style.top = state.railPos.y + "px";
-      menu.dataset.placed = "moved";
-      return;
-    }
-
-    /*
-     * A ring around the pin, tried in order: the card's right edge sitting on
-     * its bottom, then under the whole object and right-aligned, then the left
-     * edge. Pushing the component into a corner walks the rail round it rather
-     * than letting it hang off the screen.
-     */
-    var host = $("stage").getBoundingClientRect();
-    var cardBox = card.getBoundingClientRect();
-    var objBox = $("obj").getBoundingClientRect();
-    var w = menu.offsetWidth || 140;
-    var h = menu.offsetHeight || 27;
-    var gap = 10;
-    var vw = window.innerWidth, vh = window.innerHeight;
-
-    var spots = {
-      "card-right": { x: cardBox.right + gap, y: cardBox.bottom - h },
-      /* Right-aligned to the card, not the object: the note is wider than the
-         card, so aligning to it pushed this tier off-screen exactly when it was
-         needed. Dropped below the whole object so it clears the composer. */
-      "below": { x: cardBox.right - w, y: objBox.bottom + gap },
-      "card-left": { x: cardBox.left - gap - w, y: cardBox.bottom - h }
-    };
-
-    function fits(where) {
-      var s = spots[where];
-      return s.x > 4 && s.x + w < vw - 4 && s.y > 4 && s.y + h < vh - 4;
-    }
-
-    var order = ["card-right", "below", "card-left"];
-    var chosen = order.find(fits) || order[order.length - 1];
-    var at = spots[chosen];
-
-    /* Clamped as a last resort, so it is crowded rather than gone. */
-    var x = Math.max(4, Math.min(at.x, vw - w - 4));
-    var y = Math.max(4, Math.min(at.y, vh - h - 4));
-
-    menu.style.left = (x - host.left) + "px";
-    menu.style.top = (y - host.top) + "px";
-    menu.dataset.placed = chosen;
+    var got = seatRail(menu, card, state.railPos, $("obj"));
+    if (state.railPos) state.railPos = got;
+    /* Captures are seated by the same routine, from their own cards. */
+    state.rails.forEach(function (r) {
+      var el = document.querySelector('.pin-versions[data-rail="' + r.id + '"]');
+      var shot = document.querySelector('.pin-capture[data-cap="' + r.id + '"] .variety');
+      if (!el || !shot) return;
+      var seated = seatRail(el, shot, r.railPos, null);
+      if (r.railPos) r.railPos = seated;
+    });
   }
 
   function announce() {
