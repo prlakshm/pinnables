@@ -177,6 +177,28 @@ test("the annotation bar is one width regardless of what it is annotating", asyn
   );
 });
 
+/*
+ * The bug: the press that starts a drag also started a text selection, so
+ * hauling a card left its own name and source path streaked in selection blue.
+ */
+test("a card is grabbable without its label becoming selected text", () => {
+  const css = source("packages/extension/src/ui/ui.css");
+  const objectRule = css.slice(css.indexOf(".pin-object {"), css.indexOf(".pin-object:active"));
+
+  // The object is something you pick up, so it opts out of selection entirely.
+  assert.match(objectRule, /user-select:\s*none/);
+  assert.match(objectRule, /-webkit-user-select:\s*none/);
+  assert.match(objectRule, /cursor:\s*grab/);
+
+  // The note opts back in: it is data-no-drag, so a selection there can never
+  // be fighting a drag, and it holds a sentence worth copying.
+  const noteRule = css.slice(
+    css.indexOf(".pin-object .pin-note {"),
+    css.indexOf(".pin-object .pin-note {") + 160,
+  );
+  assert.match(noteRule, /user-select:\s*text/);
+});
+
 test("the selected identity label is taken out of flow so selection cannot move the card", () => {
   const css = source("packages/extension/src/ui/ui.css");
   const labelRule = css.slice(
@@ -741,9 +763,12 @@ test("a lone reference card still offers its connector, because the live page is
     awayRoute: { where: "vercel.com", live: false, onOpen: () => {} },
   });
   assert.match(asReference, /<button[^>]*class="pin-anchor"[^>]*aria-label="Start relationship from SourceCard"/);
-  // The honest chip for a page you do not own: a reference, not an editable target.
-  assert.match(asReference, /captured from vercel.com/);
+  // One label for both cases: the chip states its action, not its provenance.
+  // The reference-vs-editable distinction lives in the tooltip instead.
+  assert.match(asReference, /go to vercel\.com ↗/);
+  assert.doesNotMatch(asReference, /captured from/);
   assert.doesNotMatch(asReference, /for live updates/);
+  assert.match(asReference, /not a page your agent can edit/);
 
   // Same lone pin, but native to this page — no second pin, nothing to connect
   // to, so the old restraint still holds and no anchor is offered.
