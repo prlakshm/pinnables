@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pinnables · two takes</title>
+<style>
+/*
+ * Two interaction ideas, one real card.
+ *
+ * The card is lifted verbatim from fixtures/film-set/index.html — the same
+ * VarietyCard (ACC 0612, Rose) the extension pins in the demo. Tokens are the
+ * Accession set plus --pin-* from packages/extension/src/ui/ui.css.
+ *
+ * Idea A — ⌥↩ next to stash. Opt-in takes. No rail. Hold the card for original.
+ * Idea B — keycaps on Done. Every completed send stays; Done becomes a keycap.
+ *
+ * Light only. The page it overlays is paper by construction.
+ */
+
+/* ------------------------------------------------ accession (the set) */
+:root {
+  --paper: #ffffff;
+  --sheet: #f6f3ea;
+  --sheet-deep: #efeadb;
+  --rule: #e2ddcd;
+  --ink: #1b1a15;
+  --ink-soft: #6d6857;
+  --ink-faint: #a49d88;
+  --green: #1d4a3a;
+  --green-wash: #e9efe9;
+  --stamp: #a33726;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* ------------------------------------------ pinnables (the overlay) */
+  --pin-white: #ffffff;
+  --pin-grey-50: #f6f5f3;
+  --pin-grey-100: #efeeec;
+  --pin-grey-150: #e4e2de;
+  --pin-grey-200: #d3d2ce;
+  --pin-grey-400: #a1a4ab;
+  --pin-grey-500: #6b6f78;
+  --pin-grey-600: #454b55;
+  --pin-grey-900: #292c33;
+  --pin-red-400: #f4564b;
+  --pin-red-500: #ed1c24;
+
+  --pin-paper: var(--pin-white);
+  --pin-paper-soft: var(--pin-grey-50);
+  --pin-paper-sunk: var(--pin-grey-100);
+  --pin-rule: var(--pin-grey-150);
+  --pin-rule-strong: var(--pin-grey-200);
+  --pin-ink-faint: var(--pin-grey-400);
+  --pin-ink-muted: var(--pin-grey-500);
+  --pin-ink: var(--pin-grey-900);
+  --pin-ink-lift: var(--pin-grey-600);
+  --pin-off: var(--pin-grey-100);
+  --pin-off-hover: var(--pin-grey-150);
+  --pin-on-fill: var(--pin-ink);
+  --pin-on-ink: var(--pin-paper);
+  --pin-red: var(--pin-red-500);
+  --pin-red-ink: #b3151b;
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, #ffffff);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-400) 30%, transparent);
+
+  --pin-label-gap: 3px;
+  --pin-radius-sm: 6px;
+  --pin-radius: 10px;
+  --pin-radius-lg: 16px;
+  --pin-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --pin-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 12px rgba(9, 9, 11, 0.08);
+  --pin-shadow-lg: 0 1px 2px rgba(9, 9, 11, 0.08), 0 8px 28px rgba(9, 9, 11, 0.12);
+
+  --beat: 260ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px 128px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------- page chrome */
+
+.mast {
+  text-align: center;
+  margin: 0 0 48px;
+}
+.mast h1 {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
+}
+.mast p {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--pin-paper-sunk);
+  border: 1px solid var(--pin-rule);
+}
+.seg button {
+  font-family: var(--pin-font);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: none;
+  background: transparent;
+  color: var(--pin-ink-muted);
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: background 120ms ease, color 120ms ease;
+}
+.seg button[data-on="true"] {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+.seg button:hover:not([data-on="true"]) { color: var(--pin-ink); }
+.seg button:focus-visible { outline: 2px solid var(--pin-ink); outline-offset: 2px; }
+
+.foot {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 16px 18px 18px;
+  text-align: center;
+  background: linear-gradient(to top, var(--paper) 70%, transparent);
+}
+.foot p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+.foot button {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.foot button:hover { color: var(--ink-soft); }
+.foot button[hidden] { display: none; }
+
+.stage { position: relative; }
+
+/* ------------------------------------------------------ the rose card */
+/* Verbatim from the film set, so what the chrome sits on is the real thing. */
+
+.plate {
+  background: var(--sheet);
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 4;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.plate svg { width: 62%; height: 62%; }
+.plate .acc {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.card-name { font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; margin: 14px 0 1px; }
+.card-latin { font-style: italic; color: var(--ink-soft); font-size: 13px; margin: 0 0 12px; }
+.traits { display: flex; gap: 14px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.traits b { display: block; font-family: var(--sans); font-size: 15px; font-weight: 500; color: var(--ink); letter-spacing: 0; text-transform: none; margin-top: 2px; }
+
+.variety[data-traits="serif"] .traits {
+  font-family: var(--serif);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.variety[data-traits="serif"] .traits b {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.variety {
+  width: 244px;
+  background: var(--paper);
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid var(--rule);
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background var(--beat) var(--ease), border-color var(--beat) var(--ease),
+    border-radius var(--beat) var(--ease), padding var(--beat) var(--ease),
+    box-shadow var(--beat) var(--ease);
+}
+
+/* ------------------------------------------------------- pin: the card */
+
+.pin-object { position: relative; display: flex; flex-direction: column; width: max-content; }
+
+.pin-object__card {
+  position: relative;
+  align-self: flex-start;
+  display: flex;
+  border-radius: 14px;
+  background: var(--pin-paper);
+}
+.pin-object[data-selected="true"] .pin-object__card {
+  box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
+}
+
+.pin-object__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - var(--pin-label-gap)));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name close" "source close";
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  padding: 5px 4px 5px 11px;
+  border-radius: 8px 8px 0 0;
+  background: var(--pin-ink);
+  color: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font-family: var(--pin-font);
+}
+.pin-object__name { grid-area: name; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pin-object__src {
+  grid-area: source;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.pin-object__close {
+  grid-area: close;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.pin-object__close:hover { opacity: 1; background: rgba(255, 255, 255, 0.1); }
+
+/* iOS Photos-style original badge, parked on the plate. */
+.pin-peek {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  font-family: var(--pin-font);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #fff;
+  background: rgba(27, 26, 21, 0.72);
+  padding: 3px 8px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.pin-peek[data-on="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* ------------------------------------------------------- pin: the note */
+
+.pin-note {
+  margin-top: 8px;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-lg);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  min-width: 300px;
+  font-family: var(--pin-font);
+  color: var(--pin-ink);
+  position: relative;
+  overflow: hidden;
+}
+.pin-object > .pin-note {
+  width: 0;
+  min-width: 300px;
+}
+
+.pin-note__body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px 6px 16px;
+  position: relative;
+}
+
+.pin-note__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 0;
+  height: 26px;
+  color: var(--pin-ink);
+}
+.pin-note__input::placeholder { color: var(--pin-ink-muted); }
+
+.pin-kbd {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pin-ink-faint);
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--pin-paper-sunk);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  border: none;
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+.pin-kbd[hidden] { display: none; }
+.pin-kbd[data-on="true"] {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+button.pin-kbd {
+  cursor: pointer;
+}
+button.pin-kbd:hover:not([data-on="true"]) {
+  background: var(--pin-off-hover);
+  color: var(--pin-ink);
+}
+button.pin-kbd:focus-visible { outline: 2px solid var(--pin-ink); outline-offset: 2px; }
+
+.pin-note__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+.pin-note__send:hover { background: var(--pin-ink-lift); }
+.pin-note__send[data-idle="true"] {
+  background: var(--pin-off);
+  color: var(--pin-ink-faint);
+  cursor: default;
+}
+
+.pin-note__receipt {
+  font-size: 11px;
+  color: var(--pin-ink-muted);
+  padding: 0 16px 8px;
+  line-height: 1;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 280ms ease, max-height 280ms ease, padding 280ms ease;
+  pointer-events: none;
+}
+.pin-note__receipt[data-on="true"] {
+  opacity: 1;
+  max-height: 24px;
+  padding: 0 16px 10px;
+}
+
+/* History lives under the composer — .pin-note__history, as in the real app. */
+.pin-note__history {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.pin-note__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 16px;
+  border-top: 1px solid var(--pin-rule);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--pin-ink);
+}
+.pin-note__row:hover { background: var(--pin-paper-soft); }
+.pin-note__row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pin-note__row-meta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pin-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pin-font);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--pin-paper);
+  background: var(--pin-ink);
+  padding: 3px 8px;
+  border-radius: 999px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pin-status--quiet {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+  font-weight: 500;
+}
+.pin-dots {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.pin-dots i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .variety, .pin-peek, .pin-kbd, .pin-note__send, .pin-note__receipt, .seg button {
+    transition-duration: 1ms;
+  }
+}
+</style>
+</head>
+<body data-idea="a">
+
+<header class="mast">
+  <h1>Pinnables · two takes</h1>
+  <div class="seg" role="tablist" aria-label="Interaction idea">
+    <button type="button" role="tab" id="tabA" data-on="true" aria-selected="true">Idea A · ⌥↩ next to stash</button>
+    <button type="button" role="tab" id="tabB" data-on="false" aria-selected="false">Idea B · keycaps on Done</button>
+  </div>
+  <p id="hint">⌥↩ keeps a take. Hold the card to see original.</p>
+</header>
+
+<div class="stage" id="stage">
+  <div class="pin-object" data-selected="true" id="obj">
+
+    <div class="pin-object__card">
+      <div class="pin-object__label">
+        <span class="pin-object__name">VarietyCard</span>
+        <span class="pin-object__src">/catalogue</span>
+        <button class="pin-object__close" type="button" aria-label="Dismiss pin">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+        </button>
+      </div>
+
+      <!-- The card, exactly as the film set serves it. -->
+      <article class="variety" id="card">
+        <div class="plate">
+          <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.2" d="M50 32V74"/><path fill="#dde7e0" stroke-width="1.1" d="M50 60C41.8 60 34.4 55.1 32 46.9C41 46.1 48.4 51.8 50 60Z"/><path fill="#dde7e0" stroke-width="1.1" d="M50 68C56.6 68 63.1 63.9 64.8 57.3C57.4 56.5 50.8 61.4 50 68Z"/><g fill="#dde7e0" stroke-width="1.2"><path transform="translate(50 28) rotate(0) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(72) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(144) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(216) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(288) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/></g><g fill="#dde7e0" stroke-width="1"><path transform="translate(50 28) rotate(36) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(108) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(180) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(252) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(324) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/></g><circle cx="50" cy="28" r="2.1" fill="#dde7e0" stroke-width="0.9"/></svg>
+          <span class="acc">ACC 0612</span>
+        </div>
+        <h3 class="card-name">Rose</h3>
+        <p class="card-latin">Rosa gallica</p>
+        <div class="traits">
+          <div>Days<b>78</b></div>
+          <div>Store<b>4y</b></div>
+          <div>Germ<b>94%</b></div>
+        </div>
+        <span class="pin-peek" id="peek" aria-hidden="true">original</span>
+      </article>
+    </div>
+
+    <div class="pin-note">
+      <div class="pin-note__body">
+        <input class="pin-note__input" id="draft" placeholder="Describe a change" autocomplete="off" aria-label="Pin annotation" />
+        <span class="pin-kbd" id="optKbd" aria-hidden="true">⌥</span>
+        <span class="pin-kbd" id="stashKbd" aria-hidden="true">⌘</span>
+        <button class="pin-note__send" id="send" data-idle="true" aria-label="Send to agent">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6"/></svg>
+        </button>
+      </div>
+      <div class="pin-note__receipt" id="receipt">sent</div>
+      <div class="pin-note__history" id="history"></div>
+      <p class="sr-only" id="live" aria-live="polite" aria-atomic="true"></p>
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  <p>These are mocks. Production Done rows currently leave the log — Idea B would keep them.</p>
+  <button type="button" id="sim6" hidden>simulate 6th send</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var HINT = {
+    a: "⌥↩ keeps a take. Hold the card to see original.",
+    b: "Done becomes a keycap. Click it, or press the number when the input is empty. Hold the card to see original."
+  };
+
+  var LOOKS = {
+    original: { background: "", borderColor: "", borderRadius: "14px", padding: "20px", boxShadow: "", traits: "" },
+    green:    { background: "#e9efe9", borderColor: "", borderRadius: "14px", padding: "20px", boxShadow: "", traits: "" },
+    red:      { background: "#f7ece6", borderColor: "", borderRadius: "14px", padding: "20px", boxShadow: "", traits: "" },
+    serif:    { background: "", borderColor: "", borderRadius: "14px", padding: "20px", boxShadow: "", traits: "serif" },
+    noborder: { background: "", borderColor: "transparent", borderRadius: "20px", padding: "24px", boxShadow: "0 10px 30px rgba(27,26,21,0.09)", traits: "" },
+    compact:  { background: "", borderColor: "", borderRadius: "6px", padding: "13px", boxShadow: "0 1px 2px rgba(27,26,21,0.06)", traits: "" },
+    sheet:    { background: "#f6f3ea", borderColor: "", borderRadius: "4px", padding: "20px", boxShadow: "", traits: "" }
+  };
+  var LOOK_ORDER = ["green", "red", "serif", "noborder", "compact", "sheet"];
+  var FILLERS = [
+    { text: "no border", look: "noborder" },
+    { text: "make it compact", look: "compact" },
+    { text: "sheet the plate", look: "sheet" },
+    { text: "green wash again", look: "green" },
+    { text: "now red again", look: "red" },
+    { text: "serif traits again", look: "serif" }
+  ];
+
+  var seq = 0;
+  function nid() { return "n" + (++seq); }
+
+  function lookFor(text) {
+    var t = text.toLowerCase();
+    if (/\bserif\b/.test(t)) return "serif";
+    if (/\bred\b/.test(t)) return "red";
+    if (/\bgreen\b/.test(t) || /\bwash\b/.test(t)) return "green";
+    if (/\bborder\b/.test(t)) return "noborder";
+    if (/\bcompact\b/.test(t) || /\btight\b/.test(t)) return "compact";
+    if (/\bsheet\b/.test(t) || /\bcream\b/.test(t)) return "sheet";
+    var used = {};
+    state.history.forEach(function (r) { if (r.look) used[r.look] = true; });
+    for (var i = 0; i < LOOK_ORDER.length; i++) {
+      if (!used[LOOK_ORDER[i]]) return LOOK_ORDER[i];
+    }
+    return LOOK_ORDER[state.history.length % LOOK_ORDER.length];
+  }
+
+  function seedA() {
+    return {
+      history: [
+        { id: nid(), kind: "stash", text: "try a warmer green", key: null, look: null, phase: "stash" },
+        { id: nid(), kind: "take",  text: "make it a green wash", key: 1, look: "green", phase: "key" }
+      ],
+      currentLook: "green",
+      currentKey: 1,
+      lastKey: 1,
+      peek: false,
+      busy: false,
+      gen: 0
+    };
+  }
+
+  function seedB() {
+    return {
+      history: [
+        { id: nid(), kind: "agent", text: "make it a green wash", key: 1, look: "green", phase: "key" },
+        { id: nid(), kind: "agent", text: "now red",              key: 2, look: "red",   phase: "key" },
+        { id: nid(), kind: "agent", text: "serif traits",         key: 3, look: "serif", phase: "key" }
+      ],
+      currentLook: "red",
+      currentKey: 2,
+      lastKey: 3,
+      peek: false,
+      busy: false,
+      gen: 0
+    };
+  }
+
+  var idea = "a";
+  var stores = { a: seedA(), b: seedB() };
+  var state = stores.a;
+  var timers = [];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var card = $("card"), draft = $("draft"), peekEl = $("peek");
+  var optKbd = $("optKbd"), stashKbd = $("stashKbd");
+  var histEl = $("history"), receiptEl = $("receipt");
+
+  function beat(ms) {
+    return matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : ms;
+  }
+
+  function later(fn, ms) {
+    var t = window.setTimeout(fn, beat(ms));
+    timers.push(t);
+    return t;
+  }
+
+  function clearTimers() {
+    timers.forEach(function (t) { window.clearTimeout(t); });
+    timers = [];
+  }
+
+  function shownLook() {
+    return state.peek ? "original" : (state.currentLook || "original");
+  }
+
+  function paintCard() {
+    var s = LOOKS[shownLook()] || LOOKS.original;
+    card.style.background = s.background || "";
+    card.style.borderColor = s.borderColor || "";
+    card.style.borderRadius = s.borderRadius || "";
+    card.style.padding = s.padding || "";
+    card.style.boxShadow = s.boxShadow || "";
+    card.style.borderWidth = s.borderColor === "transparent" ? "0" : "";
+    card.dataset.traits = s.traits || "";
+    peekEl.dataset.on = state.peek ? "true" : "false";
+  }
+
+  function statusEl(kind, label) {
+    var el = document.createElement("span");
+    el.className = "pin-status" + (kind === "quiet" ? " pin-status--quiet" : "");
+    if (label === "Working") {
+      el.appendChild(document.createTextNode("Working"));
+      var dots = document.createElement("span");
+      dots.className = "pin-dots";
+      dots.setAttribute("aria-hidden", "true");
+      for (var i = 0; i < 3; i++) dots.appendChild(document.createElement("i"));
+      el.appendChild(dots);
+    } else {
+      el.textContent = label;
+    }
+    return el;
+  }
+
+  function keycapFor(row) {
+    var b = document.createElement("button");
+    b.className = "pin-kbd";
+    b.type = "button";
+    b.textContent = String(row.key);
+    b.title = row.text;
+    b.dataset.on = (row.key === state.currentKey && !state.peek) ? "true" : "false";
+    b.setAttribute("aria-label", "Take " + row.key + ", " + row.text);
+    b.setAttribute("aria-pressed", b.dataset.on);
+    b.addEventListener("click", function (e) {
+      e.preventDefault();
+      jumpToKey(row.key);
+    });
+    return b;
+  }
+
+  function renderHistory() {
+    histEl.innerHTML = "";
+    state.history.forEach(function (row) {
+      var r = document.createElement("div");
+      r.className = "pin-note__row";
+      r.dataset.id = row.id;
+
+      var tx = document.createElement("div");
+      tx.className = "pin-note__row-text";
+      tx.textContent = row.text;
+      r.appendChild(tx);
+
+      var meta = document.createElement("div");
+      meta.className = "pin-note__row-meta";
+
+      if (row.phase === "working") {
+        meta.appendChild(statusEl("on", "Working"));
+      } else if (row.phase === "done") {
+        meta.appendChild(statusEl("on", "Done"));
+      } else if (row.phase === "stash") {
+        meta.appendChild(statusEl("quiet", "On board"));
+      } else if (row.key) {
+        meta.appendChild(keycapFor(row));
+      }
+
+      r.appendChild(meta);
+      histEl.appendChild(r);
+    });
+    histEl.scrollTop = histEl.scrollHeight;
+  }
+
+  function announce() {
+    var look = shownLook();
+    var bits = [(state.peek ? "Peeking original" : "Showing " + look)];
+    if (state.currentKey && !state.peek) bits.push("take " + state.currentKey);
+    $("live").textContent = bits.join(", ");
+  }
+
+  function render() {
+    optKbd.hidden = idea !== "a";
+    $("sim6").hidden = idea !== "b";
+    $("send").dataset.idle = draft.value.trim() ? "false" : "true";
+    renderHistory();
+    paintCard();
+    announce();
+  }
+
+  /* ------------------------------------------------------------- keys */
+
+  function nextKey() {
+    return (state.lastKey % 5) + 1;
+  }
+
+  function assignKey(row) {
+    var k = nextKey();
+    state.history.forEach(function (r) {
+      if (r.key === k) r.key = null;
+    });
+    row.key = k;
+    row.phase = "key";
+    state.lastKey = k;
+    return k;
+  }
+
+  function jumpToKey(n) {
+    if (!n || state.busy) return;
+    var row = null;
+    for (var i = 0; i < state.history.length; i++) {
+      if (state.history[i].key === n) { row = state.history[i]; break; }
+    }
+    if (!row) return;
+    state.currentKey = n;
+    state.currentLook = row.look || "original";
+    state.peek = false;
+    render();
+  }
+
+  /* ------------------------------------------------------------- verbs */
+
+  function showReceipt(text) {
+    receiptEl.textContent = text;
+    receiptEl.dataset.on = "true";
+    later(function () { receiptEl.dataset.on = "false"; }, 1400);
+  }
+
+  function applyLook(look, key) {
+    state.currentLook = look;
+    state.currentKey = key == null ? null : key;
+    state.peek = false;
+    paintCard();
+  }
+
+  function stash() {
+    var text = draft.value.trim();
+    if (!text || state.busy) return;
+    draft.value = "";
+    $("send").dataset.idle = "true";
+    state.history.push({
+      id: nid(), kind: "stash", text: text, key: null, look: null, phase: "stash"
+    });
+    render();
+    showReceipt("On board");
+  }
+
+  /* Idea A: Enter mutates, no key. ⌥↩ keeps a take. */
+  function sendA(keep) {
+    var text = draft.value.trim();
+    if (!text || state.busy) return;
+    var look = lookFor(text);
+    draft.value = "";
+    $("send").dataset.idle = "true";
+
+    if (keep) {
+      var row = { id: nid(), kind: "take", text: text, key: null, look: look, phase: "key" };
+      state.history.push(row);
+      var k = assignKey(row);
+      applyLook(look, k);
+      render();
+    } else {
+      applyLook(look, null);
+      render();
+      showReceipt("sent");
+    }
+  }
+
+  /* Idea B: every completed send stays; Done becomes a keycap after ~800ms. */
+  function sendB(opts) {
+    opts = opts || {};
+    var text = opts.text || draft.value.trim();
+    if (!text || state.busy) return;
+    var look = opts.look || lookFor(text);
+    if (!opts.keepDraft) {
+      draft.value = "";
+      $("send").dataset.idle = "true";
+    }
+
+    var row = { id: nid(), kind: "agent", text: text, key: null, look: look, phase: "working" };
+    state.history.push(row);
+    applyLook(look, null);
+    state.busy = true;
+    var gen = ++state.gen;
+    render();
+
+    var skipWorking = !!opts.instant;
+    var toDone = skipWorking ? 0 : 420;
+    later(function () {
+      if (gen !== state.gen) return;
+      row.phase = "done";
+      render();
+      later(function () {
+        if (gen !== state.gen) return;
+        var k = assignKey(row);
+        applyLook(look, k);
+        state.busy = false;
+        render();
+      }, skipWorking ? 1 : 800);
+    }, toDone);
+  }
+
+  function simulateSixth() {
+    if (idea !== "b" || state.busy) return;
+    var numbered = state.history.filter(function (r) { return r.key; }).length;
+    var need = Math.max(0, 5 - numbered);
+    var used = {};
+    state.history.forEach(function (r) { used[r.text] = true; });
+    var extras = FILLERS.filter(function (f) { return !used[f.text]; });
+    var i, f;
+
+    for (i = 0; i < need; i++) {
+      f = extras[i] || FILLERS[i % FILLERS.length];
+      var row = { id: nid(), kind: "agent", text: f.text, key: null, look: f.look, phase: "key" };
+      state.history.push(row);
+      assignKey(row);
+    }
+
+    f = extras[need] || FILLERS[need % FILLERS.length];
+    /* Force the wrap on this last send so key 1 (or the next wrap) lands on newest. */
+    draft.value = f.text;
+    sendB({ text: f.text, look: f.look });
+  }
+
+  /* ------------------------------------------------------------ idea switch */
+
+  function setIdea(next) {
+    if (next === idea) return;
+    clearTimers();
+    receiptEl.dataset.on = "false";
+    optKbd.dataset.on = "false";
+    stashKbd.dataset.on = "false";
+    idea = next;
+    state = stores[idea];
+    state.busy = false;
+    state.peek = false;
+    state.gen++;
+    document.body.dataset.idea = idea;
+    $("tabA").dataset.on = idea === "a" ? "true" : "false";
+    $("tabB").dataset.on = idea === "b" ? "true" : "false";
+    $("tabA").setAttribute("aria-selected", idea === "a" ? "true" : "false");
+    $("tabB").setAttribute("aria-selected", idea === "b" ? "true" : "false");
+    $("hint").textContent = HINT[idea];
+    draft.value = "";
+    render();
+  }
+
+  /* ------------------------------------------------------------ the chord */
+
+  function setHeld() {
+    optKbd.dataset.on = (idea === "a" && held.alt) ? "true" : "false";
+    stashKbd.dataset.on = held.meta ? "true" : "false";
+  }
+
+  var held = { alt: false, meta: false };
+
+  window.addEventListener("keydown", function (e) {
+    held.alt = !!e.altKey || e.key === "Alt";
+    held.meta = !!e.metaKey || !!e.ctrlKey || e.key === "Meta" || e.key === "Control";
+    setHeld();
+
+    if (e.key === "Enter" && e.target === draft) {
+      e.preventDefault();
+      if (e.metaKey || e.ctrlKey) {
+        stash();
+      } else if (idea === "a" && e.altKey) {
+        sendA(true);
+      } else if (idea === "a") {
+        sendA(false);
+      } else {
+        sendB();
+      }
+      return;
+    }
+
+    if (/^[1-5]$/.test(e.key) && !draft.value.trim() &&
+        !e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      jumpToKey(Number(e.key));
+    }
+  });
+
+  window.addEventListener("keyup", function (e) {
+    held.alt = !!e.altKey && e.key !== "Alt";
+    held.meta = (!!e.metaKey && e.key !== "Meta") || (!!e.ctrlKey && e.key !== "Control");
+    setHeld();
+  });
+  window.addEventListener("blur", function () {
+    held.alt = false;
+    held.meta = false;
+    setHeld();
+  });
+
+  /* ---------------------------------------------------------- hold to peek */
+
+  card.addEventListener("pointerdown", function (e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    card.setPointerCapture(e.pointerId);
+    state.peek = true;
+    paintCard();
+    renderHistory();
+    announce();
+  });
+  function endCardPeek(e) {
+    if (!state.peek) return;
+    state.peek = false;
+    try { card.releasePointerCapture(e.pointerId); } catch (err) {}
+    render();
+  }
+  card.addEventListener("pointerup", endCardPeek);
+  card.addEventListener("pointercancel", endCardPeek);
+
+  /* ----------------------------------------------------------------- wire */
+
+  $("send").addEventListener("click", function () {
+    if (!draft.value.trim()) return;
+    if (held.meta) stash();
+    else if (idea === "a" && held.alt) sendA(true);
+    else if (idea === "a") sendA(false);
+    else sendB();
+  });
+  draft.addEventListener("input", function () {
+    $("send").dataset.idle = draft.value.trim() ? "false" : "true";
+  });
+  $("tabA").onclick = function () { setIdea("a"); };
+  $("tabB").onclick = function () { setIdea("b"); };
+  $("sim6").onclick = simulateSixth;
+
+  render();
+})();
+</script>
+</body>
+</html>
