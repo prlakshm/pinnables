@@ -444,20 +444,26 @@ export function PinObject({
             className="pin-chip pin-object__away"
             data-no-drag
             onClick={awayRoute.onOpen}
+            /*
+             * One label for both cases. The chip is a button, so it says what
+             * pressing it does; where the capture came from is already the
+             * source line on the label bar above it, and a button that states
+             * provenance instead of its action is the weaker of the two.
+             *
+             * The distinction that still matters — whether the destination is
+             * a page your agent can edit — moves to the tooltip, which explains
+             * without competing with the action. It used to live in the label
+             * only because the label promised "live updates"; with the promise
+             * gone, so is the reason for two labels.
+             */
             title={
               awayRoute.live
                 ? `This component lives on ${awayRoute.where}. A capture here can’t update live`
                 : `This capture came from ${awayRoute.where}. It's a reference, not a page your agent can edit`
             }
-            aria-label={
-              awayRoute.live
-                ? `Go to ${awayRoute.where}`
-                : `Open ${awayRoute.where}, where this was captured`
-            }
+            aria-label={`Go to ${awayRoute.where}`}
           >
-            {awayRoute.live
-              ? `go to ${awayRoute.where} ↗`
-              : `captured from ${awayRoute.where} ↗`}
+            {`go to ${awayRoute.where} ↗`}
           </button>
         )}
         <button

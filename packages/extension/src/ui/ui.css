@@ -1119,6 +1119,17 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   max-width: min(420px, calc(100vw - 8px));
   pointer-events: auto;
   cursor: grab;
+  /*
+   * A card is an object you pick up, not a passage you read.
+   *
+   * Without this, the press that starts a drag also starts a text selection, so
+   * hauling a card across the page left its own name and source path streaked
+   * in selection blue behind it — the browser doing the one thing the gesture
+   * did not mean. `cursor: grab` says the same thing to the pointer; this says
+   * it to the selection. Text that genuinely is for reading opts back in below.
+   */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .pin-object:active { cursor: grabbing; }
 /*
@@ -1150,6 +1161,17 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-object > .pin-note:not(.pin-note--collapsed) {
   width: min(380px, calc(100vw - 8px));
   min-width: 0;
+}
+/*
+ * The note opts back in. It carries `data-no-drag`, so a press there never
+ * starts a drag and a selection there can never be fighting one — and what it
+ * holds is a sentence you wrote, which you should be able to select and copy.
+ * The card and its label stay unselectable; the source path is copyable from
+ * the inspector's identity rows, which exist for exactly that.
+ */
+.pin-object .pin-note {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* The component supplies its own edge. Pinnables only adds an outside glow
@@ -1261,10 +1283,16 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   font-size: 10px;
   cursor: pointer;
 }
+/*
+ * Hover greys the chip rather than inverting it. Inverting put a hard black
+ * block on top of a picture of a component, which read as a second piece of UI
+ * landing on the capture; a grey fill says "pressable" without restyling the
+ * thing the card is showing. The border stays `--pin-rule` from `.pin-chip`,
+ * so only the fill and the text weight of the label change.
+ */
 .pin-object__away:hover {
-  background: var(--pin-on-fill);
-  border-color: var(--pin-on-fill);
-  color: var(--pin-on-ink);
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink);
 }
 
 @keyframes pin-pulse {
