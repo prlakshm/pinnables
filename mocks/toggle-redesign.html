@@ -1,0 +1,1836 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pinnables · version keys</title>
+<style>
+/*
+ * A mock of one interaction, on one real card.
+ *
+ * The card is lifted verbatim from fixtures/film-set/index.html — the same
+ * VarietyCard (ACC 0612, Rose) the extension pins in the demo. Tokens are the
+ * Accession set plus --pin-* from packages/extension/src/ui/ui.css.
+ *
+ * Versions accrue on send. A key rail sits beside the card, and every settled
+ * chat line carries the same key. Pressing one flips the card to that version;
+ * the original is simply version 1. No toggle, no branch, no held gestures.
+ *
+ * Light only. The page it overlays is paper by construction.
+ */
+
+/* ------------------------------------------------ accession (the set) */
+:root {
+  --paper: #ffffff;
+  --sheet: #f6f3ea;
+  --sheet-deep: #efeadb;
+  --rule: #e2ddcd;
+  --ink: #1b1a15;
+  --ink-soft: #6d6857;
+  --ink-faint: #a49d88;
+  --green: #1d4a3a;
+  --green-wash: #e9efe9;
+  --stamp: #a33726;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* ------------------------------------------ pinnables (the overlay) */
+  --pin-white: #ffffff;
+  --pin-grey-50: #f6f5f3;
+  --pin-grey-100: #efeeec;
+  --pin-grey-150: #e4e2de;
+  --pin-grey-200: #d3d2ce;
+  --pin-grey-400: #a1a4ab;
+  --pin-grey-500: #6b6f78;
+  --pin-grey-600: #454b55;
+  --pin-grey-900: #292c33;
+  --pin-red-400: #f4564b;
+  --pin-red-500: #ed1c24;
+
+  --pin-paper: var(--pin-white);
+  --pin-paper-soft: var(--pin-grey-50);
+  --pin-paper-sunk: var(--pin-grey-100);
+  --pin-rule: var(--pin-grey-150);
+  --pin-rule-strong: var(--pin-grey-200);
+  --pin-ink-faint: var(--pin-grey-400);
+  --pin-ink-muted: var(--pin-grey-500);
+  --pin-ink: var(--pin-grey-900);
+  --pin-ink-lift: var(--pin-grey-600);
+  --pin-off: var(--pin-grey-100);
+  --pin-off-hover: var(--pin-grey-150);
+  --pin-on-fill: var(--pin-ink);
+  --pin-on-ink: var(--pin-paper);
+  --pin-red: var(--pin-red-500);
+  --pin-red-ink: #b3151b;
+  --pin-red-tint: color-mix(in srgb, var(--pin-red-400) 16%, transparent);
+  --pin-measure-glow: color-mix(in srgb, var(--pin-grey-400) 30%, transparent);
+
+  --pin-label-gap: 3px;
+  --pin-radius-sm: 6px;
+  --pin-radius: 10px;
+  --pin-radius-lg: 16px;
+  --pin-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --pin-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --pin-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 12px rgba(9, 9, 11, 0.08);
+  --pin-shadow-lg: 0 1px 2px rgba(9, 9, 11, 0.08), 0 8px 28px rgba(9, 9, 11, 0.12);
+
+  /* The card's own width, and the composer's. The object is as wide as the
+     wider of the two, which is why anything that wants to sit over the card
+     has to say so rather than just centring itself. */
+  --card-w: 244px;
+  --note-w: 380px;
+
+  --beat: 260ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px 96px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------- page chrome */
+
+.lede {
+  width: min(var(--note-w), calc(100vw - 8px));
+  margin: 0 0 56px;
+}
+.mast {
+  width: var(--card-w);
+  max-width: 100%;
+  text-align: center;
+  margin: 0;
+}
+.mast h1 {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin: 0 0 8px;
+}
+.mast p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.foot {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 18px;
+  text-align: center;
+}
+.foot button {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.foot button:hover { color: var(--ink-soft); }
+
+.stage {
+  position: relative;
+  /*
+   * Height is locked in JS at the resting measurement, so a new chat row grows
+   * downward out of the box instead of making the whole assembly taller. Left
+   * to itself the column is centred, so every added row lifted the card and the
+   * masthead by half a row — the one thing a recording cannot have.
+   */
+}
+
+/* ------------------------------------------------------ the rose card */
+/* Verbatim from the film set, so what the chrome sits on is the real thing. */
+
+.plate {
+  background: var(--sheet);
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 4;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.plate svg { width: 62%; height: 62%; }
+.plate .acc {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.card-name { font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; margin: 14px 0 1px; }
+.card-latin { font-style: italic; color: var(--ink-soft); font-size: 13px; margin: 0 0 12px; }
+.traits { display: flex; gap: 14px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.traits b { display: block; font-family: var(--sans); font-size: 15px; font-weight: 500; color: var(--ink); letter-spacing: 0; text-transform: none; margin-top: 2px; }
+
+.variety[data-traits="serif"] .traits {
+  font-family: var(--serif);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.variety[data-traits="serif"] .traits b {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.variety {
+  width: var(--card-w);
+  background: var(--paper);
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid var(--rule);
+  position: relative;
+  transition: background var(--beat) var(--ease), border-color var(--beat) var(--ease),
+    border-radius var(--beat) var(--ease), padding var(--beat) var(--ease),
+    box-shadow var(--beat) var(--ease);
+}
+
+/* ------------------------------------------------------- pin: the card */
+
+.pin-object { position: relative; display: flex; flex-direction: column; width: max-content; }
+
+.pin-object__card {
+  position: relative;
+  align-self: flex-start;
+  display: flex;
+  border-radius: 14px;
+  background: var(--pin-paper);
+}
+/*
+ * Deselected, the pin is just the component standing there. Everything that
+ * lets you act on it — the identity plate, the composer, the version rail —
+ * belongs to the selection, and leaves with it.
+ */
+.pin-object:not([data-selected="true"]) .pin-object__label,
+.pin-object:not([data-selected="true"]) .pin-note { display: none; }
+.pin-object:not([data-selected="true"]) .pin-object__card { cursor: pointer; }
+
+.pin-object[data-selected="true"] .pin-object__card {
+  box-shadow: 0 0 0 3px var(--pin-measure-glow), var(--pin-shadow);
+}
+
+.pin-object__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - var(--pin-label-gap)));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name close" "source close";
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  padding: 5px 4px 5px 11px;
+  border-radius: 8px 8px 0 0;
+  background: var(--pin-ink);
+  color: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font-family: var(--pin-font);
+}
+.pin-object__name { grid-area: name; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pin-object__src {
+  grid-area: source;
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.pin-object__close {
+  grid-area: close;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.pin-object__close:hover { opacity: 1; background: rgba(255, 255, 255, 0.1); }
+
+/* ------------------------------------------------------- pin: the note */
+
+.pin-note {
+  margin-top: 8px;
+  border: 1px solid var(--pin-rule);
+  border-radius: var(--pin-radius-lg);
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  min-width: 300px;
+  font-family: var(--pin-font);
+  color: var(--pin-ink);
+  position: relative;
+}
+.pin-object > .pin-note {
+  width: 0;
+  min-width: 100%;
+}
+/*
+ * One width wherever it appears. Sizing it from the card made a narrow
+ * capture's box too small to write in, which is the whole reason ui.css
+ * pins the docked composer to the same 380px as the detached one.
+ */
+.pin-object > .pin-note:not(.pin-note--collapsed) {
+  width: min(var(--note-w), calc(100vw - 8px));
+  min-width: 0;
+}
+
+.pin-note__body { display: flex; align-items: center; gap: 8px; padding: 6px 7px 6px 16px; }
+
+.pin-note__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 0;
+  height: 26px;
+  color: var(--pin-ink);
+}
+.pin-note__input::placeholder { color: var(--pin-ink-muted); }
+
+.pin-kbd {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pin-ink-faint);
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--pin-paper-sunk);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  border: none;
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+.pin-kbd[hidden] { display: none; }
+.pin-kbd[data-on="true"] {
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+}
+
+.pin-note__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+.pin-note__send:hover { background: var(--pin-ink-lift); }
+.pin-note__send[data-idle="true"] {
+  background: var(--pin-off);
+  color: var(--pin-ink-faint);
+  cursor: default;
+}
+
+/* ------------------------------------------------------- the rail */
+
+.pin-versions {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid var(--pin-rule);
+  border-radius: 999px;
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font-family: var(--pin-mono);
+}
+.pin-versions[hidden] { display: none; }
+
+.pin-key {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  min-width: 19px;
+  height: 19px;
+  max-width: 44px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 4px;
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease,
+    max-width var(--beat) var(--ease), min-width var(--beat) var(--ease),
+    padding var(--beat) var(--ease), margin var(--beat) var(--ease),
+    opacity 180ms ease, transform var(--beat) var(--ease);
+}
+.pin-key[data-on="true"] { background: var(--pin-on-fill); color: var(--pin-on-ink); }
+.pin-key:hover:not([data-on="true"]):not([data-collapsing="true"]) {
+  background: var(--pin-off-hover);
+  color: var(--pin-ink);
+}
+.pin-key:focus-visible { outline: 2px solid var(--pin-ink); outline-offset: 2px; }
+
+.pin-key[data-collapsing="true"],
+.pin-key[data-entering="true"] {
+  max-width: 0;
+  min-width: 0;
+  padding: 0;
+  margin-left: -4px;
+  opacity: 0;
+  transform: scale(0.55);
+  overflow: hidden;
+}
+
+@keyframes key-land {
+  0% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
+  40% { box-shadow: inset 0 0 0 2px var(--pin-ink), 0 0 0 4px var(--pin-measure-glow); }
+  100% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
+}
+.pin-key[data-landed="true"] { animation: key-land 520ms var(--ease); }
+
+.pin-key__num { transition: opacity 140ms ease; }
+.pin-key[data-renumbering="true"] .pin-key__num { opacity: 0; }
+
+/*
+ * The grip, in the toolbar's own language. The rail floats over someone else's
+ * page, so it has to say it can be moved out of the way; the toolbar already
+ * says that with six dots and a grab cursor, and two floating things that can
+ * both be dragged should not announce it two different ways.
+ */
+.pin-versions__grip {
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 1px;
+  /* Pulled tight against the ⌥. The grip and the modifier are both furniture
+     at the head of the row; a gap between them made two separate prefixes out
+     of what should read as one. */
+  margin-right: -2px;
+  color: var(--pin-ink-faint);
+  cursor: grab;
+  flex: 0 0 auto;
+  touch-action: none;
+}
+.pin-versions__grip:active { cursor: grabbing; }
+.pin-versions[data-dragging="true"] { box-shadow: var(--pin-shadow-lg); }
+
+/* The modifier, at the head of the rail. It is the shortcut legend as much as
+   a label: ⌥ and the numeral beside it is literally the chord. */
+.pin-versions__mod {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pin-ink-faint);
+  padding: 0 3px;
+  user-select: none;
+  flex: 0 0 auto;
+  transition: color 120ms ease;
+}
+.pin-versions[data-armed="true"] .pin-versions__mod { color: var(--pin-ink); }
+
+/* ------------------------------------------------------- captures */
+/*
+ * A version set down beside the component.
+ *
+ * No identity plate and no composer: it sits next to the thing it came from,
+ * so its name would only repeat what you can already see. The rail under it is
+ * the whole of what it needs to say, which is also what distinguishes it at a
+ * glance from the live component — that one has a plate, a composer and the
+ * selection glow, and this has none of them.
+ */
+.pin-capture {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pin-capture .variety { cursor: grab; }
+.pin-capture[data-moving="true"] .variety { cursor: grabbing; }
+/* The capture's rail rides under it rather than floating free. */
+.pin-versions--own { position: static; }
+
+/* The key being carried. The one left behind stays in place but recedes, so
+   the row does not reflow mid-drag and you can still see where it came from. */
+.pin-key[data-dragging="true"] { opacity: 0.3; }
+.pin-key--ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: var(--pin-shadow-lg);
+}
+/* A rail that will take the key if you let go here. */
+.pin-versions[data-drop="true"] {
+  box-shadow: 0 0 0 2px var(--pin-ink), var(--pin-shadow-lg);
+}
+
+/* ------------------------------------------------------- the history */
+/*
+ * The conversation so far, under the input. Each delivered line keeps its
+ * take key at the right end, so the numeral never has to be interpreted:
+ * the words that produced that state are on the same row.
+ */
+.pin-note__history {
+  border-top: 1px solid var(--pin-rule);
+  max-height: 132px;
+  overflow-y: auto;
+}
+.pin-note__history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pin-ink);
+}
+.pin-note__history-item + .pin-note__history-item {
+  border-top: 1px solid color-mix(in srgb, var(--pin-rule) 55%, transparent);
+}
+.pin-note__history-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Verbatim from ui.css:1016. Every tag is the black plate — a run in flight
+   and a run that landed are the same kind of fact, so they dress the same. */
+.pin-note__tag {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--pin-on-fill);
+  color: var(--pin-on-ink);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 9px;
+  white-space: nowrap;
+  /* Added here only so Done can hand its seat to the keycap. */
+  max-width: 120px;
+  overflow: hidden;
+  transition: max-width var(--beat) var(--ease), padding var(--beat) var(--ease),
+    margin var(--beat) var(--ease), opacity 180ms ease, transform var(--beat) var(--ease);
+}
+/* The quiet plate is for a note that went to the board and has no agent on it.
+   Nothing in this mock uses it; it is here so the one that does is recognisable. */
+.pin-note__tag[data-tone="quiet"] {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+}
+/*
+ * Done is a flash, not a label. It says the run landed, then gives up its seat
+ * to the keycap that is the actually useful thing on a finished row. The row
+ * never reflows, because the tag leaves along the same axis the key arrives on.
+ */
+.pin-note__tag[data-leaving="true"] {
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-right: -10px;
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+/*
+ * The processing ellipsis, verbatim from ui.css:1053 and WorkingDots.tsx.
+ *
+ * Three dots lifting in turn, a slow wave rather than a blink. `currentColor`
+ * is what lets one component serve every place a wait appears, which is also
+ * why it needs no adjusting for the black tag it sits in here.
+ */
+.pin-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  margin-left: 3px;
+}
+.pin-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.45;
+  animation: pin-dot-lift 1.8s ease-in-out infinite;
+}
+/* The stagger is the whole effect: each dot starts as the one before it
+   peaks, and the tail of the cycle is a rest before the wave begins again. */
+.pin-dots > span:nth-child(2) { animation-delay: 0.26s; }
+.pin-dots > span:nth-child(3) { animation-delay: 0.52s; }
+
+@keyframes pin-dot-lift {
+  0%, 44%, 100% { transform: translateY(0); opacity: 0.45; }
+  22% { transform: translateY(-3.5px); opacity: 1; }
+}
+
+/* Motion is the message here, so without it the dots simply hold at full
+   strength — an ellipsis that is present rather than one that performs. */
+@media (prefers-reduced-motion: reduce) {
+  .pin-dots > span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Same keycap as the rail, so the two read as one vocabulary. */
+.pin-note__history .pin-key { overflow: hidden; }
+/*
+ * A history row carries its own ⌥, because unlike the rail there is no shared
+ * head for the modifier to sit in — each row is on its own. Spaced the way the
+ * stash chip spaces its own chord, and held back a step so the numeral stays
+ * the thing you read.
+ */
+.pin-key__mod {
+  margin-right: 3px;
+  opacity: 0.6;
+}
+
+.pin-tip {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--pin-font);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pin-ink);
+  background: var(--pin-paper);
+  border: 1px solid var(--pin-rule);
+  border-radius: 6px;
+  box-shadow: var(--pin-shadow);
+  padding: 5px 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 6;
+}
+.pin-key:hover .pin-tip,
+.pin-key:focus-visible .pin-tip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.pin-key[data-collapsing="true"] .pin-tip,
+.pin-key[data-entering="true"] .pin-tip { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-key, .variety, .pin-tip, .pin-kbd, .pin-note__send { transition-duration: 1ms; }
+  .pin-key[data-landed="true"] { animation-duration: 1ms; }
+}
+</style>
+</head>
+<body>
+
+<div class="lede">
+  <header class="mast">
+    <h1>Pinnables · version keys</h1>
+    <p>Keys switch versions.</p>
+  </header>
+</div>
+
+<div class="stage" id="stage">
+  <div class="pin-object" data-selected="true" id="obj">
+
+    <div class="pin-object__card">
+      <div class="pin-object__label">
+        <span class="pin-object__name">VarietyCard</span>
+        <span class="pin-object__src">/catalogue</span>
+        <button class="pin-object__close" type="button" aria-label="Dismiss pin">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+        </button>
+      </div>
+
+      <!-- The card, exactly as the film set serves it. -->
+      <article class="variety" id="card">
+        <div class="plate">
+          <svg viewBox="0 0 100 80" fill="none" stroke="#1d4a3a" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.2" d="M50 32V74"/><path fill="#dde7e0" stroke-width="1.1" d="M50 60C41.8 60 34.4 55.1 32 46.9C41 46.1 48.4 51.8 50 60Z"/><path fill="#dde7e0" stroke-width="1.1" d="M50 68C56.6 68 63.1 63.9 64.8 57.3C57.4 56.5 50.8 61.4 50 68Z"/><g fill="#dde7e0" stroke-width="1.2"><path transform="translate(50 28) rotate(0) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(72) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(144) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(216) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(288) scale(1) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/></g><g fill="#dde7e0" stroke-width="1"><path transform="translate(50 28) rotate(36) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(108) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(180) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(252) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/><path transform="translate(50 28) rotate(324) scale(0.55) translate(-50 -28)" d="M50 28C44.1 24.7 41.4 17.4 44.1 12.1C46.1 8.2 53.9 8.2 55.9 12.1C58.6 17.4 55.9 24.7 50 28Z"/></g><circle cx="50" cy="28" r="2.1" fill="#dde7e0" stroke-width="0.9"/></svg>
+          <span class="acc">ACC 0612</span>
+        </div>
+        <h3 class="card-name">Rose</h3>
+        <p class="card-latin">Rosa gallica</p>
+        <div class="traits">
+          <div>Days<b>78</b></div>
+          <div>Store<b>4y</b></div>
+          <div>Germ<b>94%</b></div>
+        </div>
+      </article>
+    </div>
+
+    <div class="pin-note">
+      <div class="pin-note__body">
+        <input class="pin-note__input" id="draft" placeholder="Describe a change or stash for later" autocomplete="off" aria-label="Pin annotation" />
+        <span class="pin-kbd" id="chord" title="Enter sends to the agent · ⌘↵ stashes on the board">⌘↵ stash</span>
+        <button class="pin-note__send" id="send" data-idle="true" aria-label="Send to agent">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6"/></svg>
+        </button>
+      </div>
+
+      <div class="pin-note__history" id="history"></div>
+      <p class="sr-only" id="live" aria-live="polite" aria-atomic="true"></p>
+    </div>
+  </div>
+
+  <div class="pin-versions" id="menu" role="group" aria-label="Versions" hidden></div>
+</div>
+
+<div class="foot">
+  <button type="button" id="reset">reset the demo</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* The rail never shows more than this many keys at once. */
+  var MAX = 5;
+  var seq = 0;
+  /*
+   * `no` is assigned once, at creation, and never recomputed. It is the take's
+   * name, not its position — which is the whole reason the numbers can keep
+   * climbing while the rail stays five keys wide.
+   */
+  /* 1..5 then back to 1. The sixth take takes the first key, and whoever held
+     it leaves the rail. */
+  function opt(label, style) {
+    seq += 1;
+    return { id: "o" + seq, no: ((seq - 1) % MAX) + 1, label: label, style: style || {} };
+  }
+
+  /*
+   * The original keeps the film set's own cream plate. Every take below
+   * repaints both the card and the plate, so each state is unmistakable from
+   * across a room — this is a mock built to be filmed, not to be subtle.
+   */
+  var BASE = { background: "", borderColor: "", borderRadius: "", padding: "", boxShadow: "", traits: "", plate: "" };
+
+  var LOOKS = {
+    white: { background: "#ffffff", borderColor: "#e6e4de", borderRadius: "14px", padding: "20px", boxShadow: "0 1px 2px rgba(27,26,21,0.05)", traits: "", plate: "#ffffff" },
+    green: { background: "#e9efe9", borderColor: "#c8d8cd", borderRadius: "14px", padding: "20px", boxShadow: "", traits: "", plate: "#dbe7de" },
+    rose: { background: "#f8e7ea", borderColor: "#dfaeb8", borderRadius: "14px", padding: "20px", boxShadow: "", traits: "", plate: "#f2d7dd" }
+  };
+
+  /*
+   * Hard-coded, because this drives a demo rather than a product. The original
+   * is the card as the film set already serves it, which is white, so it needs
+   * no message of its own. One line already happened; the second is the one
+   * that gets typed on camera, and it is always the same sentence.
+   */
+  var SEED = [
+    { text: "change to green", look: LOOKS.green }
+  ];
+  var SCRIPTED = { match: /rose/i, text: "change to rose color", look: LOOKS.rose };
+
+  /* How long the mocked run takes. Long enough to read the tags, short enough
+     that nobody watching the recording gets bored. */
+  var SENDING_MS = 1100;
+  var WORKING_MS = 3800;
+  /*
+   * How long "Done" holds before handing its seat to the take key.
+   *
+   * The app's own flash is 4s (SelectionDialog.tsx:228), but it is doing a
+   * different job there: the row is about to leave the log for good, so the tag
+   * is a goodbye. Here the row stays and keeps a key, so the tag only has to be
+   * readable before it hands over.
+   */
+  var DONE_FLASH_MS = 1200;
+
+  function lookFor(text) {
+    if (SCRIPTED.match.test(text)) return SCRIPTED.look;
+    var t = text.toLowerCase();
+    if (/white/.test(t)) return LOOKS.white;
+    if (/green/.test(t)) return LOOKS.green;
+    return LOOKS.rose;
+  }
+
+  var state = {
+    /* options[0] is the original and wears key 1, so a typed message starts
+       at 2 and the numeral matches the order things happened in. */
+    /* The rail and the composer are the same piece of chrome as far as
+       showing goes: one annotation box, one rail. */
+    selected: true,
+
+    options: [],
+    /* One row per delivered message. Each carries the id of the take it made,
+       which is what puts the same keycap on the row and on the rail. */
+    history: [],
+    current: null,
+    preview: null,
+    busy: false,
+    gen: 0,
+    timer: null,
+    entering: null,
+    renumbering: {},
+    /*
+     * Secondary rails only. The main rail holds whatever is left over, so a
+     * version is never in two places and every numeral has exactly one home —
+     * which is what makes ⌥3 unambiguous without any notion of focus.
+     */
+    rails: [],
+    railSeq: 0,
+    /* Null until the rail is dragged. After that it is the only thing that
+       decides where the rail sits. */
+    railPos: null,
+    historyEntering: null
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var menu = $("menu"), card = $("card"), draft = $("draft"), chord = $("chord");
+
+  /*
+   * Measured at rest and then held. Anything the note gains afterwards spills
+   * below the box rather than growing it, which is what keeps the card and the
+   * masthead pinned to the y they started on.
+   */
+  function lockStage() {
+    var st = $("stage");
+    st.style.height = "";
+    st.style.height = Math.round(st.getBoundingClientRect().height) + "px";
+  }
+
+  /*
+   * One annotation box, one rail. Selecting is what puts a box on something,
+   * so it is also what puts a rail there — which is why a relationship's
+   * source never grows one: it is a reference, and references get no box.
+   */
+  function setSelected(on) {
+    if (state.selected === on) return;
+    state.selected = on;
+    $("obj").dataset.selected = on ? "true" : "false";
+    render();
+    if (on) draft.focus();
+    else draft.blur();
+  }
+
+  function beat() {
+    return matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 260;
+  }
+
+  /*
+   * Selection is by id, not index. Once a numeral is a name rather than a
+   * position, the rail sorts and evicts underneath you, and an index would
+   * quietly come to mean a different take than the one that was chosen.
+   */
+  function byId(id) {
+    for (var i = 0; i < state.options.length; i++) {
+      if (state.options[i].id === id) return state.options[i];
+    }
+    return null;
+  }
+  function shown() {
+    return byId(state.current) || state.options[0] || null;
+  }
+  /* The rail always reads 1 2 3 4 5, whatever order the versions arrived in.
+     Sorting on render is why a key dropped anywhere lands in its own slot. */
+  function sortByNo(list) {
+    return list.slice().sort(function (a, b) { return a.no - b.no; });
+  }
+  function railById(id) {
+    if (id === "main") return null;
+    for (var i = 0; i < state.rails.length; i++) {
+      if (state.rails[i].id === id) return state.rails[i];
+    }
+    return null;
+  }
+  /* Which rail is holding this version right now. */
+  function homeOf(versionId) {
+    for (var i = 0; i < state.rails.length; i++) {
+      if (state.rails[i].keys.indexOf(versionId) !== -1) return state.rails[i].id;
+    }
+    return "main";
+  }
+  /* The main rail is the remainder: everything not dealt out to a capture. */
+  function railOrder() {
+    return sortByNo(state.options.filter(function (o) { return homeOf(o.id) === "main"; }));
+  }
+  function keysOf(rail) {
+    return sortByNo(rail.keys.map(byId).filter(Boolean));
+  }
+  /* What a rail is currently showing. */
+  function litOf(railId) {
+    if (railId === "main") return state.current;
+    var r = railById(railId);
+    return r ? r.current : null;
+  }
+
+  /* ------------------------------------------------------------- the card */
+
+  function paintCard() {
+    var o = state.preview || shown();
+    if (!o) return;
+    if (typeof applyLook === "function") { applyLook(card, o.style); return; }
+    var s = o.style;
+    card.style.background = s.background || "";
+    card.style.borderColor = s.borderColor || "";
+    card.style.borderRadius = s.borderRadius || "";
+    card.style.padding = s.padding || "";
+    card.style.boxShadow = s.boxShadow || "";
+    card.style.borderWidth = s.borderColor === "transparent" ? "0" : "";
+    card.dataset.traits = s.traits || "";
+    /* The plate moves with the card, so "background to white" is a change you
+       can see from the back of the room rather than a border tint. */
+    var plate = card.querySelector(".plate");
+    if (plate) plate.style.background = s.plate || "";
+  }
+
+  /* ------------------------------------------------------------- the menu */
+
+  function withFocusKept(node, fn) {
+    var active = document.activeElement;
+    var key = (active && node.contains(active)) ? active.dataset.key : null;
+    fn();
+    if (!key) return;
+    var next = node.querySelector('[data-key="' + key + '"]');
+    if (next) next.focus();
+  }
+
+  function keyFor(o, railId) {
+    var b = document.createElement("button");
+    b.className = "pin-key";
+    b.type = "button";
+    b.dataset.key = o.id;
+    if (o.id === state.entering) b.dataset.entering = "true";
+    if (state.renumbering[o.id]) b.dataset.renumbering = "true";
+    b.dataset.on = (litOf(railId) === o.id) ? "true" : "false";
+    b.setAttribute("aria-pressed", b.dataset.on);
+    b.setAttribute("aria-label", "Version " + o.no + ", " + o.label);
+
+    var n = document.createElement("span");
+    n.className = "pin-key__num";
+    n.textContent = String(o.no);
+    b.appendChild(n);
+
+    var tip = document.createElement("span");
+    tip.className = "pin-tip";
+    tip.textContent = o.label;
+    b.appendChild(tip);
+
+    b.addEventListener("pointerdown", function (e) { keyDown(e, o, railId, b); });
+    return b;
+  }
+
+  /* ------------------------------------------------------ dealing keys */
+
+  var drag = null;
+
+  /*
+   * A press is either a switch or a carry, and which one it was is only known
+   * once the pointer moves. So nothing happens until it passes a threshold;
+   * below that it is a click and the rail just changes what it shows.
+   */
+  function keyDown(e, o, railId, el) {
+    if (e.button !== 0 || state.busy) return;
+    /*
+     * Any key may be set down, the lit one included — the live component just
+     * falls back to its neighbour. The only thing held back is the main rail's
+     * last key: the files are always in some state, so the rail that names that
+     * state can never be empty. A capture has no such duty and may be emptied,
+     * which is how it gets dismissed.
+     */
+    var pinned = railId === "main" && railOrder().length <= 1;
+    var sx = e.clientX, sy = e.clientY, started = false;
+    e.preventDefault();
+
+    /*
+     * On the window, not on the key. A drop re-renders every rail, so the
+     * button these listeners were attached to is gone by the time the pointer
+     * comes up — and with it the only code that removes the ghost. That is
+     * what left a numeral stranded on the page with no rail behind it.
+     */
+    function move(ev) {
+      if (pinned) return;
+      if (!started) {
+        if (Math.abs(ev.clientX - sx) < 5 && Math.abs(ev.clientY - sy) < 5) return;
+        started = true;
+        beginDrag(o, railId, el, ev);
+      }
+      dragTo(ev);
+    }
+    function done() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+    }
+    function up(ev) {
+      done();
+      if (started) dropAt(ev);
+      else if (!state.busy) { setLit(railId, o.id); render(); }
+    }
+    /*
+     * Cancel is the browser taking the gesture away — a scroll claiming it, the
+     * window losing focus. Nothing was decided, so nothing is committed: the
+     * key goes back where it came from. Treating it as a drop meant an
+     * interrupted drag silently set a version down.
+     */
+    function cancel() {
+      done();
+      drag = null;
+      sweepGhosts();
+      render();
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+  }
+
+  function setLit(railId, versionId) {
+    if (railId === "main") state.current = versionId;
+    else { var r = railById(railId); if (r) r.current = versionId; }
+  }
+
+  function beginDrag(o, railId, el, ev) {
+    var box = el.getBoundingClientRect();
+    var ghost = el.cloneNode(true);
+    ghost.className = "pin-key pin-key--ghost";
+    ghost.removeAttribute("data-key");
+    ghost.dataset.on = "true";
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.style.width = box.width + "px";
+    ghost.style.height = box.height + "px";
+    ghost.style.maxWidth = "none";
+    document.body.appendChild(ghost);
+    el.dataset.dragging = "true";
+    drag = { o: o, from: railId, ghost: ghost, dx: ev.clientX - box.left, dy: ev.clientY - box.top };
+    dragTo(ev);
+  }
+
+  function dragTo(ev) {
+    if (!drag) return;
+    drag.ghost.style.left = (ev.clientX - drag.dx) + "px";
+    drag.ghost.style.top = (ev.clientY - drag.dy) + "px";
+    /* Light the rail that would take it, so the drop is never a guess. */
+    var over = railUnder(ev);
+    document.querySelectorAll(".pin-versions").forEach(function (r) {
+      r.dataset.drop = (over && r === over && r.dataset.rail !== drag.from) ? "true" : "false";
+    });
+  }
+
+  function railUnder(ev) {
+    var el = document.elementFromPoint(ev.clientX, ev.clientY);
+    return el ? el.closest(".pin-versions") : null;
+  }
+
+  /* Whatever happens, no ghost survives the gesture that made it. */
+  function sweepGhosts() {
+    document.querySelectorAll("body > .pin-key--ghost").forEach(function (g) { g.remove(); });
+    document.querySelectorAll(".pin-versions").forEach(function (r) { r.dataset.drop = "false"; });
+    document.querySelectorAll('.pin-key[data-dragging="true"]').forEach(function (k) {
+      k.dataset.dragging = "false";
+    });
+  }
+
+  function dropAt(ev) {
+    if (!drag) { sweepGhosts(); return; }
+    var over = railUnder(ev);
+    var host = $("stage").getBoundingClientRect();
+    var d = drag;
+    d.ghost.remove();
+    drag = null;
+    document.querySelectorAll(".pin-versions").forEach(function (r) { r.dataset.drop = "false"; });
+
+    sweepGhosts();
+    var to = over ? over.dataset.rail : null;
+    if (to === d.from) { render(); return; }
+
+    if (to) moveKey(d.o, d.from, to);
+    else {
+      /*
+       * The key is what you were carrying, so the key is what lands under the
+       * pointer. The picture attaches above it. Anchoring the card's corner to
+       * the cursor instead put a 244px card wherever a 19px key had been, which
+       * reads as the drop having missed.
+       */
+      var lift = card.getBoundingClientRect().height + 8;
+      layDown(d.o, d.from,
+        ev.clientX - host.left - d.dx,
+        ev.clientY - host.top - d.dy - lift);
+    }
+    render();
+  }
+
+  /* Taking a key out of a secondary rail can empty it, and an empty rail has
+     no version to show, so the capture goes with it. */
+  function detach(o, fromRailId) {
+    if (fromRailId === "main") {
+      if (state.current !== o.id) return;
+      /*
+       * The one before it, or the one after if it was first. Read before the
+       * key has moved, so the row it steps back through is the row you saw.
+       */
+      var row = railOrder();
+      var i = row.findIndex(function (x) { return x.id === o.id; });
+      var heir = row[i - 1] || row[i + 1];
+      if (heir) state.current = heir.id;
+      return;
+    }
+    var r = railById(fromRailId);
+    if (!r) return;
+    r.keys = r.keys.filter(function (id) { return id !== o.id; });
+    if (!r.keys.length) {
+      state.rails = state.rails.filter(function (x) { return x.id !== r.id; });
+      return;
+    }
+    if (r.current === o.id) r.current = sortByNo(r.keys.map(byId).filter(Boolean))[0].id;
+  }
+
+  function moveKey(o, fromRailId, toRailId) {
+    detach(o, fromRailId);
+    if (toRailId === "main") {
+      /* Coming home is putting it away, not choosing it. Switching the live
+         component is the expensive move, so it stays deliberate. */
+      return;
+    }
+    var r = railById(toRailId);
+    if (!r) return;
+    if (r.keys.indexOf(o.id) === -1) r.keys.push(o.id);
+    r.current = o.id;
+  }
+
+  function layDown(o, fromRailId, x, y) {
+    detach(o, fromRailId);
+    state.railSeq += 1;
+    state.rails.push({
+      id: "r" + state.railSeq,
+      keys: [o.id],
+      current: o.id,
+      pos: { x: Math.max(4, x), y: Math.max(4, y) }
+    });
+  }
+
+  function paintKeysOn() {
+    document.querySelectorAll(".pin-versions").forEach(function (rail) {
+      var lit = litOf(rail.dataset.rail);
+      rail.querySelectorAll(".pin-key").forEach(function (k) {
+        k.dataset.on = (k.dataset.key === lit) ? "true" : "false";
+        k.setAttribute("aria-pressed", k.dataset.on);
+      });
+    });
+  }
+
+  function renderMenu() {
+    withFocusKept(menu, function () {
+      menu.innerHTML = "";
+      if (!state.selected || state.options.length <= 1) {
+        menu.hidden = true;
+        return;
+      }
+      menu.hidden = false;
+
+      menu.dataset.rail = "main";
+      fillRail(menu, railOrder(), "main", startDrag);
+    });
+    if (!menu.hidden) place();
+    renderCaptures();
+  }
+
+  /* Every rail is furnished the same way: a grip, the modifier, the keys. A
+     capture's rail is not a lesser thing, it just holds fewer of them. */
+  function fillRail(el, keys, railId, onGrip) {
+    var grip = document.createElement("span");
+    grip.className = "pin-versions__grip";
+    grip.title = railId === "main" ? "Drag to move the rail" : "Drag to move this version";
+    grip.innerHTML = '<svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M 6.43 3.71 C 5.94 4.26, 5.98 5.21, 6.52 5.65 C 7.12 6.13, 7.79 6.08, 8.37 5.51 C 8.77 5.11, 8.84 4.9, 8.74 4.41 C 8.67 4.08, 8.48 3.7, 8.3 3.57 C 7.81 3.2, 6.83 3.28, 6.43 3.71 M 10.91 3.71 C 10.41 4.22, 10.42 5.12, 10.95 5.61 C 11.82 6.42, 13.2 5.84, 13.2 4.66 C 13.2 3.93, 12.6 3.33, 11.87 3.33 C 11.55 3.33, 11.12 3.5, 10.91 3.71 M 6.57 8.58 C 6.26 8.8, 6.15 9.07, 6.15 9.62 C 6.15 10.89, 7.44 11.4, 8.35 10.48 C 8.92 9.91, 8.94 9.44, 8.42 8.78 C 7.97 8.21, 7.22 8.12, 6.57 8.58 M 10.95 8.72 C 10.12 9.6, 10.68 10.95, 11.87 10.95 C 12.18 10.95, 12.61 10.78, 12.82 10.57 C 13.03 10.36, 13.2 9.93, 13.2 9.62 C 13.2 8.41, 11.77 7.85, 10.95 8.72 M 6.78 13.46 C 6.28 13.71, 5.98 14.49, 6.14 15.14 C 6.26 15.63, 6.94 16.09, 7.54 16.09 C 8.03 16.1, 8.82 15.24, 8.82 14.7 C 8.82 13.72, 7.66 13.02, 6.78 13.46 M 11.38 13.42 C 10.38 13.82, 10.25 15.11, 11.13 15.77 C 12.52 16.8, 14.06 14.7, 12.7 13.63 C 12.15 13.21, 11.98 13.18, 11.38 13.42"/></svg>';
+    grip.addEventListener("pointerdown", onGrip);
+    el.appendChild(grip);
+
+    var mod = document.createElement("span");
+    mod.className = "pin-versions__mod";
+    mod.textContent = "⌥";
+    mod.title = "hold ⌥ and press a number to jump";
+    el.appendChild(mod);
+
+    keys.forEach(function (o) { el.appendChild(keyFor(o, railId)); });
+  }
+
+  /* ------------------------------------------------------- the captures */
+
+  function applyLook(el, s) {
+    el.style.background = s.background || "";
+    el.style.borderColor = s.borderColor || "";
+    el.style.borderRadius = s.borderRadius || "";
+    el.style.padding = s.padding || "";
+    el.style.boxShadow = s.boxShadow || "";
+    el.style.borderWidth = s.borderColor === "transparent" ? "0" : "";
+    el.dataset.traits = s.traits || "";
+    var plate = el.querySelector(".plate");
+    if (plate) plate.style.background = s.plate || "";
+  }
+
+  function renderCaptures() {
+    var stage = $("stage");
+    stage.querySelectorAll(".pin-capture").forEach(function (n) { n.remove(); });
+    if (!state.selected) return;
+
+    state.rails.forEach(function (r) {
+      var o = byId(r.current) || byId(r.keys[0]);
+      if (!o) return;
+
+      var wrap = document.createElement("div");
+      wrap.className = "pin-capture";
+      wrap.style.left = r.pos.x + "px";
+      wrap.style.top = r.pos.y + "px";
+
+      var shot = card.cloneNode(true);
+      shot.removeAttribute("id");
+      applyLook(shot, o.style);
+      wrap.appendChild(shot);
+
+      var rail = document.createElement("div");
+      rail.className = "pin-versions pin-versions--own";
+      rail.dataset.rail = r.id;
+      rail.setAttribute("role", "group");
+      rail.setAttribute("aria-label", "Versions set down beside the component");
+      fillRail(rail, keysOf(r), r.id, function () {});
+      wrap.appendChild(rail);
+
+      /* Anywhere on the capture picks it up — the card, the grip, the pill
+         around the keys. Only a key itself opts out, because a key has its own
+         job. Card and rail move together because they are one object. */
+      wrap.addEventListener("pointerdown", function (e) {
+        if (e.target instanceof Element && e.target.closest(".pin-key")) return;
+        moveCapture(e, r, wrap);
+      });
+
+      stage.appendChild(wrap);
+    });
+  }
+
+  /* The grip moves the whole capture, card and rail together, because they
+     are one object. Same gesture the main rail's grip uses. */
+  function moveCapture(e, r, wrap) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var host = $("stage").getBoundingClientRect();
+    var box = wrap.getBoundingClientRect();
+    var dx = e.clientX - box.left, dy = e.clientY - box.top;
+    wrap.dataset.moving = "true";
+
+    function move(ev) {
+      r.pos = {
+        x: Math.max(4 - host.left, ev.clientX - dx - host.left),
+        y: Math.max(4 - host.top, ev.clientY - dy - host.top)
+      };
+      wrap.style.left = r.pos.x + "px";
+      wrap.style.top = r.pos.y + "px";
+    }
+    function up() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      wrap.dataset.moving = "false";
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  /* ---------------------------------------------------------- the history */
+
+  /* The same keycap the rail wears, on the row that produced it. */
+  function historyKey(entry) {
+    var o = byId(entry.takeId);
+    /* The take this row made has rotated off the rail, so there is no key to
+       press. The row keeps its words; it just stops being a way back. */
+    if (!o) return null;
+    var here = shown();
+    var b = document.createElement("button");
+    b.className = "pin-key";
+    b.type = "button";
+    b.dataset.key = "h" + entry.takeId;
+    if (entry.takeId === state.historyEntering) b.dataset.entering = "true";
+    b.dataset.on = (here && here.id === o.id) ? "true" : "false";
+    b.setAttribute("aria-pressed", b.dataset.on);
+    b.setAttribute("aria-label", "Version " + o.no + ", " + entry.text);
+    b.title = "⌥" + o.no + " · switch to this version";
+
+    var mod = document.createElement("span");
+    mod.className = "pin-key__mod";
+    mod.textContent = "⌥";
+    b.appendChild(mod);
+
+    var n = document.createElement("span");
+    n.className = "pin-key__num";
+    n.textContent = String(o.no);
+    b.appendChild(n);
+    b.onclick = function () {
+      if (state.busy) return;
+      state.current = o.id;
+      render();
+    };
+    return b;
+  }
+
+  function renderHistory() {
+    var h = $("history");
+    h.innerHTML = "";
+    h.hidden = state.history.length === 0;
+    /*
+     * Newest first. The line you just sent is the one you are waiting on, so
+     * it belongs against the input rather than at the bottom of a list you
+     * have to scroll to reach. Numbering is untouched by this: the keys stay
+     * in the order things happened, which is why the column counts down.
+     */
+    state.history.slice().reverse().forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "pin-note__history-item";
+      if (entry.takeId) row.dataset.row = entry.takeId;
+
+      var text = document.createElement("span");
+      text.className = "pin-note__history-text";
+      text.textContent = entry.text;
+      row.appendChild(text);
+
+      /* Settled rows carry no tag at all. The number is the whole point of a
+         finished line, and a permanent "Done" next to it says nothing twice. */
+      if (entry.state !== "settled") {
+        var tag = document.createElement("span");
+        tag.className = "pin-note__tag";
+        if (entry.state === "done") {
+          tag.textContent = "Done";
+        } else {
+          /* Dots mean in motion; a bare word means settled. Same rule and same
+             plate as the live bar, so a run reads the same wherever it shows. */
+          tag.textContent = entry.state === "sending" ? "Sending to agent" : "Working";
+          var dots = document.createElement("span");
+          dots.className = "pin-dots";
+          dots.setAttribute("aria-hidden", "true");
+          dots.appendChild(document.createElement("span"));
+          dots.appendChild(document.createElement("span"));
+          dots.appendChild(document.createElement("span"));
+          tag.appendChild(dots);
+        }
+        row.appendChild(tag);
+      }
+
+      if (entry.state === "settled") {
+        var k = historyKey(entry);
+        if (k) row.appendChild(k);
+      }
+      h.appendChild(row);
+    });
+    h.scrollTop = h.scrollHeight;
+  }
+
+  /* --------------------------------------------------------- the placement */
+  /*
+   * Right of the card and low, so the row clears the identity plate.
+   * Falls back the way a tooltip does: preferred side, then mirror.
+   * Note-right is omitted — docked under a card the note is the card's width.
+   */
+  /*
+   * Dragging is a takeover, not a nudge: once the rail has been put somewhere
+   * by hand, auto-placement stops second-guessing it. Anything else means the
+   * rail springs back the next time a take lands, which reads as a bug.
+   */
+  function startDrag(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var host = $("stage").getBoundingClientRect();
+    var box = menu.getBoundingClientRect();
+    var grab = { x: e.clientX - box.left, y: e.clientY - box.top };
+    menu.dataset.dragging = "true";
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    function move(ev) {
+      var w = menu.offsetWidth, h = menu.offsetHeight;
+      var x = Math.max(4, Math.min(ev.clientX - grab.x, window.innerWidth - w - 4));
+      var y = Math.max(4, Math.min(ev.clientY - grab.y, window.innerHeight - h - 4));
+      state.railPos = { x: x - host.left, y: y - host.top };
+      menu.style.left = state.railPos.x + "px";
+      menu.style.top = state.railPos.y + "px";
+    }
+    function up(ev) {
+      menu.dataset.dragging = "false";
+      try { e.currentTarget.releasePointerCapture(ev.pointerId); } catch (err) {}
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  function place() {
+    if (menu.hidden) return;
+
+    /* Put by hand, so it stays where it was put. Only clamped, never moved. */
+    if (state.railPos) {
+      var hostBox = $("stage").getBoundingClientRect();
+      var mw = menu.offsetWidth, mh = menu.offsetHeight;
+      var cx = Math.max(4, Math.min(state.railPos.x + hostBox.left, window.innerWidth - mw - 4));
+      var cy = Math.max(4, Math.min(state.railPos.y + hostBox.top, window.innerHeight - mh - 4));
+      state.railPos = { x: cx - hostBox.left, y: cy - hostBox.top };
+      menu.style.left = state.railPos.x + "px";
+      menu.style.top = state.railPos.y + "px";
+      menu.dataset.placed = "moved";
+      return;
+    }
+
+    /*
+     * A ring around the pin, tried in order: the card's right edge sitting on
+     * its bottom, then under the whole object and right-aligned, then the left
+     * edge. Pushing the component into a corner walks the rail round it rather
+     * than letting it hang off the screen.
+     */
+    var host = $("stage").getBoundingClientRect();
+    var cardBox = card.getBoundingClientRect();
+    var objBox = $("obj").getBoundingClientRect();
+    var w = menu.offsetWidth || 140;
+    var h = menu.offsetHeight || 27;
+    var gap = 10;
+    var vw = window.innerWidth, vh = window.innerHeight;
+
+    var spots = {
+      "card-right": { x: cardBox.right + gap, y: cardBox.bottom - h },
+      /* Right-aligned to the card, not the object: the note is wider than the
+         card, so aligning to it pushed this tier off-screen exactly when it was
+         needed. Dropped below the whole object so it clears the composer. */
+      "below": { x: cardBox.right - w, y: objBox.bottom + gap },
+      "card-left": { x: cardBox.left - gap - w, y: cardBox.bottom - h }
+    };
+
+    function fits(where) {
+      var s = spots[where];
+      return s.x > 4 && s.x + w < vw - 4 && s.y > 4 && s.y + h < vh - 4;
+    }
+
+    var order = ["card-right", "below", "card-left"];
+    var chosen = order.find(fits) || order[order.length - 1];
+    var at = spots[chosen];
+
+    /* Clamped as a last resort, so it is crowded rather than gone. */
+    var x = Math.max(4, Math.min(at.x, vw - w - 4));
+    var y = Math.max(4, Math.min(at.y, vh - h - 4));
+
+    menu.style.left = (x - host.left) + "px";
+    menu.style.top = (y - host.top) + "px";
+    menu.dataset.placed = chosen;
+  }
+
+  function announce() {
+    var o = shown();
+    if (!o) { $("live").textContent = ""; return; }
+    $("live").textContent =
+      "Showing " + o.label +
+      ", version " + o.no + " of " + state.options.length;
+  }
+
+  function render() {
+    renderMenu();
+    renderHistory();
+    $("send").dataset.idle = draft.value.trim() ? "false" : "true";
+    announce();
+    paintCard();
+  }
+
+  /* ------------------------------------------------------- insert / replace */
+
+  function releaseKey(n, onDone) {
+    var done = false;
+    function release() {
+      if (done) return;
+      done = true;
+      n.dataset.entering = "false";
+      state.entering = null;
+      n.dataset.landed = "true";
+      place();
+      window.setTimeout(function () { n.removeAttribute("data-landed"); }, 560);
+      if (onDone) onDone();
+    }
+    requestAnimationFrame(function () { requestAnimationFrame(release); });
+    window.setTimeout(release, 80);
+  }
+
+  /*
+   * `hold` leaves the key collapsed and hands it back, for the case where
+   * something else decides when it arrives. The take is on the rail either
+   * way; all that is deferred is the moment it becomes visible.
+   */
+  function enter(id, hold) {
+    state.entering = id;
+    render();
+    var n = menu.querySelector('.pin-key[data-key="' + id + '"]');
+    if (!n) { state.entering = null; return null; }
+    if (hold) return n;
+    releaseKey(n);
+    return n;
+  }
+
+  /*
+   * The key flies out of the chat row and into the rail.
+   *
+   * Without it the two keycaps just appear in two places a beat apart, and
+   * nothing says they are the same key. The rail opens its gap over exactly
+   * the same duration the copy is in the air, so the slot and its occupant
+   * arrive together rather than one waiting on the other.
+   */
+  function flyToRail(fromKey, railKey) {
+    if (!fromKey || !railKey) { if (railKey) releaseKey(railKey); return; }
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      releaseKey(railKey);
+      return;
+    }
+
+    /* Where the key will sit once the rail has made room. Measured with the
+       transition off so the answer is the settled position, not a frame of it. */
+    railKey.style.transition = "none";
+    railKey.style.visibility = "hidden";
+    railKey.dataset.entering = "false";
+    void railKey.offsetWidth;
+    var to = railKey.getBoundingClientRect();
+    railKey.dataset.entering = "true";
+    void railKey.offsetWidth;
+    railKey.style.transition = "";
+
+    var from = fromKey.getBoundingClientRect();
+
+    var ghost = fromKey.cloneNode(true);
+    ghost.removeAttribute("data-key");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.style.cssText =
+      "position:fixed;margin:0;z-index:9999;pointer-events:none;" +
+      "left:" + from.left + "px;top:" + from.top + "px;" +
+      "width:" + from.width + "px;height:" + from.height + "px;max-width:none;" +
+      "transition:transform 420ms var(--ease), width 420ms var(--ease);";
+    /*
+     * The two rails write a key differently: a chat row carries its own ⌥
+     * because it stands alone, while the rail has one at its head for all of
+     * them. So the copy sheds its modifier on the way over and arrives in the
+     * form the rail uses — the same key, in the local dialect.
+     */
+    var ghostMod = ghost.querySelector(".pin-key__mod");
+    if (ghostMod) {
+      ghostMod.style.cssText =
+        "overflow:hidden;max-width:20px;" +
+        "transition:max-width 300ms var(--ease), margin-right 300ms var(--ease), opacity 200ms ease;";
+    }
+    document.body.appendChild(ghost);
+
+    /* The gap opens now, over the same 420ms the copy spends travelling. */
+    state.entering = null;
+    railKey.dataset.entering = "false";
+    place();
+
+    /*
+     * Deferred by a frame so the transition has a start value to run from, and
+     * backstopped by a timer for the same reason the insert is: a single rAF
+     * is not a promise, and a missed one here means the copy never leaves.
+     */
+    var kicked = false;
+    function kick() {
+      if (kicked) return;
+      kicked = true;
+      ghost.style.transform =
+        "translate(" + (to.left - from.left) + "px," + (to.top - from.top) + "px)";
+      /* Narrows to the rail key's width as the ⌥ collapses out of it. */
+      ghost.style.width = to.width + "px";
+      if (ghostMod) {
+        ghostMod.style.maxWidth = "0px";
+        ghostMod.style.marginRight = "0px";
+        ghostMod.style.opacity = "0";
+      }
+    }
+    requestAnimationFrame(kick);
+    window.setTimeout(kick, 24);
+
+    window.setTimeout(function () {
+      ghost.remove();
+      railKey.style.visibility = "";
+      railKey.dataset.landed = "true";
+      place();
+      window.setTimeout(function () { railKey.removeAttribute("data-landed"); }, 560);
+    }, 430);
+  }
+
+  /* ---------------------------------------------------------------- verbs */
+
+  /*
+   * The mocked run. No service is called and none is needed: what the demo has
+   * to show is the shape of the wait, so the row moves through the same two
+   * tags the real composer polls its way to, then lands its take on the rail.
+   */
+  function send() {
+    if (state.busy) return;
+    var text = draft.value.trim();
+    if (!text) return;
+
+    var look = lookFor(text);
+    draft.value = "";
+    $("send").dataset.idle = "true";
+
+    var entry = { text: text, state: "sending", takeId: null };
+    state.history.push(entry);
+    state.busy = true;
+    var gen = ++state.gen;
+    render();
+
+    state.timer = window.setTimeout(function () {
+      if (gen !== state.gen) return;
+      entry.state = "working";
+      renderHistory();
+
+      state.timer = window.setTimeout(function () {
+        if (gen !== state.gen) return;
+        state.timer = null;
+        state.busy = false;
+
+        var o = opt(text, look);
+        entry.state = "done";
+        entry.takeId = o.id;
+
+        /*
+         * Numbers climb to five and then start over. Whoever held that numeral
+         * before gives it up and leaves the rail, so the row stays five keys
+         * wide without anything that stayed ever being renumbered.
+         */
+        state.options = state.options.filter(function (x) { return x.no !== o.no; });
+        state.options.push(o);
+        state.current = o.id;
+        /* Held collapsed. It arrives when the copy from the chat row reaches
+           it, not before, so the rail is not already showing what is still in
+           the air. */
+        var railKey = enter(o.id, true);
+
+        window.setTimeout(function () { settleRow(entry, gen, railKey); }, DONE_FLASH_MS);
+      }, WORKING_MS);
+    }, SENDING_MS);
+  }
+
+  /*
+   * Done leaves along the same axis the keycap arrives on, so the row never
+   * jumps. Measured first, because collapsing from the class cap would spend
+   * most of the transition before the tag visibly narrows.
+   */
+  function settleRow(entry, gen, railKey) {
+    if (gen !== state.gen) return;
+    var row = $("history").querySelector('[data-row="' + entry.takeId + '"]');
+    var tag = row && row.querySelector(".pin-note__tag");
+
+    function swap() {
+      if (gen !== state.gen) return;
+      entry.state = "settled";
+      state.historyEntering = entry.takeId;
+      renderHistory();
+      var k = $("history").querySelector('.pin-key[data-key="h' + entry.takeId + '"]');
+      state.historyEntering = null;
+      if (!k) { if (railKey) releaseKey(railKey); return; }
+      var done = false;
+      function release() {
+        if (done) return;
+        done = true;
+        k.dataset.entering = "false";
+        k.dataset.landed = "true";
+        window.setTimeout(function () { k.removeAttribute("data-landed"); }, 560);
+        /* Grown in its row, so now it has somewhere to fly from. */
+        window.setTimeout(function () { flyToRail(k, railKey); }, 220);
+      }
+      requestAnimationFrame(function () { requestAnimationFrame(release); });
+      window.setTimeout(release, 80);
+    }
+
+    if (!tag) { swap(); return; }
+    tag.style.maxWidth = tag.offsetWidth + "px";
+    void tag.offsetWidth;
+    tag.dataset.leaving = "true";
+    window.setTimeout(swap, beat());
+  }
+
+  function stash() {
+    var text = draft.value.trim();
+    if (!text) return;
+    draft.value = "";
+    $("send").dataset.idle = "true";
+  }
+
+  /*
+   * Where the recording starts: two changes already made and settled, the
+   * green one showing. The original holds key 1 without ever having been a
+   * message, which is why the chat begins at 2.
+   */
+  function seedPlayable() {
+    seq = 0;
+    state.gen++;
+    if (state.timer !== null) { window.clearTimeout(state.timer); state.timer = null; }
+    state.busy = false;
+    state.preview = null;
+    state.entering = null;
+    state.renumbering = {};
+
+    state.historyEntering = null;
+    /* Every key comes home, and the captures go with them. */
+    state.rails = [];
+    state.railSeq = 0;
+    state.railPos = null;
+    state.options = [opt("original", BASE)];
+    /* Already settled: these two ran before the camera started, so they are
+       past their Done flash and wear only their keys. */
+    state.history = SEED.map(function (s) {
+      var o = opt(s.text, s.look);
+      state.options.push(o);
+      return { text: s.text, state: "settled", takeId: o.id };
+    });
+
+    state.current = state.options[state.options.length - 1].id;
+    draft.value = "";
+    render();
+    lockStage();
+  }
+
+  /* ------------------------------------------------------------ the chord */
+
+  function setChord(on) {
+    chord.dataset.on = on ? "true" : "false";
+  }
+
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Meta" || e.key === "Control") {
+      setChord(true);
+    }
+
+    if (e.altKey && /^Digit[1-9]$/.test(e.code)) {
+      var want = Number(e.code.slice(5));
+      var hit = state.options.filter(function (o) { return o.no === want; })[0];
+      if (hit && !state.busy) {
+        e.preventDefault();
+        /*
+         * No focus to track. Each numeral lives in exactly one rail, so the
+         * number already says which rail answers. The partition is the
+         * disambiguation, which is why every rail can stay live at once.
+         */
+        setLit(homeOf(hit.id), hit.id);
+        render();
+      }
+      return;
+    }
+
+    if (e.key === "Enter" && e.target === draft) {
+      e.preventDefault();
+      if (e.metaKey || e.ctrlKey) {
+        if (draft.value.trim()) stash();
+      } else {
+        send();
+      }
+      return;
+    }
+
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        !e.altKey && !e.metaKey && !e.ctrlKey &&
+        !(e.target === draft && draft.value) &&
+        state.options.length > 1 && !state.busy) {
+      e.preventDefault();
+      var row = railOrder();
+      if (row.length < 2) return;
+      var here = shown();
+      var at = row.findIndex(function (o) { return here && o.id === here.id; });
+      if (at < 0) at = 0;
+      state.current = row[(at + (e.key === "ArrowRight" ? 1 : row.length - 1)) % row.length].id;
+      render();
+    }
+  });
+
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "Meta" || e.key === "Control") setChord(false);
+  });
+  window.addEventListener("blur", function () { setChord(false); });
+
+  /* ----------------------------------------------------------------- wire */
+
+  $("send").onclick = send;
+  draft.addEventListener("input", function () {
+    $("send").dataset.idle = draft.value.trim() ? "false" : "true";
+  });
+  $("reset").onclick = function () { setSelected(true); seedPlayable(); draft.focus(); };
+
+  /* The card is the way back in. Everything else about it is unchanged. */
+  card.addEventListener("click", function () { setSelected(true); });
+
+  /* Escape lets go of the pin without reaching for the mouse. */
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") setSelected(false);
+  });
+
+  /*
+   * A click anywhere that is not the pin is a deselect. The rail and the
+   * captures are siblings of the object rather than children, so each has to
+   * be named — leaving .pin-capture out meant touching a version you had just
+   * set down let go of the whole pin, and every piece of chrome vanished at
+   * once.
+   */
+  document.addEventListener("pointerdown", function (e) {
+    var el = e.target instanceof Element ? e.target : null;
+    if (el && el.closest(".pin-object, .pin-versions, .pin-capture, .foot")) return;
+    setSelected(false);
+  });
+  window.addEventListener("resize", function () {
+    /* A different viewport is a different resting height, so take it again. */
+    var st = $("stage");
+    st.style.height = "";
+    place();
+    if (state.history.length <= SEED.length) lockStage();
+  });
+
+  seedPlayable();
+  draft.focus();
+})();
+</script>
+</body>
+</html>
