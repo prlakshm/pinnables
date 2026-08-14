@@ -133,15 +133,69 @@ function railCandidates(
   ];
 }
 
-function legalRail(c: RailCandidate, rail: Size, input: ChromeInput, boxRect: Box, slack = 0): boolean {
-  const { viewport, element } = input;
+/* Guaranteed seats reuse the ring's shape (right, left, then an outer edge)
+   but are keyed off the box, not the element — the box is always where the
+   rail wants to sit when nothing in the ring cleared. */
+function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: Box, rail: Size): RailCandidate[] {
+  if (orientation === "below") {
+    return [{ seat: "slot", x: boxRect.x + boxRect.width - rail.width, y: element.y + element.height + SLOT_PAD }];
+  }
+  const flushY = boxRect.y + boxRect.height - rail.height;
+  return [
+    { seat: "box-side", x: boxRect.x + boxRect.width + SLOT_PAD, y: flushY },
+    { seat: "box-side", x: boxRect.x - SLOT_PAD - rail.width, y: flushY },
+    { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y - SLOT_PAD - rail.height },
+  ];
+}
+
+/* A ring seat is legal only where it lands raw — off-screen means dropped,
+   not dragged into view, or "card-right" stops reading as beside the card.
+   `slack` is the existing hysteresis tolerance for a sticky preferred seat;
+   unchanged from before this fix, since the ring was never the problem. */
+function ringLegal(c: RailCandidate, rail: Size, viewport: Size, boxRect: Box, element: Box, slack = 0): boolean {
   const r: Box = { x: c.x, y: c.y, width: rail.width, height: rail.height };
-  const inViewport =
+  const onScreen =
     r.x >= RAIL_GUTTER - slack &&
     r.y >= RAIL_GUTTER - slack &&
     r.x + r.width <= viewport.width - RAIL_GUTTER + slack &&
     r.y + r.height <= viewport.height - RAIL_GUTTER + slack;
-  return inViewport && !intersects(r, boxRect) && !intersects(r, element);
+  return onScreen && !intersects(r, boxRect) && !intersects(r, element);
+}
+
+type Tier = 1 | 2 | 3;
+
+function clampRail(c: RailCandidate, rail: Size, viewport: Size): Box {
+  return {
+    x: clamp(c.x, RAIL_GUTTER, viewport.width - RAIL_GUTTER - rail.width),
+    y: clamp(c.y, RAIL_GUTTER, viewport.height - RAIL_GUTTER - rail.height),
+    width: rail.width,
+    height: rail.height,
+  };
+}
+
+/**
+ * A guaranteed seat is judged by where it will actually render — after the
+ * viewport clamp, never before, so a candidate that lands a few px off raw
+ * but clears everything once clamped isn't punished for the raw miss. Tier
+ * 1: clear of the box and the element. Tier 2: clear of the box (an element
+ * can span the whole viewport and leave nothing tier-1 legal; the box,
+ * clamped or not, never has to). Tier 3: on-screen, which every clamped
+ * candidate already is — the true last resort.
+ */
+function guaranteedTier(c: RailCandidate, rail: Size, viewport: Size, boxRect: Box, element: Box): Tier {
+  const r = clampRail(c, rail, viewport);
+  if (!intersects(r, boxRect) && !intersects(r, element)) return 1;
+  if (!intersects(r, boxRect)) return 2;
+  return 3;
+}
+
+/** First candidate to reach the best tier anyone in the list reaches. */
+function pickGuaranteed(candidates: RailCandidate[], rail: Size, viewport: Size, boxRect: Box, element: Box): RailCandidate {
+  for (const tier of [1, 2, 3] as const) {
+    const hit = candidates.find((c) => guaranteedTier(c, rail, viewport, boxRect, element) === tier);
+    if (hit) return hit;
+  }
+  return candidates[0]; // unreachable: every candidate reaches tier 3 once clamped
 }
 
 /**
@@ -181,47 +235,27 @@ export function placeSelectionChrome(input: ChromeInput): ChromePlacement {
     return { box, rail: { x, y, seat: "moved" }, scoot };
   }
 
+  /* Ring first, unchanged from before this fix: a sticky preferred seat
+     survives while legal within hysteresis slack, otherwise the first
+     legal candidate in ring order wins. Nothing legal in the ring falls
+     through to the guaranteed list, which is built to always answer. */
   const ring = railCandidates(orientation, input, boxRect, rail);
-  const kept = ring.find((c) => c.seat === preferred.rail && legalRail(c, rail, input, boxRect, TOLERANCE));
-  const chosen = kept ?? ring.find((c) => legalRail(c, rail, input, boxRect));
-  if (chosen) return { box, rail: { x: chosen.x, y: chosen.y, seat: chosen.seat }, scoot: 0 };
+  const sticky = ring.find((c) => c.seat === preferred.rail && ringLegal(c, rail, viewport, boxRect, element, TOLERANCE));
+  const ringPick = sticky ?? ring.find((c) => ringLegal(c, rail, viewport, boxRect, element));
+  if (ringPick) {
+    return { box, rail: { x: ringPick.x, y: ringPick.y, seat: ringPick.seat }, scoot: 0 };
+  }
 
   /* Guaranteed seats. Below orientation: the slot the box opens above
      itself (the shipped scoot ceiling). Above orientation: beside the box,
-     flush with its anchored bottom edge, right side first. */
-  if (orientation === "below") {
-    const scoot = SLOT_PAD + rail.height + SLOT_PAD;
-    return {
-      box,
-      rail: {
-        x: clamp(box.x + box.width - rail.width, RAIL_GUTTER, viewport.width - RAIL_GUTTER - rail.width),
-        y: element.y + element.height + SLOT_PAD,
-        seat: "slot",
-      },
-      scoot,
-    };
-  }
-  /* Beside the box, right side first, flush with the anchored bottom edge.
-     Narrow viewports can fit neither side of a 380px box; the guarantee
-     outranks the side preference, so the rail then rides the box's outer
-     top edge instead — still seat "box-side", still growth-immune because
-     it re-derives from the box rect placement returns. */
-  const rightX = box.x + box.width + SLOT_PAD;
-  const leftX = box.x - SLOT_PAD - rail.width;
-  const flushY = box.y + input.box.height - rail.height;
-  if (rightX + rail.width <= viewport.width - RAIL_GUTTER) {
-    return { box, rail: { x: rightX, y: flushY, seat: "box-side" }, scoot: 0 };
-  }
-  if (leftX >= RAIL_GUTTER) {
-    return { box, rail: { x: leftX, y: flushY, seat: "box-side" }, scoot: 0 };
-  }
-  return {
-    box,
-    rail: {
-      x: clamp(box.x + box.width - rail.width, RAIL_GUTTER, viewport.width - RAIL_GUTTER - rail.width),
-      y: Math.max(RAIL_GUTTER, box.y - SLOT_PAD - rail.height),
-      seat: "box-side",
-    },
-    scoot: 0,
-  };
+     right first then left, flush with its anchored bottom edge; failing
+     both, above the box's own top edge. Every candidate is tier-tested and
+     then clamped into the viewport, so the returned position is always
+     on-screen and, whenever any candidate allows it, clear of the box and
+     the element too. */
+  const guaranteed = guaranteedCandidates(orientation, boxRect, element, rail);
+  const chosen = pickGuaranteed(guaranteed, rail, viewport, boxRect, element);
+  const r = clampRail(chosen, rail, viewport);
+  const scoot = chosen.seat === "slot" ? SLOT_PAD + rail.height + SLOT_PAD : 0;
+  return { box, rail: { x: r.x, y: r.y, seat: chosen.seat }, scoot };
 }
