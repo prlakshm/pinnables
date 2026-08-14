@@ -166,3 +166,46 @@ test("occupancy: a rail candidate never intersects the placed box", () => {
   const boxBox = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: 120 };
   assert.equal(intersects(railBox, boxBox), false);
 });
+
+test("finding A's original input: the docked guaranteed seat clears the box", () => {
+  /* Verbatim repro from the report. This 900px element starts 50px above
+     an 800px viewport, so it spans past both edges — no on-screen position
+     clears it, tier 1 was never reachable here and still isn't. What holds,
+     both before and after this fix, is box-clearance: box-side-right sits
+     on-screen raw with its built-in 8px gap from the box regardless. This
+     exact input does not exercise the fix (see the report's Fix round for
+     a same-element variant, differing only in loneLeft, where the fix does
+     newly clear the element too). */
+  const element = { x: 0, y: -50, width: 500, height: 900 };
+  const p = placeSelectionChrome(
+    input({ element, loneLeft: 0, rail: { width: 140, height: 27 } }),
+  );
+  assert.equal(p.box.seat, "docked");
+  assert.ok(p.rail);
+  const railBox = { x: p.rail!.x, y: p.rail!.y, width: 140, height: 27 };
+  const boxBox = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: 120 };
+  assert.equal(intersects(railBox, boxBox), false, "clears the box");
+});
+
+test("finding B's original input: the above guaranteed seat clears the element", () => {
+  /* Verbatim repro from the report (a 200x40 rail). This size needs 208px
+     of clearance beside a 380px box; splitting a 768px viewport around
+     that box never offers more than ~190px on either side, and box-outer
+     has under 12px of headroom above the box. No candidate here clears the
+     box either — box-clearance is not a floor this exact input reaches, so
+     this asserts what does hold, element-clearance, rather than the box
+     tier the fix's design otherwise targets (see the report). */
+  const element = { x: 200, y: 200, width: 500, height: 900 };
+  const p = placeSelectionChrome(
+    input({
+      element,
+      loneLeft: 200,
+      rail: { width: 200, height: 40 },
+      viewport: { width: 768, height: 1024 },
+    }),
+  );
+  assert.equal(p.box.seat, "above");
+  assert.ok(p.rail);
+  const railBox = { x: p.rail!.x, y: p.rail!.y, width: 200, height: 40 };
+  assert.equal(intersects(railBox, element), false, "clears the element");
+});
