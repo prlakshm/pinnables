@@ -62,7 +62,8 @@ placeSelectionChrome(input: {
   labelAbove: number;                 // floating label height when above, else 0
   box: { width: number; height: number };   // measured dialog size
   rail: { width: number; height: number } | null; // null = no rail
-  manualRail: { x: number; y: number } | null;    // dragged rail position
+  manualBox: { dx: number; dy: number } | null;   // dragged box, element-relative
+  manualRail: { dx: number; dy: number } | null;  // dragged rail, element-relative
   preferred: { box: BoxSeat | null; rail: RailSeat | null }; // hysteresis
   viewport: { width: number; height: number };
 }): {
@@ -72,7 +73,7 @@ placeSelectionChrome(input: {
   scoot: number;
 }
 
-type BoxSeat = "below" | "above" | "docked";
+type BoxSeat = "below" | "above" | "docked" | "moved";
 type RailSeat =
   | "card-right" | "below" | "card-left"   // below orientation
   | "top-right" | "top-left"               // above orientation
@@ -119,6 +120,32 @@ Above orientation: `top-right → top-left → box-side`.
   now defined once in this module. A manual rail overlapping the box body
   does not dodge; the user's arrangement wins.
 
+## Dragging the box
+
+The annotation box is grabbable by its body — no grip icon. Pin cards and
+the floating label already work this way: users find it by clicking around,
+and the box speaks the same language. The mechanics are `PinObject`'s
+verbatim: pointerdown anywhere on the box starts a drag unless the target is
+interactive (textarea, buttons, keycaps, links, `[data-no-drag]` children),
+so typing, pressing a key, or resending can never begin a move.
+
+**Manual positions are element-relative for both the box and the rail.**
+What a drag stores is an offset from the element's top-left, not a spot on
+the glass; every placement pass converts it back to viewport coordinates and
+clamps. Scroll, reflow, resize — the arrangement travels with the component
+it belongs to. This deliberately changes the main rail's existing dragged
+behaviour (viewport-fixed today, which lets the element scroll away from its
+own rail); capture rails already carry offsets, so this makes one rule of
+it. Existing stored `railPos` values are reinterpreted as offsets — a
+one-time misplacement a user fixes by re-dragging, not worth a migration.
+
+Dragged is manual forever, per pin, exactly like the rail's rule: the box
+gains `pin.boxPos` (nullable offset) beside `railPos`, both seats report
+`"moved"`, and the auto ladder stops arguing once the user has placed a
+piece. The rail's guaranteed seats compute against the box's actual rect
+wherever the user put it, so the no-overlap guarantee for auto-seated pieces
+survives any arrangement.
+
 ## Hysteresis
 
 Seats are sticky. The call receives the current seats as `preferred`; a
@@ -158,6 +185,11 @@ combination:
 4. box and rail inside viewport gutters
 5. rail exists whenever `rail` input is non-null
 
+Invariants 1–3 apply to auto seats. A `moved` piece is the user's own
+arrangement and is exempt from overlap rules; invariant 4 (clamping) always
+holds. Element-relative offsets get their own cases: scroll the element,
+assert the dragged piece keeps its offset.
+
 Named regression: footer at the bottom edge → box `above`, rail `top-right`
 (or `box-side` when the footer spans full width). Plus ladder/ring choice
 tables, anchor math, hysteresis tolerance, label allowance, scoot equality
@@ -168,7 +200,8 @@ page, pinning the actual footer; confirm drag-to-seam still animates.
 
 ## Out of scope
 
-- Dragging the annotation box (stays fixed placement).
+- A way back from `moved` to auto seating (matches the rail's existing rule;
+  revisit if it chafes).
 - Beside-the-element seats for the box (left/right) — above/below/docked
   covers the cases without changing the product's shape.
 - Guaranteed seats for capture rails.
