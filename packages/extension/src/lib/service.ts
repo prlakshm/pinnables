@@ -42,6 +42,11 @@ export interface PushBoardResult {
 export interface HealthResult {
   ok: boolean;
   home: string;
+  /** Whether the service can take and restore version snapshots — it needs a
+      git working tree. Absent on services older than version keys. `head` is
+      the chapter: the commit the tree stands on, which everything a
+      conversation produces is stamped with. */
+  versions?: { ok: boolean; detail: string | null; head?: string | null };
   cursor?: {
     configured: boolean;
     ok: boolean;
@@ -148,4 +153,24 @@ export async function sendAgentMessage(payload: {
 
 export async function agentMessageStatus(messageId: string): Promise<AgentMessageStatus> {
   return request<AgentMessageStatus>(`/messages/${encodeURIComponent(messageId)}`);
+}
+
+/**
+ * Put the working tree into the state a version recorded. `fromMessageId`
+ * names the snapshot currently applied so its hunks can be reversed first;
+ * conflicts are files where a later hand edit overlapped the run's own code
+ * and the version won.
+ */
+export async function restoreVersion(payload: {
+  boardId: string;
+  messageId: string;
+  fromMessageId: string | null;
+}): Promise<{ ok: boolean; conflicts: string[]; files: string[] }> {
+  return request<{ ok: boolean; conflicts: string[]; files: string[] }>(
+    `/versions/${encodeURIComponent(payload.messageId)}/restore`,
+    {
+      method: "POST",
+      body: JSON.stringify({ boardId: payload.boardId, fromMessageId: payload.fromMessageId }),
+    },
+  );
 }

@@ -99,13 +99,12 @@ export function projectDir(): string {
 }
 
 /**
- * Live pin edits are short, named-file changes. Grok 4.5 is the default —
- * fast enough for the live loop without Composer's heavier path.
- * Override with PINNABLES_CURSOR_MODEL. PINNABLES_CURSOR_FAST only applies
- * to Composer models.
+ * Live pin edits are short, named-file changes. Fast Composer is the right
+ * default — full Composer 2.5 (and vision) is what made Send feel stuck.
+ * Set PINNABLES_CURSOR_FAST=0 for the slower, higher-quality variant.
  */
 export function modelSelection(): ModelSelection {
-  const id = process.env.PINNABLES_CURSOR_MODEL?.trim() || "grok-4.5";
+  const id = process.env.PINNABLES_CURSOR_MODEL?.trim() || "composer-2.5";
   const fast = process.env.PINNABLES_CURSOR_FAST !== "0";
   if (fast && /^composer/i.test(id)) {
     return { id, params: [{ id: "fast", value: "true" }] };

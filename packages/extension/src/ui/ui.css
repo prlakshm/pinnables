@@ -2520,3 +2520,246 @@ button[aria-expanded="true"] .pin-row__chevron {
   color: var(--pin-ink-muted);
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------- version keys */
+/*
+ * The rail, the keys, and the set-down captures — mocks/toggle-redesign.html
+ * is the spec, and these rules are its, renamed onto the app's tokens. The
+ * mock's --beat/--ease pair exists only here, because nothing else in the
+ * overlay animates layout the way keys collapsing and growing do.
+ */
+.pin-versions {
+  --beat: 260ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid var(--pin-rule);
+  border-radius: 999px;
+  background: var(--pin-paper);
+  box-shadow: var(--pin-shadow);
+  font-family: var(--pin-mono);
+  pointer-events: auto;
+}
+
+.pin-key {
+  --beat: 260ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  min-width: 19px;
+  height: 19px;
+  max-width: 44px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 4px;
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease,
+    max-width var(--beat) var(--ease), min-width var(--beat) var(--ease),
+    padding var(--beat) var(--ease), margin var(--beat) var(--ease),
+    opacity 180ms ease, transform var(--beat) var(--ease);
+}
+.pin-key[data-on="true"] { background: var(--pin-on-fill); color: var(--pin-on-ink); }
+.pin-key:hover:not([data-on="true"]):not([data-collapsing="true"]) {
+  background: var(--pin-off-hover);
+  color: var(--pin-ink);
+}
+.pin-key:focus-visible { outline: 2px solid var(--pin-ink); outline-offset: 2px; }
+
+.pin-key[data-collapsing="true"],
+.pin-key[data-entering="true"] {
+  max-width: 0;
+  min-width: 0;
+  padding: 0;
+  margin-left: -4px;
+  opacity: 0;
+  transform: scale(0.55);
+  overflow: hidden;
+}
+
+@keyframes pin-key-land {
+  0% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
+  40% { box-shadow: inset 0 0 0 2px var(--pin-ink), 0 0 0 4px var(--pin-measure-glow); }
+  100% { box-shadow: inset 0 0 0 0 var(--pin-ink); }
+}
+.pin-key[data-landed="true"] { animation: pin-key-land 520ms var(--ease); }
+
+.pin-key__num { transition: opacity 140ms ease; }
+.pin-key[data-renumbering="true"] .pin-key__num { opacity: 0; }
+
+/*
+ * The grip, in the toolbar's own language. The rail floats over someone
+ * else's page, so it has to say it can be moved out of the way; the toolbar
+ * already says that with six dots and a grab cursor, and two floating things
+ * that can both be dragged should not announce it two different ways.
+ */
+.pin-versions__grip {
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 1px;
+  /* Pulled tight against the ⌥ — the grip and the modifier are both
+     furniture at the head of the row; a gap between them made two separate
+     prefixes out of what should read as one. */
+  margin-right: -2px;
+  color: var(--pin-ink-faint);
+  cursor: grab;
+  flex: 0 0 auto;
+  touch-action: none;
+}
+.pin-versions__grip:active { cursor: grabbing; }
+.pin-versions[data-dragging="true"] { box-shadow: var(--pin-shadow-lg); }
+.pin-versions[data-busy="true"] .pin-key { cursor: default; }
+
+/* The modifier, at the head of the rail. It is the shortcut legend as much
+   as a label: ⌥ and the numeral beside it is literally the chord. */
+.pin-versions__mod {
+  font-family: var(--pin-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pin-ink-faint);
+  padding: 0 3px;
+  user-select: none;
+  flex: 0 0 auto;
+  transition: color 120ms ease;
+}
+.pin-versions[data-armed="true"] .pin-versions__mod { color: var(--pin-ink); }
+
+/*
+ * A version set down beside the component.
+ *
+ * No identity plate and no composer: it sits next to the thing it came from,
+ * so its name would only repeat what you can already see. The rail under it
+ * is the whole of what it needs to say, which is also what distinguishes it
+ * at a glance from the live component — that one has a plate and a composer,
+ * and this has neither.
+ */
+.pin-capture {
+  position: fixed;
+  z-index: 4;
+  cursor: grab;
+  pointer-events: auto;
+}
+.pin-capture[data-moving="true"] { cursor: grabbing; }
+.pin-capture img { user-select: none; }
+/* A capture whose picture has not arrived — the shape holds the seat. */
+.pin-capture__blank {
+  background: var(--pin-paper-sunk);
+  border: 1px solid var(--pin-rule);
+}
+
+/* The key being carried. The one left behind stays in place but recedes, so
+   the row does not reflow mid-drag and you can still see where it came from. */
+.pin-key[data-dragging="true"] { opacity: 0.3; }
+.pin-key--ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: var(--pin-shadow-lg);
+}
+/*
+ * Where the key will land, opened in its own numeric place. It says which
+ * rail and which seat at once, which a ring around the whole pill cannot.
+ * One placeholder per key on its way in — a whole rail dropping in opens
+ * one per key it carries. No ring on a receiving rail, whatever is arriving.
+ */
+.pin-key--slot {
+  background: transparent;
+  border: 1px solid var(--pin-rule-strong);
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Same keycap as the rail on chat rows, so the two read as one vocabulary. */
+.pin-note__history .pin-key { overflow: hidden; }
+/*
+ * A history row carries its own ⌥, because unlike the rail there is no
+ * shared head for the modifier to sit in — each row is on its own. Spaced
+ * the way the stash chip spaces its own chord, and held back a step so the
+ * numeral stays the thing you read.
+ */
+.pin-key__mod {
+  margin-right: 3px;
+  opacity: 0.6;
+}
+
+/*
+ * Done is a flash, not a label. It says the run landed, then gives up its
+ * seat to the keycap that is the actually useful thing on a finished row.
+ * The row never reflows, because the tag leaves along the same axis the key
+ * arrives on.
+ */
+.pin-note__history .pin-note__tag {
+  max-width: 120px;
+  overflow: hidden;
+  transition: max-width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    margin 260ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pin-note__tag[data-leaving="true"] {
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-right: -10px;
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+/* The keycap's tooltip — the words that made the version, on the key that
+   names it. */
+.pin-tip {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--pin-font);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pin-ink);
+  background: var(--pin-paper);
+  border: 1px solid var(--pin-rule);
+  border-radius: 6px;
+  box-shadow: var(--pin-shadow);
+  padding: 5px 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 6;
+}
+.pin-key:hover .pin-tip,
+.pin-key:focus-visible .pin-tip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.pin-key[data-collapsing="true"] .pin-tip,
+.pin-key[data-entering="true"] .pin-tip { display: none; }
+
+/*
+ * The composer gets out of the rail's way, and no further — the scoot is a
+ * margin so the placement math stays untouched, and it is animated because
+ * an instant jump reads as a layout bug where a slide reads as making room.
+ */
+.pin-live-note { transition: margin-top 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-key, .pin-tip, .pin-live-note, .pin-note__history .pin-note__tag {
+    transition-duration: 1ms;
+  }
+  .pin-key[data-landed="true"] { animation-duration: 1ms; }
+}

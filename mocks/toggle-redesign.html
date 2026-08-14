@@ -305,6 +305,13 @@ body {
   font-family: var(--pin-font);
   color: var(--pin-ink);
   position: relative;
+  /*
+   * The composer follows the rail rather than snapping to it. Set per frame of
+   * a drag, each move restarts this, which reads as the box being pushed along
+   * a beat behind the thing pushing it — and makes the ceiling legible, because
+   * you can see it ease to a stop instead of simply ceasing to move.
+   */
+  transition: margin-top 220ms var(--ease);
 }
 .pin-object > .pin-note {
   width: 0;
@@ -684,7 +691,7 @@ body {
 .pin-key[data-entering="true"] .pin-tip { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pin-key, .variety, .pin-tip, .pin-kbd, .pin-note__send { transition-duration: 1ms; }
+  .pin-key, .variety, .pin-tip, .pin-kbd, .pin-note__send, .pin-note { transition-duration: 1ms; }
   .pin-key[data-landed="true"] { animation-duration: 1ms; }
 }
 </style>
@@ -1264,6 +1271,7 @@ body {
       railEl.style.left = at.x + "px";
       railEl.style.top = at.y + "px";
       railEl.dataset.placed = "moved";
+      if (railId === "main") clearComposer();
     }
 
     function finish(ev, commit) {
@@ -1426,12 +1434,24 @@ body {
     wrap.dataset.moving = "true";
 
     function move(ev) {
+      var was = r.pos;
       r.pos = {
         x: Math.max(4 - host.left, ev.clientX - dx - host.left),
         y: Math.max(4 - host.top, ev.clientY - dy - host.top)
       };
       wrap.style.left = r.pos.x + "px";
       wrap.style.top = r.pos.y + "px";
+
+      /*
+       * The rail goes where the card goes. One that is still auto-seated finds
+       * its own way there, and one that was placed by hand keeps the offset it
+       * was given — either way the pair travels together, because a version and
+       * the key that names it are one object.
+       */
+      if (r.railPos) {
+        r.railPos = { x: r.railPos.x + (r.pos.x - was.x), y: r.railPos.y + (r.pos.y - was.y) };
+      }
+      place();
     }
     function up() {
       window.removeEventListener("pointermove", move);
@@ -1587,10 +1607,45 @@ body {
     return { x: x - host.left, y: y - host.top };
   }
 
+  /*
+   * The composer gets out of the rail's way, and no further.
+   *
+   * Dragged down the card's bottom edge the rail lands on top of the composer,
+   * so the composer steps down just far enough to sit under it, keeping the gap
+   * below the rail equal to the gap above it. Any more and the pin would come
+   * apart every time the rail moved a few pixels.
+   */
+  function clearComposer() {
+    var note = document.querySelector(".pin-object > .pin-note");
+    if (!note) return;
+    if (menu.hidden || !state.selected) { note.style.marginTop = ""; return; }
+
+    var railBox = menu.getBoundingClientRect();
+    var cardBox = card.getBoundingClientRect();
+    var noteBox = note.getBoundingClientRect();
+
+    var hangs = railBox.bottom - cardBox.bottom;
+    var overlapsAcross = railBox.left < noteBox.right && railBox.right > noteBox.left;
+    if (hangs <= 0 || !overlapsAcross) { note.style.marginTop = ""; return; }
+
+    /*
+     * Room for the gap, the rail, and the gap again — and never a pixel more.
+     * Uncapped it tracked the rail down the page, so dragging the rail far
+     * enough pulled the composer off the bottom of the pin. The ceiling is the
+     * layout the rail actually needs, which is the same one it has when it is
+     * sitting in that space rather than being dragged through it.
+     */
+    var gap = 8;
+    var ceiling = gap + railBox.height + gap;
+    var above = Math.max(0, railBox.top - cardBox.bottom);
+    note.style.marginTop = Math.min(ceiling, Math.max(gap, hangs + above)) + "px";
+  }
+
   function place() {
     if (menu.hidden) return;
     var got = seatRail(menu, card, state.railPos, $("obj"));
     if (state.railPos) state.railPos = got;
+    clearComposer();
     /* Captures are seated by the same routine, from their own cards. */
     state.rails.forEach(function (r) {
       var el = document.querySelector('.pin-versions[data-rail="' + r.id + '"]');

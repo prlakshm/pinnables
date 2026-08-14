@@ -1,4 +1,12 @@
-import type { Board, DrawShape, Pin, PinStatus, Relationship, Viewport } from "@pinnables/shared";
+import type {
+  Board,
+  Capture,
+  DrawShape,
+  Pin,
+  PinStatus,
+  Relationship,
+  Viewport,
+} from "@pinnables/shared";
 
 /**
  * The one message contract shared by the content script, the service worker,
@@ -29,6 +37,18 @@ export interface ExtensionState {
   captureMode: boolean;
   activeBoardId: string | null;
   serviceOnline: boolean;
+  /**
+   * True when the service can snapshot and restore versions — it needs a git
+   * working tree behind the project. Off means the rail never appears; the
+   * feature turns itself off rather than offering keys that would not work.
+   */
+  versionsOk: boolean;
+  /**
+   * The commit the project stands on — the open chapter. Keys and chat rows
+   * stamped with an earlier head have been absorbed by a commit: they keep
+   * their words and stop being a way back. Null when versions are off.
+   */
+  projectHead: string | null;
   /** True when the local service can push to Cursor agents. */
   cursorOnline: boolean;
   /**
@@ -114,7 +134,9 @@ export interface Contract {
   "pin/update": {
     req: {
       pinId: string;
-      patch: Partial<Pick<Pin, "annotation" | "status" | "order" | "groupId" | "styleEdits" | "name">>;
+      patch: Partial<
+        Pick<Pin, "annotation" | "status" | "order" | "groupId" | "styleEdits" | "name" | "railPos">
+      >;
     };
     res: { board: Board };
   };
@@ -198,6 +220,47 @@ export interface Contract {
   "agent/recordOutcome": {
     req: { messageId: string; state: "starting" | "working" | "done" | "failed" };
     res: Record<string, never>;
+  };
+
+  /**
+   * Press a version key: put the working tree back into the state that key
+   * names. The worker calls the local service (reverse the current patch,
+   * apply the target's) and records `currentVersionNo` on the pin, so the
+   * lit key survives whichever surface happened to ask. `conflicts` lists
+   * files where a hand edit overlapped the run's own code and the version
+   * won that hunk.
+   */
+  "version/restore": {
+    req: { pinId: string; no: number };
+    res: { board: Board; conflicts: string[] };
+  };
+
+  /**
+   * Photograph the live element as it looks right now, for the version that
+   * just landed — the picture a drag-out capture shows. Called by the overlay
+   * because only the page knows where the element is; the worker crops the
+   * tab shot to the rect and files it under the version's key. Best-effort:
+   * a version with no picture falls back to the pin's own screenshot.
+   */
+  "version/shot": {
+    req: {
+      pinId: string;
+      no: number;
+      rect: { x: number; y: number; width: number; height: number };
+      devicePixelRatio: number;
+    };
+    res: { ok: boolean };
+  };
+
+  /**
+   * Replace the board's set-down captures wholesale. The overlay owns the
+   * gesture logic — lay down, merge, move, empty — and each gesture commits
+   * its outcome as the full next state, so the partition (every key in
+   * exactly one rail) can never be half-written.
+   */
+  "capture/save": {
+    req: { boardId: string; captures: Capture[] };
+    res: { board: Board };
   };
 
   /**

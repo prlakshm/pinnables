@@ -91,7 +91,7 @@ test("cursorRuntime defaults to local", async () => {
   else process.env.PINNABLES_PROJECT_DIR = prevDir;
 });
 
-test("local Sends default to Grok and skip images", async () => {
+test("local Sends default to fast Composer and skip images", async () => {
   const { modelSelection, sendImagesEnabled, shouldAttachScreenshots } = await import(
     "../packages/service/src/cursor.ts"
   );
@@ -104,13 +104,11 @@ test("local Sends default to Grok and skip images", async () => {
   delete process.env.PINNABLES_SEND_IMAGES;
   delete process.env.PINNABLES_CURSOR_RUNTIME;
   const model = modelSelection();
-  assert.equal(model.id, "grok-4.5");
-  assert.equal(model.params, undefined);
+  assert.equal(model.id, "composer-2.5");
+  assert.equal(model.params?.[0]?.id, "fast");
   assert.equal(sendImagesEnabled(), false);
   assert.equal(shouldAttachScreenshots(false), false);
   assert.equal(shouldAttachScreenshots(true), true);
-  process.env.PINNABLES_CURSOR_MODEL = "composer-2.5";
-  assert.deepEqual(modelSelection().params, [{ id: "fast", value: "true" }]);
   process.env.PINNABLES_CURSOR_FAST = "0";
   assert.equal(modelSelection().params, undefined);
   process.env.PINNABLES_SEND_IMAGES = "1";

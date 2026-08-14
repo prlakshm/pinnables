@@ -94,6 +94,56 @@ export const LiveSendSchema = z.object({
    * keeps them out of the waiting list.
    */
   state: z.enum(["queued", "starting", "working", "done", "failed"]).default("done"),
+  /**
+   * The version key this run earned when it finished — the numeral on the
+   * chat row and on the rail. Null while the run is in flight, and null
+   * forever for runs that failed or predate version keys.
+   */
+  versionNo: z.number().int().nullable().default(null),
+  /**
+   * The commit this message was written against — the chapter it belongs to.
+   * A conversation lives from the moment it starts until the commit that
+   * makes it true: rows from an earlier chapter keep their words in storage
+   * but leave the box, the same way their keys stop being a way back. Null
+   * on messages from before chapters existed, which always show.
+   */
+  head: z.string().nullable().default(null),
+});
+
+/**
+ * One state of the working tree, named by a key.
+ *
+ * A completed run earns a number and the number is the whole interface:
+ * it sits on the chat row that produced the state and on the floating rail
+ * beside the component, and pressing it puts the files back. `no` is the
+ * take's name, not its position — numbers climb 1..5 and then start over,
+ * the newcomer evicting whoever wore that numeral before.
+ */
+export const PinVersionSchema = z.object({
+  /** 1..5 — the key. */
+  no: z.number().int(),
+  /**
+   * The run that made this state, and the name of its snapshot on the
+   * service. Null for the original, whose snapshot is the board's baseline.
+   */
+  messageId: z.string().nullable(),
+  /** The words that asked for it — the tooltip on the key. */
+  label: z.string(),
+  at: z.string(),
+  /**
+   * chrome.storage key of this state's picture, for the drag-out capture.
+   * Taken opportunistically when the run lands while the pin is on screen;
+   * null means the capture falls back to the pin's own screenshot.
+   */
+  screenshotKey: z.string().nullable().default(null),
+  /**
+   * The commit this state was snapshotted against. A patch only means
+   * anything relative to the tree it was diffed from, so when HEAD moves —
+   * a commit, a pull, a branch switch — the key goes quiet rather than
+   * promising a restore it would butcher. Null on keys from before
+   * chapters existed; they stay pressable and the service is the backstop.
+   */
+  head: z.string().nullable().default(null),
 });
 
 export const BoardStatusSchema = z.enum(["draft", "ready", "in-progress", "done"]);
@@ -182,6 +232,30 @@ export const PinSchema = z.object({
   annotation: z.string(),
   /** Messages already delivered live — see `LiveSendSchema`. */
   liveSends: z.array(LiveSendSchema).default([]),
+  /**
+   * The states this pin's runs have produced, keyed 1..5 — see
+   * `PinVersionSchema`. The original slips in as key 1 when the first run
+   * lands, so the numeral order is the order things happened in.
+   */
+  versions: z.array(PinVersionSchema).default([]),
+  /**
+   * Total versions ever minted for this pin, including the original. The ring
+   * needs a monotonic count to know which numeral is next; the versions array
+   * cannot supply it because evicted takes leave no trace there.
+   */
+  versionSeq: z.number().int().default(0),
+  /**
+   * Which key the working tree is wearing, as far as this pin knows. Null
+   * until the first run lands. This is the lit key on the rail, and the
+   * `fromMessageId` a restore reverses out of.
+   */
+  currentVersionNo: z.number().int().nullable().default(null),
+  /**
+   * Where the user parked the rail, in viewport coordinates. Null until
+   * dragged — after that it is the only thing that decides where the rail
+   * sits, exactly like a moved pin card.
+   */
+  railPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
   captureState: z.string(),
   status: PinStatusSchema,
   createdAt: z.string(),
@@ -201,6 +275,28 @@ export const RelationshipSchema = z.object({
   instruction: z.string(),
 });
 
+/**
+ * A version set down beside the live component — the drag-out comparison.
+ *
+ * A capture is its own surface rather than a fact about the pin: it has a
+ * position, a rail, and a subset of the pin's keys. The main rail is the
+ * remainder — every key lives in exactly one rail, which is what lets ⌥N
+ * answer without any notion of focus.
+ */
+export const CaptureSchema = z.object({
+  id: z.string(),
+  pinId: z.string(),
+  /** Version numbers this capture's rail holds. Never empty — the last key
+      leaving destroys the capture. */
+  keys: z.array(z.number().int()).min(1),
+  /** The key this capture is showing. */
+  current: z.number().int(),
+  /** Viewport coordinates of the set-down card. */
+  pos: z.object({ x: z.number(), y: z.number() }),
+  /** The capture rail's dragged position; null while it auto-seats. */
+  railPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
+});
+
 export const BoardSchema = z.object({
   id: z.string(),
   schemaVersion: z.number().int(),
@@ -213,6 +309,8 @@ export const BoardSchema = z.object({
   updatedAt: z.string(),
   pins: z.array(PinSchema),
   relationships: z.array(RelationshipSchema),
+  /** Versions set down for comparison — see `CaptureSchema`. */
+  captures: z.array(CaptureSchema).default([]),
 });
 
 export const ProjectSchema = z.object({
@@ -229,11 +327,25 @@ export function sortedByOrder<T extends { order: number }>(items: readonly T[]):
   return [...items].sort((a, b) => a.order - b.order);
 }
 
+/** The rail never shows more than this many keys at once. */
+export const VERSION_RING = 5;
+
+/**
+ * The numeral the nth take wears: 1..5 then back to 1. Assigned once, at
+ * creation, and never recomputed — it is the take's name, not its position,
+ * which is why the numbers can keep climbing while the rail stays five wide.
+ */
+export function versionKeyFor(seq: number): number {
+  return ((seq - 1) % VERSION_RING) + 1;
+}
+
 export type Viewport = z.infer<typeof ViewportSchema>;
 export type PinStatus = z.infer<typeof PinStatusSchema>;
 export type PinKind = z.infer<typeof PinKindSchema>;
 export type DrawShape = z.infer<typeof DrawShapeSchema>;
 export type LiveSend = z.infer<typeof LiveSendSchema>;
+export type PinVersion = z.infer<typeof PinVersionSchema>;
+export type Capture = z.infer<typeof CaptureSchema>;
 export type DrawAnchor = z.infer<typeof DrawAnchorSchema>;
 export type BoardStatus = z.infer<typeof BoardStatusSchema>;
 export type Pin = z.infer<typeof PinSchema>;

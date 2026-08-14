@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { pinLabel, type Board, type Pin } from "@pinnables/shared";
+import { pinLabel, type Board, type LiveSend, type Pin } from "@pinnables/shared";
 import { recordableLiveSendState } from "../lib/live-send";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
 import { WorkingDots } from "../ui/WorkingDots";
+import { flyKeyToRail } from "./VersionRail";
 
 /**
  * The annotation bar, attached to the live component — v1's pill, kept.
@@ -55,6 +56,19 @@ export interface SelectionDialogProps {
   pins: Pin[];
   board: Board;
   position: { x: number; y: number; width: number };
+  /** How far to step down so the version rail can sit above — see
+      composerScoot. Animated, so the move reads as making room. */
+  scoot?: number;
+  /** A restore in flight anywhere — chat keys go quiet while it runs. */
+  versionBusy?: boolean;
+  onVersionBusy?: (busy: boolean) => void;
+  /**
+   * The open chapter. Settled rows stamped with an earlier head have been
+   * absorbed by a commit: they stay in storage but leave the box, exactly
+   * as their keys stop being a way back. Null tolerates old data and
+   * offline services — everything shows.
+   */
+  projectHead?: string | null;
   /** Set when this selection is the target of an on-screen relationship. */
   targetOf: string | null;
   /** The relationship the message is about, when there is exactly one. */
@@ -70,10 +84,24 @@ export interface SelectionDialogProps {
   onDismiss: () => void;
 }
 
+/**
+ * How long "Done" holds before handing its seat to the version key.
+ *
+ * Shorter than the old 4s goodbye flash, because the job changed: the row
+ * used to leave the log for good, so the tag was a farewell. Now the row
+ * stays and keeps a key, so the tag only has to be readable before it hands
+ * over.
+ */
+const DONE_FLASH_MS = 1200;
+
 export function SelectionDialog({
   pins,
   board,
   position,
+  scoot = 0,
+  versionBusy = false,
+  onVersionBusy,
+  projectHead = null,
   targetOf,
   relationshipId,
   drawingSummary,
@@ -96,9 +124,14 @@ export function SelectionDialog({
   const [chordHeld, setChordHeld] = useState(false);
   /** True only while the session's one teaching moment is on screen. */
   const [hintActive, setHintActive] = useState(false);
-  /** Runs that just finished — their "Completed" tag shows briefly, then the
-      entry leaves the log for good. */
+  /** Runs that just finished — their "Done" tag holds a beat, then hands its
+      seat to the version key and the row stays in the log. */
   const [completedFlash, setCompletedFlash] = useState<Set<string>>(new Set());
+  /** The tag's exit: it narrows away along the axis the keycap arrives on. */
+  const [flashLeaving, setFlashLeaving] = useState<Set<string>>(new Set());
+  /** A row whose Done just cleared — its keycap flies to the rail. */
+  const [justSettled, setJustSettled] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const pollTimer = useRef<number | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const primary = pins[0];
@@ -217,15 +250,29 @@ export function SelectionDialog({
         // what resolves the history tag even after this dialog is gone.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
         if (status.state === "done") {
-          // The "Done" tag gets its moment before the entry leaves the log.
+          /*
+           * The "Done" tag gets its moment, then hands its seat to the
+           * version key: the tag narrows away, the keycap grows in on the
+           * same axis, and the copy flies to the rail. The row itself stays —
+           * a finished line's number is the way back to its state.
+           */
           setCompletedFlash((previous) => new Set(previous).add(messageId));
+          window.setTimeout(() => {
+            setFlashLeaving((previous) => new Set(previous).add(messageId));
+          }, DONE_FLASH_MS - 260);
           window.setTimeout(() => {
             setCompletedFlash((previous) => {
               const next = new Set(previous);
               next.delete(messageId);
               return next;
             });
-          }, 4_000);
+            setFlashLeaving((previous) => {
+              const next = new Set(previous);
+              next.delete(messageId);
+              return next;
+            });
+            setJustSettled(messageId);
+          }, DONE_FLASH_MS);
         }
       } catch {
         if (selectionKeyRef.current !== key) return;
@@ -419,6 +466,39 @@ export function SelectionDialog({
     await stage(message, false);
   }, [draft, stage, keepNow]);
 
+  /*
+   * The settled row's keycap flies to the rail — the same key, seen leaving
+   * one place and arriving in the other. Waits for the mint to land on the
+   * board (versionNo appears via the outcome broadcast), then launches from
+   * the row's own element. If the mint never lands there is nothing to fly.
+   */
+  useEffect(() => {
+    if (!justSettled) return;
+    const sent = primary?.liveSends.find((s) => s.messageId === justSettled);
+    if (!sent || sent.versionNo === null) return;
+    const no = sent.versionNo;
+    const timer = window.setTimeout(() => {
+      const rowKey = rootRef.current?.querySelector<HTMLElement>(
+        `.pin-key[data-msg="${justSettled}"]`,
+      );
+      if (rowKey) flyKeyToRail(rowKey, no);
+    }, 220);
+    setJustSettled(null);
+    void timer;
+  }, [justSettled, primary?.liveSends]);
+
+  /** Press a chat key: same restore the rail runs, same quiet while it runs. */
+  const pressVersion = useCallback(
+    (no: number) => {
+      if (versionBusy || primary?.currentVersionNo === no) return;
+      onVersionBusy?.(true);
+      void send("version/restore", { pinId: primary.id, no })
+        .catch(() => {})
+        .finally(() => onVersionBusy?.(false));
+    },
+    [versionBusy, primary, onVersionBusy],
+  );
+
   if (!primary) return null;
 
   const name = pinLabel(primary, board.pins);
@@ -445,12 +525,25 @@ export function SelectionDialog({
    * same messageId on every pin it went to, which is exactly the test for
    * "belongs to this conversation" — one pin's private sends stay off a
    * group bar, and a lone pin shows its full log.
+   *
+   * Only the open chapter shows. A settled row stamped with an earlier head
+   * was absorbed by a commit — its words stay in storage, but the box is a
+   * working conversation, not an archive. A row still in flight shows
+   * whatever its stamp says: a run is a fact until it lands.
    */
-  const historySends = primary.liveSends.filter((sent) =>
-    sent.messageId === null
-      ? pins.length === 1
-      : pins.every((pin) => pin.liveSends.some((other) => other.messageId === sent.messageId)),
-  );
+  const settled = (state: string) => state === "done" || state === "failed";
+  const inChapter = (sent: { head: string | null; state: string }) =>
+    !settled(sent.state) ||
+    sent.head === null ||
+    projectHead === null ||
+    sent.head === projectHead;
+  const historySends = primary.liveSends
+    .filter(inChapter)
+    .filter((sent) =>
+      sent.messageId === null
+        ? pins.length === 1
+        : pins.every((pin) => pin.liveSends.some((other) => other.messageId === sent.messageId)),
+    );
 
   const statusLine = (() => {
     switch (phase.kind) {
@@ -476,8 +569,9 @@ export function SelectionDialog({
 
   return (
     <div
+      ref={rootRef}
       className="pin-note pin-note--floating pin-live-note"
-      style={{ left: position.x, top: position.y, width: position.width }}
+      style={{ left: position.x, top: position.y, width: position.width, marginTop: scoot }}
       data-no-drag
     >
       <div className="pin-note__body">
@@ -580,6 +674,87 @@ export function SelectionDialog({
         */}
       {(boardNotes.length > 0 || historySends.length > 0 || echo !== null) && (
         <div className="pin-note__history">
+          {/* The just-sent line, at the top the instant Enter lands — newest
+              first, so the line you are waiting on sits against the input.
+              The board's own entry takes over as soon as the service accepts. */}
+          {echo !== null && !primary.liveSends.some((sent) => sent.text === echo) && (
+            <div className="pin-note__history-item">
+              <span className="pin-note__history-text">{echo}</span>
+              <span className="pin-note__tag">
+                Sending to agent<WorkingDots />
+              </span>
+            </div>
+          )}
+          {/*
+            * Newest first. Numbering is untouched by this: the keys stay in
+            * the order things happened, which is why the column counts down.
+            * A finished row keeps its version key — the numeral is the way
+            * back — and a row whose take rotated off the rail keeps only its
+            * words: it stops being a way back, not part of the record.
+            */}
+          {historySends
+            .slice()
+            .reverse()
+            .map((sent, index) => {
+              const flashing =
+                sent.state === "done" &&
+                sent.messageId !== null &&
+                completedFlash.has(sent.messageId);
+              const settledKey =
+                sent.state === "done" && !flashing ? versionKeyOf(sent, primary) : null;
+              return (
+                <div
+                  key={`sent-${index}`}
+                  className="pin-note__history-item"
+                  title={`Delivered ${sent.at}`}
+                >
+                  <span className="pin-note__history-text">{sent.text}</span>
+                  {sent.state === "failed" ? (
+                    <button
+                      type="button"
+                      className="pin-note__tag pin-note__tag--action"
+                      onClick={() => void resendEntry(sent.text, sent.messageId)}
+                      title="This run didn’t finish. Send it to the agent again"
+                    >
+                      Resend
+                    </button>
+                  ) : sent.state === "done" ? (
+                    flashing ? (
+                      <span
+                        className="pin-note__tag"
+                        data-leaving={
+                          sent.messageId !== null && flashLeaving.has(sent.messageId)
+                            ? "true"
+                            : "false"
+                        }
+                      >
+                        Done
+                      </span>
+                    ) : settledKey !== null ? (
+                      <RowKey
+                        no={settledKey}
+                        messageId={sent.messageId}
+                        lit={primary.currentVersionNo === settledKey}
+                        label={sent.text}
+                        busy={versionBusy}
+                        onPress={() => pressVersion(settledKey)}
+                      />
+                    ) : null
+                  ) : (
+                    <span className="pin-note__tag">
+                      {/* Dots mean in motion; a bare word means settled. */}
+                      {sent.state === "queued" ? (
+                        "Queued"
+                      ) : sent.state === "starting" ? (
+                        <>Sending to agent<WorkingDots /></>
+                      ) : (
+                        <>Working<WorkingDots /></>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           {boardNotes.map((note, index) => (
             <div key={`note-${index}`} className="pin-note__history-item">
               <span className="pin-note__history-text">{note}</span>
@@ -590,54 +765,6 @@ export function SelectionDialog({
               </span>
             </div>
           ))}
-          {historySends
-            .filter(
-              (sent) =>
-                sent.state !== "done" ||
-                (sent.messageId !== null && completedFlash.has(sent.messageId)),
-            )
-            .map((sent, index) => (
-              <div
-                key={`sent-${index}`}
-                className="pin-note__history-item"
-                title={`Delivered ${sent.at}`}
-              >
-                <span className="pin-note__history-text">{sent.text}</span>
-                {sent.state === "failed" ? (
-                  <button
-                    type="button"
-                    className="pin-note__tag pin-note__tag--action"
-                    onClick={() => void resendEntry(sent.text, sent.messageId)}
-                    title="This run didn’t finish. Send it to the agent again"
-                  >
-                    Resend
-                  </button>
-                ) : (
-                  <span className="pin-note__tag">
-                    {/* Dots mean in motion; a bare word means settled. */}
-                    {sent.state === "queued" ? (
-                      "Queued"
-                    ) : sent.state === "done" ? (
-                      "Done"
-                    ) : sent.state === "starting" ? (
-                      <>Sending to agent<WorkingDots /></>
-                    ) : (
-                      <>Working<WorkingDots /></>
-                    )}
-                  </span>
-                )}
-              </div>
-            ))}
-          {/* The just-sent line, shown here the instant Enter lands; the
-              board's own entry takes over as soon as the service accepts. */}
-          {echo !== null && !primary.liveSends.some((sent) => sent.text === echo) && (
-            <div className="pin-note__history-item">
-              <span className="pin-note__history-text">{echo}</span>
-              <span className="pin-note__tag">
-                Sending to agent<WorkingDots />
-              </span>
-            </div>
-          )}
         </div>
       )}
 
@@ -658,5 +785,59 @@ export function SelectionDialog({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The version key a settled row wears, or null when its take rotated off.
+ *
+ * Matching on number alone is not enough: numerals recycle, so a row's key 5
+ * could otherwise light up for a *newer* take that took the numeral over.
+ * The messageId pins the key to the exact take this row produced.
+ */
+function versionKeyOf(sent: LiveSend, pin: Pin): number | null {
+  if (sent.versionNo === null) return null;
+  const owned = (pin.versions ?? []).some(
+    (v) => v.no === sent.versionNo && v.messageId === sent.messageId,
+  );
+  return owned ? sent.versionNo : null;
+}
+
+/**
+ * The same keycap the rail wears, on the row that produced it — one
+ * vocabulary. A row carries its own ⌥ because unlike the rail there is no
+ * shared head for the modifier to sit in.
+ */
+function RowKey({
+  no,
+  messageId,
+  lit,
+  label,
+  busy,
+  onPress,
+}: {
+  no: number;
+  messageId: string | null;
+  lit: boolean;
+  label: string;
+  busy: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="pin-key"
+      data-no={no}
+      data-msg={messageId ?? undefined}
+      data-on={lit ? "true" : "false"}
+      aria-pressed={lit}
+      aria-label={`Version ${no}, ${label}`}
+      title={`⌥${no} · switch to this version`}
+      disabled={busy}
+      onClick={onPress}
+    >
+      <span className="pin-key__mod">⌥</span>
+      <span className="pin-key__num">{no}</span>
+    </button>
   );
 }

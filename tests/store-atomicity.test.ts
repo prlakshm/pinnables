@@ -37,6 +37,8 @@ test("concurrent state patches merge instead of overwriting each other", async (
     captureMode: false,
     activeBoardId: null,
     serviceOnline: false,
+    versionsOk: false,
+    projectHead: null,
     cursorOnline: false,
     cursorAgentUrl: null,
     cursorRuntime: null,
