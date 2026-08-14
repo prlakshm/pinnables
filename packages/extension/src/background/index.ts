@@ -3,6 +3,7 @@ import {
   SCHEMA_VERSION,
   expandProperties,
   originOf,
+  versionKeyFor,
   type Board,
   type Pin,
   type Relationship,
@@ -22,8 +23,10 @@ import {
   getHealth,
   isServiceOnline,
   pushBoard,
+  restoreVersion,
   sendAgentMessage,
 } from "../lib/service";
+import { versionShotKey } from "../lib/store";
 import { bitmapCropRect, visibleElementFrame } from "../lib/crop";
 
 /**
@@ -479,6 +482,8 @@ const handlers: Handlers = {
     return {
       ...state,
       serviceOnline: Boolean(health?.ok),
+      versionsOk: Boolean(health?.versions?.ok),
+      projectHead: health?.versions?.head ?? null,
       cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
       cursorAgentUrl: health?.cursor?.agentUrl ?? null,
       cursorRuntime: health?.cursor?.runtime ?? null,
@@ -493,6 +498,8 @@ const handlers: Handlers = {
     return {
       ...(await store.getState()),
       serviceOnline: Boolean(health?.ok),
+      versionsOk: Boolean(health?.versions?.ok),
+      projectHead: health?.versions?.head ?? null,
       cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
       cursorAgentUrl: health?.cursor?.agentUrl ?? null,
       cursorRuntime: health?.cursor?.runtime ?? null,
@@ -590,6 +597,31 @@ const handlers: Handlers = {
         };
       }
 
+      /*
+       * The conversation belongs to the component, not to the board that
+       * happened to be open. A submit freezes its board and the next click
+       * here makes a fresh pin — but the stickers stay on the cabinet: the
+       * newest earlier board holding this same component (same origin,
+       * route, selector — the identity test above) hands its record down.
+       * Delivered messages and keys come across; staged annotation does
+       * not, because it is this board's work list and carrying it would
+       * quietly resubmit last board's instructions.
+       */
+      const ancestor = (await store.listBoards())
+        .filter((b) => b.id !== current.id)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .flatMap((b) =>
+          b.pins.filter(
+            (candidate) =>
+              candidate.kind === "element" &&
+              candidate.route === element.route &&
+              originOf(candidate.url) === captureOrigin &&
+              candidate.selector === element.selector &&
+              candidate.selector !== "" &&
+              candidate.groupId === null,
+          ),
+        )[0];
+
       const pinId = store.nextId("pin");
       const now = new Date().toISOString();
       const highest = store.sortedPins(current).at(-1)?.order ?? 0;
@@ -623,7 +655,13 @@ const handlers: Handlers = {
         computedStyles: element.computedStyles,
         styleEdits: {},
         annotation: "",
-        liveSends: [],
+        liveSends: structuredClone(ancestor?.liveSends ?? []),
+        versions: structuredClone(ancestor?.versions ?? []),
+        /* The ring continues counting — a fresh pin that restarted at 1
+           would hand out numerals its inherited keys already wear. */
+        versionSeq: ancestor?.versionSeq ?? 0,
+        currentVersionNo: ancestor?.currentVersionNo ?? null,
+        railPos: null,
         captureState: element.viewport.width < 640 ? "mobile" : "default",
         status: "todo",
         createdAt: now,
@@ -760,6 +798,10 @@ const handlers: Handlers = {
         styleEdits: {},
         annotation: "",
         liveSends: [],
+        versions: [],
+        versionSeq: 0,
+        currentVersionNo: null,
+        railPos: null,
         captureState: viewport.width < 640 ? "mobile" : "default",
         status: "todo",
         createdAt: now,
@@ -812,7 +854,8 @@ const handlers: Handlers = {
     const push: { value: BoardPush | null } = { value: null };
 
     const board = await store.mutateBoard(boardId, async (current) => {
-      if (!(await isServiceOnline())) {
+      const health = await getHealth();
+      if (!health?.ok) {
         throw new Error("Local service is offline; the board was not submitted");
       }
       // Close every picker while this queued submission still owns the board.
@@ -849,6 +892,41 @@ const handlers: Handlers = {
           agentId: result.agentId,
           url: result.url,
         };
+        /*
+         * The push is one run for the whole board, and a run is a message —
+         * so every pin it carried records it, wearing the same messageId.
+         * That is what lets the outcome mint the same key on all of them,
+         * and what the next board's pins inherit so the conversation shows
+         * where it left off. Clipboard pushes record nothing: there is no
+         * run to track, only a pointer the user may or may not paste.
+         */
+        if (result.messageId) {
+          const now = new Date().toISOString();
+          const sendState = result.state === "queued" ? ("queued" as const) : ("starting" as const);
+          const messageId = result.messageId;
+          return {
+            ...ready,
+            pins: ready.pins.map((pin) => ({
+              ...pin,
+              liveSends: [
+                ...(pin.liveSends ?? []),
+                {
+                  /* The row wears the pin's own words for it — its staged
+                     notes — falling back to the board's one instruction. */
+                  text:
+                    pin.annotation.trim().replace(/\s*\n\s*/g, " · ") ||
+                    ready.globalInstruction.trim() ||
+                    "Board submission",
+                  at: now,
+                  messageId,
+                  state: sendState,
+                  versionNo: null,
+                  head: health.versions?.head ?? null,
+                },
+              ],
+            })),
+          };
+        }
       } catch (error) {
         throw new Error(
           `Could not send the board to the agent: ${error instanceof Error ? error.message : String(error)}`,
@@ -915,6 +993,9 @@ const handlers: Handlers = {
 
   async "pin/delete"({ pinId }) {
     const found = await store.boardForPin(pinId);
+    /* Boards from before version keys carry none of the new fields — readBoard
+       hands back raw storage, so every read of them has to say "or nothing". */
+    const versionNos = found.pins.find((p) => p.id === pinId)?.versions?.map((v) => v.no) ?? [];
     const board = await store.mutateBoard(found.id, (b) => {
       assertDraftBoard(b);
       return {
@@ -924,12 +1005,15 @@ const handlers: Handlers = {
           .filter((r) => r.sourcePinId !== pinId)
           .map((r) => ({ ...r, targetPinIds: r.targetPinIds.filter((t) => t !== pinId) }))
           .filter((r) => r.targetPinIds.length > 0),
+        /* Its set-down versions have nothing left to belong to. */
+        captures: (b.captures ?? []).filter((cap) => cap.pinId !== pinId),
       };
     });
     // Drop its stored artifacts only after deletion wins its place in the board
     // queue. A concurrent re-capture can otherwise write a fresh image after an
     // early drop and leave that image orphaned once the queued delete removes it.
     await store.dropScreenshot(pinId);
+    await store.dropVersionShots(pinId, versionNos);
     await notifyBoardChanged(board.id);
     return { board };
   },
@@ -1107,8 +1191,11 @@ const handlers: Handlers = {
      * Delivery recorded only after the service accepted it. `liveSends` is
      * what stops a later board submit from re-issuing this as new work — an
      * agent quietly doing the same change twice is a failure nobody sees.
+     * The head is the chapter the message belongs to; when a commit closes
+     * it, the row keeps its words and leaves the box.
      */
     const now = new Date().toISOString();
+    const sendHead = (await getHealth())?.versions?.head ?? null;
     await store.mutateBoard(board.id, (b) => {
       assertDraftBoard(b);
       return {
@@ -1123,7 +1210,7 @@ const handlers: Handlers = {
                   ...pin.liveSends.filter(
                     (sent) => !resendOf || sent.messageId !== resendOf,
                   ),
-                  { text, at: now, messageId, state: sendState },
+                  { text, at: now, messageId, state: sendState, versionNo: null, head: sendHead },
                 ],
                 provisional: false,
                 updatedAt: now,
@@ -1141,28 +1228,221 @@ const handlers: Handlers = {
   },
 
   async "agent/recordOutcome"({ messageId, state }) {
-    const board = await store.ensureActiveBoard();
+    /*
+     * The message decides which board answers, not the active pointer: a
+     * board push lands its outcome on the board it froze, minutes after
+     * submission already replaced the active draft. No draft assertion
+     * either — recording what a run did is bookkeeping about the past, not
+     * the user editing a submitted brief.
+     */
+    const holders = (await store.listBoards()).filter((b) =>
+      b.pins.some((pin) => (pin.liveSends ?? []).some((sent) => sent.messageId === messageId)),
+    );
+    const board = holders[0] ?? (await store.ensureActiveBoard());
     let touched = false;
+    /*
+     * A key is only minted when the service can honour it — no git tree, no
+     * snapshot, and a numeral with nothing behind it would be a lie. The run
+     * outcome itself is still recorded either way. The head rides along:
+     * a key belongs to the chapter its snapshot was cut in.
+     */
+    const health = state === "done" ? await getHealth() : null;
+    const canMint = state === "done" && Boolean(health?.versions?.ok);
+    const mintHead = health?.versions?.head ?? null;
+    const evictedShots: Array<{ pinId: string; no: number }> = [];
     await store.mutateBoard(board.id, (b) => {
-      assertDraftBoard(b);
-      return {
-        ...b,
-        pins: b.pins.map((pin) => {
-          if (!pin.liveSends.some((sent) => sent.messageId === messageId)) return pin;
-          let changed = false;
-          const liveSends = pin.liveSends.map((sent) => {
-            if (sent.messageId !== messageId || sent.state === state) return sent;
-            changed = true;
-            return { ...sent, state };
-          });
-          if (!changed) return pin;
-          touched = true;
-          return { ...pin, liveSends };
-        }),
-      };
+      /* Boards from before version keys read back raw, without the new
+         fields — every read below tolerates their absence. */
+      let captures = b.captures ?? [];
+      const pins = b.pins.map((pin) => {
+        if (!pin.liveSends.some((sent) => sent.messageId === messageId)) return pin;
+        let changed = false;
+        let liveSends = pin.liveSends.map((sent) => {
+          if (sent.messageId !== messageId || sent.state === state) return sent;
+          changed = true;
+          return { ...sent, state };
+        });
+        if (!changed) return pin;
+        touched = true;
+        if (state !== "done" || !canMint) return { ...pin, liveSends };
+
+        /*
+         * The run landed — it earns a key. Minted here because this is the
+         * one place completion is recorded whatever surface was watching,
+         * so a run that finishes with the dialog closed still gets its
+         * number. Idempotent by construction: the state comparison above
+         * means a second "done" for the same message never reaches this.
+         */
+        let versions = pin.versions ?? [];
+        let seq = pin.versionSeq ?? 0;
+        if (versions.length === 0) {
+          /*
+           * The original slips in as key 1 the moment the first run lands,
+           * so there is a way back to before anything happened. Its
+           * snapshot is the chapter's baseline, taken by the service before
+           * that first run started.
+           */
+          seq += 1;
+          versions = [
+            ...versions,
+            {
+              no: versionKeyFor(seq),
+              messageId: null,
+              label: "original",
+              at: pin.createdAt,
+              screenshotKey: null,
+              head: mintHead,
+            },
+          ];
+        }
+        seq += 1;
+        const no = versionKeyFor(seq);
+        /*
+         * The numeral is taken from whoever wore it before — the ring stays
+         * five keys wide without anything being renumbered. The evicted
+         * version leaves every rail: captures holding it give it up, and a
+         * capture emptied by that has nothing left to show and goes too.
+         */
+        const evicted = versions.find((v) => v.no === no);
+        if (evicted) evictedShots.push({ pinId: pin.id, no });
+        versions = versions.filter((v) => v.no !== no);
+        captures = captures
+          .map((cap) =>
+            cap.pinId === pin.id && cap.keys.includes(no)
+              ? { ...cap, keys: cap.keys.filter((k) => k !== no) }
+              : cap,
+          )
+          .filter((cap) => cap.keys.length > 0)
+          .map((cap) =>
+            cap.keys.includes(cap.current) ? cap : { ...cap, current: cap.keys[0] },
+          );
+        const sent = liveSends.find((s) => s.messageId === messageId);
+        versions = [
+          ...versions,
+          {
+            no,
+            messageId,
+            label: sent?.text ?? "",
+            at: new Date().toISOString(),
+            screenshotKey: null,
+            head: mintHead,
+          },
+        ];
+        liveSends = liveSends.map((s) =>
+          s.messageId === messageId ? { ...s, versionNo: no } : s,
+        );
+        return {
+          ...pin,
+          liveSends,
+          versions,
+          versionSeq: seq,
+          /* The tree is wearing the run's result right now — the new key is lit. */
+          currentVersionNo: no,
+        };
+      });
+      return { ...b, pins, captures };
     });
+    /* Best-effort: an evicted key's picture goes with it. */
+    for (const gone of evictedShots) {
+      void store.dropVersionShots(gone.pinId, [gone.no]).catch(() => {});
+    }
     if (touched) await notifyBoardChanged(board.id);
     return {};
+  },
+
+  /*
+   * Press a key: the working tree goes back to the state it names. The
+   * service does the file work (reverse the current patch, apply the
+   * target's); this handler owns the bookkeeping — which key is lit — so
+   * the answer survives whichever surface asked.
+   */
+  async "version/restore"({ pinId, no }) {
+    const found = await store.boardForPin(pinId);
+    const pin = found.pins.find((p) => p.id === pinId);
+    if (!pin) throw new Error("Unknown pin");
+    const versions = pin.versions ?? [];
+    const target = versions.find((v) => v.no === no);
+    if (!target) throw new Error(`No version ${no} on this pin`);
+    if (pin.currentVersionNo === no) return { board: found, conflicts: [] };
+
+    const from = versions.find((v) => v.no === pin.currentVersionNo);
+    const result = await restoreVersion({
+      boardId: found.id,
+      messageId: target.messageId ?? "baseline",
+      /* Null messageId is the original; its snapshot is the baseline. */
+      fromMessageId: pin.currentVersionNo === null ? null : (from?.messageId ?? "baseline"),
+    });
+
+    const board = await store.mutateBoard(found.id, (b) => ({
+      ...b,
+      pins: b.pins.map((p) =>
+        p.id === pinId ? { ...p, currentVersionNo: no, updatedAt: new Date().toISOString() } : p,
+      ),
+    }));
+    await notifyBoardChanged(board.id);
+    return { board, conflicts: result.conflicts };
+  },
+
+  /*
+   * Photograph the element as it looks right now, for the version that just
+   * landed. The overlay supplies the rect because only the page knows where
+   * the element is; the crop machinery is the same one pin capture uses.
+   */
+  async "version/shot"({ pinId, no, rect, devicePixelRatio }, sender) {
+    const windowId = sender.tab?.windowId;
+    if (windowId === undefined) return { ok: false };
+    try {
+      const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+      const { full } = await crop(shot, rect, devicePixelRatio);
+      await store.putVersionShot(pinId, no, full);
+      const found = await store.boardForPin(pinId);
+      await store.mutateBoard(found.id, (b) => ({
+        ...b,
+        pins: b.pins.map((p) =>
+          p.id === pinId
+            ? {
+                ...p,
+                versions: p.versions.map((v) =>
+                  v.no === no ? { ...v, screenshotKey: versionShotKey(pinId, no) } : v,
+                ),
+              }
+            : p,
+        ),
+      }));
+      await notifyBoardChanged(found.id);
+      return { ok: true };
+    } catch {
+      /* Throttled captureVisibleTab, background tab — the capture just falls
+         back to the pin's own screenshot. */
+      return { ok: false };
+    }
+  },
+
+  /*
+   * The overlay owns capture gestures; each one commits its outcome as the
+   * whole next state. Validated against the pins so a stale write can never
+   * invent a key: unknown versions drop out, emptied captures go with them.
+   */
+  async "capture/save"({ boardId, captures }) {
+    const board = await store.mutateBoard(boardId, (b) => {
+      assertDraftBoard(b);
+      const valid = captures
+        .map((cap) => {
+          const pin = b.pins.find((p) => p.id === cap.pinId);
+          if (!pin) return null;
+          const keys = cap.keys.filter((no) => (pin.versions ?? []).some((v) => v.no === no));
+          if (keys.length === 0) return null;
+          return {
+            ...cap,
+            keys,
+            current: keys.includes(cap.current) ? cap.current : keys[0],
+          };
+        })
+        .filter((cap): cap is NonNullable<typeof cap> => cap !== null);
+      return { ...b, captures: valid };
+    });
+    await notifyBoardChanged(board.id);
+    return { board };
   },
 
   async "relationship/create"({ sourcePinId, targetPinIds }) {
@@ -1324,13 +1604,18 @@ const handlers: Handlers = {
       // Otherwise a capture finishing between the old read and this mutation
       // leaves its screenshot behind with no pin pointing to it.
       stashed = b;
-      return { ...b, pins: [], relationships: [] };
+      return { ...b, pins: [], relationships: [], captures: [] };
     });
     await chrome.storage.local.set({
       [CLEAR_STASH_KEY]: { board: stashed, clearedAt: new Date().toISOString() },
     });
     if (previous) {
-      await Promise.all(previous.pins.map((pin) => store.dropScreenshot(pin.id)));
+      await Promise.all(
+        previous.pins.map(async (pin) => {
+          await store.dropScreenshot(pin.id);
+          await store.dropVersionShots(pin.id, (pin.versions ?? []).map((v) => v.no));
+        }),
+      );
     }
     await notifyBoardChanged(boardId);
     return { board };

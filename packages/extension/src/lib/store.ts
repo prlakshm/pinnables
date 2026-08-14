@@ -13,11 +13,18 @@ const boardKey = (id: string) => `board:${id}`;
 const shotKey = (pinId: string) => `shot:${pinId}`;
 const thumbKey = (pinId: string) => `thumb:${pinId}`;
 const positionKey = (pinId: string) => `pos:${pinId}`;
+/**
+ * A version's picture, for the drag-out capture. Read directly by the content
+ * script the way pin shots are, so the key shape is part of the contract.
+ */
+export const versionShotKey = (pinId: string, no: number) => `verShot:${pinId}:${no}`;
 
 const DEFAULT_STATE: ExtensionState = {
   captureMode: false,
   activeBoardId: null,
   serviceOnline: false,
+  versionsOk: false,
+  projectHead: null,
   cursorOnline: false,
   cursorAgentUrl: null,
   cursorRuntime: null,
@@ -88,6 +95,7 @@ export async function createBoard(title: string): Promise<Board> {
     updatedAt: now,
     pins: [],
     relationships: [],
+    captures: [],
   };
   return writeBoard(board);
 }
@@ -183,6 +191,16 @@ export async function getThumbnail(pinId: string): Promise<string | undefined> {
 /** Drop every local artifact owned by a pin once its board deletion commits. */
 export async function dropScreenshot(pinId: string): Promise<void> {
   await chrome.storage.local.remove([shotKey(pinId), thumbKey(pinId), positionKey(pinId)]);
+}
+
+export async function putVersionShot(pinId: string, no: number, dataUrl: string): Promise<void> {
+  await set({ [versionShotKey(pinId, no)]: dataUrl });
+}
+
+/** A version's picture leaves with the version — evicted key, deleted pin. */
+export async function dropVersionShots(pinId: string, nos: number[]): Promise<void> {
+  if (nos.length === 0) return;
+  await chrome.storage.local.remove(nos.map((no) => versionShotKey(pinId, no)));
 }
 
 /* -------------------------------------------------------------- id helpers */

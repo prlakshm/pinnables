@@ -38,6 +38,7 @@ import { Toolbar, type DrawTool, type ToolMode } from "./Toolbar";
 import { PinObject } from "./PinObject";
 import { Composer } from "./Composer";
 import { resetChordHint, SelectionDialog } from "./SelectionDialog";
+import { VersionLayer } from "./VersionRail";
 import { DrawLayer } from "./DrawLayer";
 import {
   createDrawingSaveCoordinator,
@@ -497,6 +498,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [focusCards, setFocusCards] = useState<string[]>([]);
   const [liveRects, setLiveRects] = useState<Record<string, LiveRect>>({});
   const [liveConnect, setLiveConnect] = useState<LiveConnect | null>(null);
+  /** A version restore in flight — the rail and the chat keys go quiet. */
+  const [versionBusy, setVersionBusy] = useState(false);
+  /** Whether the service can honour version keys (needs a git tree). */
+  const [versionsOk, setVersionsOk] = useState(false);
+  /** The open chapter — the commit the project stands on. Keys and rows
+      stamped with an earlier head keep their words and go quiet. */
+  const [projectHead, setProjectHead] = useState<string | null>(null);
+  /** How far the composer has stepped down to clear the rail. */
+  const [railScoot, setRailScoot] = useState(0);
   const [justPinned, setJustPinned] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -615,6 +625,29 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       cancelled = true;
     };
   }, []);
+
+  /*
+   * Whether version keys can work at all — the service needs a git tree
+   * behind the project — and which chapter is open. Asked when the overlay
+   * arms and again on every selection change: a commit between clicks moves
+   * HEAD, and the next click must show the new chapter, not the one the
+   * page was armed under.
+   */
+  const selectionKey = liveSelected.join(" ");
+  useEffect(() => {
+    if (!state.enabled) return;
+    let cancelled = false;
+    void send("state/get", {})
+      .then((s) => {
+        if (cancelled) return;
+        setVersionsOk(s.versionsOk);
+        setProjectHead(s.projectHead ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [state.enabled, selectionKey]);
 
   useEffect(() => {
     const read = () => setRoute(routeForLocation());
@@ -2751,6 +2784,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           pins={liveSelectedPins}
           board={board}
           position={dialogPlacement}
+          scoot={railScoot}
+          versionBusy={versionBusy}
+          onVersionBusy={setVersionBusy}
+          projectHead={projectHead}
           targetOf={targetContext?.sourceName ?? null}
           relationshipId={targetContext?.relationshipId ?? null}
           drawingSummary={ownedShapes.length > 0 ? describeDrawings(ownedShapes) : null}
@@ -2761,6 +2798,27 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             focusDismissed.current = true;
             setLiveSelected([]);
           }}
+        />
+      )}
+
+      {/*
+        * The rail and the set-down captures. One annotation box, one rail:
+        * they attach to the live selection and leave with it — Escape or a
+        * deselect clears every piece of this chrome at once, and only a
+        * summon brings it back.
+        */}
+      {board && liveSelectedPins.length > 0 && !drawing && (
+        <VersionLayer
+          board={board}
+          pin={liveSelectedPins[0]}
+          liveRect={liveRects[liveSelectedPins[0].id]?.rect ?? null}
+          visible={true}
+          versionsOk={versionsOk}
+          projectHead={projectHead}
+          busy={versionBusy}
+          onBusy={setVersionBusy}
+          onScoot={setRailScoot}
+          scoot={railScoot}
         />
       )}
 

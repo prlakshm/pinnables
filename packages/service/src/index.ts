@@ -24,6 +24,14 @@ import {
   statusFromCursor,
   type CursorStatus,
 } from "./cursor.js";
+import {
+  currentHead,
+  listVersions,
+  readChapterBaseline,
+  restore as restoreVersion,
+  snapshot as snapshotVersion,
+  versionsAvailable,
+} from "./versions.js";
 
 /**
  * The local companion. Extensions can't write to arbitrary filesystem paths, so
@@ -102,6 +110,12 @@ interface LiveMessage {
   agentId?: string;
   runId?: string;
   url?: string;
+  /**
+   * Which board this run belongs to, kept so completion can snapshot the
+   * working tree without anyone asking. The extension may be closed when a
+   * run lands; the version must exist anyway.
+   */
+  boardId?: string;
 }
 
 interface QueuedCursorSend {
@@ -260,7 +274,10 @@ async function startViaCursor(
     name: `Pinnables · ${board.title || board.id}`,
   });
   lastAgentUrl = result.url;
+  /* Spread, never replace: the record carries boardId, and completion needs
+     it to snapshot. */
   liveMessages.set(id, {
+    ...liveMessages.get(id),
     // The run exists; whether Cursor has started it is a separate question,
     // answered by the first status refresh.
     state: "starting",
@@ -402,35 +419,82 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
         stdio,
       });
 
-  liveMessages.set(id, { state: "starting", detail: null, transport: "local" });
+  /* Spread, never replace: the record carries boardId from startLiveMessage,
+     and completion needs it to snapshot. Replacing wholesale here silently
+     dropped it, and every local run finished without its version. */
+  liveMessages.set(id, { ...liveMessages.get(id), state: "starting", detail: null, transport: "local" });
   const markWorking = (): void => {
-    if (liveMessages.get(id)?.state !== "starting") return;
-    liveMessages.set(id, { state: "working", detail: null, transport: "local" });
+    const found = liveMessages.get(id);
+    if (found?.state !== "starting") return;
+    liveMessages.set(id, { ...found, state: "working", detail: null, transport: "local" });
   };
   child.stdout?.on("data", markWorking);
   child.stderr?.on("data", markWorking);
   child.on("error", (err) => {
     liveMessages.set(id, {
+      ...liveMessages.get(id),
       state: "failed",
       detail: `Could not start the agent: ${err.message}`,
       transport: "local",
     });
   });
   child.on("exit", (code) => {
-    if (liveMessages.get(id)?.state === "failed") return;
-    liveMessages.set(
-      id,
-      code === 0
-        ? { state: "done", detail: null, transport: "local" }
-        : {
-            state: "failed",
-            detail: `Agent exited with code ${code ?? "unknown"}`,
-            transport: "local",
-          },
-    );
+    const found = liveMessages.get(id);
+    if (found?.state === "failed") return;
+    if (code !== 0) {
+      liveMessages.set(id, {
+        ...found,
+        state: "failed",
+        detail: `Agent exited with code ${code ?? "unknown"}`,
+        transport: "local",
+      });
+      return;
+    }
+    /*
+     * Snapshot before "done" is visible. The extension mints the version key
+     * the moment it sees done, and a key must never name a snapshot that is
+     * still being written — so completion waits on the patch. A snapshot
+     * failure (not a git tree) downgrades gracefully: the run is still done,
+     * there is simply no way back to it, same as before versions existed.
+     */
+    void (async () => {
+      const boardId = found?.boardId;
+      if (boardId) {
+        try {
+          await snapshotVersion({ boardId, messageId: id, pinIds: [], baseline: false });
+          console.log(`snapshot ${id} on completion`);
+        } catch (err) {
+          console.error(`snapshot ${id} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      liveMessages.set(id, { ...found, state: "done", detail: null, transport: "local" });
+    })();
   });
   console.log(`live message ${id} → local spawn ${messagePath}`);
   void promptText;
+}
+
+/**
+ * The tree as it stands before this chapter's first run touches it — version
+ * 1, the original. Taken before a run starts because completion is too late:
+ * by then the original is gone. Once per chapter (per HEAD); a commit opens
+ * the next chapter and the next first run takes its baseline. A failure (no
+ * git) only means the rail never appears, which /health already explains.
+ */
+async function ensureChapterBaseline(boardId: string): Promise<void> {
+  try {
+    if (!(await readChapterBaseline())) {
+      const meta = await snapshotVersion({
+        boardId,
+        messageId: "baseline",
+        pinIds: [],
+        baseline: true,
+      });
+      console.log(`chapter baseline ${meta.messageId}`);
+    }
+  } catch {
+    /* Not a git tree — versions are off and /health says so. */
+  }
 }
 
 async function startLiveMessage(body: LiveMessageBody): Promise<string> {
@@ -444,7 +508,9 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
   const id = `msg-${Date.now().toString(36)}${liveCounter.toString(36)}`;
   const { messagePath, promptText } = await writeLiveArtifacts(body, board, pins, id);
 
-  liveMessages.set(id, { state: "starting", detail: null });
+  await ensureChapterBaseline(board.id);
+
+  liveMessages.set(id, { state: "starting", detail: null, boardId: board.id });
 
   if (cursorConfigured()) {
     const queuedItem: QueuedCursorSend = { id, promptText, body, board };
@@ -496,6 +562,27 @@ async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
       detail: status.detail,
       url: status.url ?? found.url,
     };
+    /*
+     * A local-runtime Cursor agent edits this working tree, so its completion
+     * is snapshot the same way the local spawn's is — before "done" is
+     * visible, because the extension mints the key on first sight of done.
+     * (A cloud run edits a remote VM; snapshotting here would record nothing,
+     * but it is harmless and keeps the two paths identical.)
+     */
+    /* found.state is starting|working here (guard above), so this fires once. */
+    if (next.state === "done" && found.boardId) {
+      try {
+        await snapshotVersion({
+          boardId: found.boardId,
+          messageId: id,
+          pinIds: [],
+          baseline: false,
+        });
+        console.log(`snapshot ${id} on completion`);
+      } catch (err) {
+        console.error(`snapshot ${id} failed:`, err instanceof Error ? err.message : err);
+      }
+    }
     liveMessages.set(id, next);
     if (next.url) lastAgentUrl = next.url;
     if (next.state === "done" || next.state === "failed") {
@@ -559,6 +646,13 @@ async function pushBoard(body: PushBoardBody): Promise<{
 
   liveCounter += 1;
   const id = `msg-${Date.now().toString(36)}${liveCounter.toString(36)}`;
+  /*
+   * A board push is a run like any other: it gets the chapter baseline
+   * before it starts and a record that knows its board, so completion can
+   * snapshot and the pins it touched can mint the same key.
+   */
+  await ensureChapterBaseline(board.id);
+  liveMessages.set(id, { state: "starting", detail: null, boardId: board.id });
   // Same shape as live messages so queue drain can call startViaCursor.
   const queueBody: LiveMessageBody = {
     text: promptText,
@@ -637,9 +731,15 @@ const server = createServer((req, res) => {
           ? lastAgentUrl ??
             (stickyAgentId ? `https://cursor.com/agents/${stickyAgentId}` : null)
           : null;
+      /* Versions need a git working tree. Reported so the extension can hide
+         the rail rather than offer keys that would not work. The head is the
+         chapter: everything stamped with an older one has been absorbed by a
+         commit, and the extension quiets those keys and rows. */
+      const versions = { ...(await versionsAvailable()), head: await currentHead() };
       return send(res, 200, {
         ok: true,
         home: pinnablesHome(),
+        versions,
         cursor: {
           configured: cursorConfigured(),
           ok: cursor.ok,
@@ -684,6 +784,65 @@ const server = createServer((req, res) => {
         found = liveMessages.get(liveMatch[1]) ?? found;
       }
       return send(res, 200, found);
+    }
+
+    /*
+     * Versions. Snapshot records the working tree as it stands; restore puts it
+     * back. Both are scoped to a board because that is where the patches live.
+     */
+    const snapMatch = /^\/versions\/([^/]+)\/snapshot$/.exec(url.pathname);
+    if (req.method === "POST" && snapMatch) {
+      try {
+        const body = (await readBody(req)) as {
+          boardId: string;
+          pinIds?: string[];
+          baseline?: boolean;
+        };
+        const meta = await snapshotVersion({
+          boardId: body.boardId,
+          messageId: snapMatch[1],
+          pinIds: body.pinIds ?? [],
+          baseline: body.baseline,
+        });
+        console.log(`snapshot ${meta.messageId} — ${meta.files.length} files`);
+        return send(res, 200, { ok: true, ...meta });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("snapshot failed:", message);
+        return send(res, 400, { error: message });
+      }
+    }
+
+    const restoreMatch = /^\/versions\/([^/]+)\/restore$/.exec(url.pathname);
+    if (req.method === "POST" && restoreMatch) {
+      try {
+        const body = (await readBody(req)) as { boardId: string; fromMessageId?: string | null };
+        const result = await restoreVersion({
+          boardId: body.boardId,
+          messageId: restoreMatch[1],
+          fromMessageId: body.fromMessageId ?? null,
+        });
+        console.log(
+          `restored ${restoreMatch[1]} — ${result.files.length} files` +
+            (result.conflicts.length ? `, ${result.conflicts.length} overwritten` : ""),
+        );
+        return send(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("restore failed:", message);
+        return send(res, 400, { error: message });
+      }
+    }
+
+    const listMatch = /^\/versions\/([^/]+)$/.exec(url.pathname);
+    if (req.method === "GET" && listMatch) {
+      try {
+        /* Snapshots are project-scoped now; the path segment is history. */
+        return send(res, 200, { versions: await listVersions() });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return send(res, 400, { error: message });
+      }
     }
 
     const match = /^\/boards\/([^/]+)\/materialize$/.exec(url.pathname);
@@ -734,7 +893,7 @@ server.listen(PORT, HOST, () => {
   if (cursorConfigured()) {
     const runtime = cursorRuntime();
     if (runtime === "local") {
-      console.log(`Cursor local agent: edits ${projectDir()} (grok-4.5, no screenshot vision)`);
+      console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
     } else {
       console.log("Cursor Cloud Agents: configured (Send will push to remote)");
     }
