@@ -135,7 +135,12 @@ function railCandidates(
 
 /* Guaranteed seats reuse the ring's shape (right, left, then an outer edge)
    but are keyed off the box, not the element — the box is always where the
-   rail wants to sit when nothing in the ring cleared. */
+   rail wants to sit when nothing in the ring cleared. At narrow viewports a
+   380px box leaves neither side room for the rail, and there's not always
+   headroom above it either (box-outer clamps down into the box once box.y
+   drops under ~31px) — the last resort is below the box's own bottom edge,
+   clear of it on the y axis by construction regardless of clamping. It will
+   often cost element-clearance; that is exactly what tier 2 is for. */
 function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: Box, rail: Size): RailCandidate[] {
   if (orientation === "below") {
     return [{ seat: "slot", x: boxRect.x + boxRect.width - rail.width, y: element.y + element.height + SLOT_PAD }];
@@ -145,6 +150,7 @@ function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: B
     { seat: "box-side", x: boxRect.x + boxRect.width + SLOT_PAD, y: flushY },
     { seat: "box-side", x: boxRect.x - SLOT_PAD - rail.width, y: flushY },
     { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y - SLOT_PAD - rail.height },
+    { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y + boxRect.height + SLOT_PAD },
   ];
 }
 
