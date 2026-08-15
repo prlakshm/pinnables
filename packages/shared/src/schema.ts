@@ -251,11 +251,19 @@ export const PinSchema = z.object({
    */
   currentVersionNo: z.number().int().nullable().default(null),
   /**
-   * Where the user parked the rail, in viewport coordinates. Null until
-   * dragged — after that it is the only thing that decides where the rail
-   * sits, exactly like a moved pin card.
+   * Where the user parked the rail — an offset from the element's top-left,
+   * so the arrangement travels with the component through scroll and
+   * reflow. Null until dragged; after that it is the only thing that
+   * decides where the rail sits. (Values written before 2026-08-14 were
+   * viewport coordinates; they are reinterpreted as offsets and heal on the
+   * next drag.)
    */
   railPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
+  /**
+   * Where the user parked the annotation box, same offset rule as railPos.
+   * The box drags by its body (no grip); a dragged box is manual forever.
+   */
+  boxPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
   captureState: z.string(),
   status: PinStatusSchema,
   createdAt: z.string(),
