@@ -1043,17 +1043,17 @@ export function VersionLayer({
 
   return (
     <div ref={layerRef} style={{ display: "contents" }}>
-      {showMain && mainRail && (
+      {showMain && (
         <div
           ref={mainRailRef}
           className="pin-versions"
           data-rail="main"
           data-armed={armed ? "true" : "false"}
           data-busy={busy ? "true" : "false"}
-          data-placed={mainRail.seat}
+          data-placed={mainRail?.seat ?? "unseated"}
           role="group"
           aria-label="Versions"
-          style={{ left: mainRail.x, top: mainRail.y }}
+          style={mainRail ? { left: mainRail.x, top: mainRail.y } : { left: -9999, top: -9999 }}
         >
           {grip("main", null)}
           <span className="pin-versions__mod" title="hold ⌥ and press a number to jump">
