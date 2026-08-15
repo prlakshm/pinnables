@@ -138,9 +138,12 @@ function railCandidates(
    rail wants to sit when nothing in the ring cleared. At narrow viewports a
    380px box leaves neither side room for the rail, and there's not always
    headroom above it either (box-outer clamps down into the box once box.y
-   drops under ~31px) — the last resort is below the box's own bottom edge,
-   clear of it on the y axis by construction regardless of clamping. It will
-   often cost element-clearance; that is exactly what tier 2 is for. */
+   drops under RAIL_GUTTER + rail.height) — the last resort is below the
+   box's own bottom edge, clear of it on the y axis by construction
+   regardless of clamping. It will often cost element-clearance; that is
+   exactly what tier 2 is for. Even four candidates aren't always enough —
+   when the box itself nearly fills the viewport there may be nowhere left
+   that clears it either, which is what pickGuaranteed's null path is for. */
 function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: Box, rail: Size): RailCandidate[] {
   if (orientation === "below") {
     return [{ seat: "slot", x: boxRect.x + boxRect.width - rail.width, y: element.y + element.height + SLOT_PAD }];
@@ -168,7 +171,7 @@ function ringLegal(c: RailCandidate, rail: Size, viewport: Size, boxRect: Box, e
   return onScreen && !intersects(r, boxRect) && !intersects(r, element);
 }
 
-type Tier = 1 | 2 | 3;
+type Tier = 1 | 2;
 
 function clampRail(c: RailCandidate, rail: Size, viewport: Size): Box {
   return {
@@ -184,24 +187,28 @@ function clampRail(c: RailCandidate, rail: Size, viewport: Size): Box {
  * viewport clamp, never before, so a candidate that lands a few px off raw
  * but clears everything once clamped isn't punished for the raw miss. Tier
  * 1: clear of the box and the element. Tier 2: clear of the box (an element
- * can span the whole viewport and leave nothing tier-1 legal; the box,
- * clamped or not, never has to). Tier 3: on-screen, which every clamped
- * candidate already is — the true last resort.
+ * can span the whole viewport and leave nothing tier-1 legal). Null when
+ * neither holds — a box that nearly fills the viewport can leave no
+ * rail-sized rectangle clear of it anywhere on screen, and that is not a
+ * solvable placement problem, so there is no tier below 2 to fall back to.
+ * The invariant this module keeps: if a rail is returned, it clears the
+ * box; when nothing can, there is no rail.
  */
-function guaranteedTier(c: RailCandidate, rail: Size, viewport: Size, boxRect: Box, element: Box): Tier {
+function guaranteedTier(c: RailCandidate, rail: Size, viewport: Size, boxRect: Box, element: Box): Tier | null {
   const r = clampRail(c, rail, viewport);
   if (!intersects(r, boxRect) && !intersects(r, element)) return 1;
   if (!intersects(r, boxRect)) return 2;
-  return 3;
+  return null;
 }
 
-/** First candidate to reach the best tier anyone in the list reaches. */
-function pickGuaranteed(candidates: RailCandidate[], rail: Size, viewport: Size, boxRect: Box, element: Box): RailCandidate {
-  for (const tier of [1, 2, 3] as const) {
+/** First candidate to reach the best tier anyone in the list reaches, or
+    null when nobody clears the box even after tier 2's element allowance. */
+function pickGuaranteed(candidates: RailCandidate[], rail: Size, viewport: Size, boxRect: Box, element: Box): RailCandidate | null {
+  for (const tier of [1, 2] as const) {
     const hit = candidates.find((c) => guaranteedTier(c, rail, viewport, boxRect, element) === tier);
     if (hit) return hit;
   }
-  return candidates[0]; // unreachable: every candidate reaches tier 3 once clamped
+  return null;
 }
 
 /**
@@ -255,12 +262,24 @@ export function placeSelectionChrome(input: ChromeInput): ChromePlacement {
   /* Guaranteed seats. Below orientation: the slot the box opens above
      itself (the shipped scoot ceiling). Above orientation: beside the box,
      right first then left, flush with its anchored bottom edge; failing
-     both, above the box's own top edge. Every candidate is tier-tested and
-     then clamped into the viewport, so the returned position is always
-     on-screen and, whenever any candidate allows it, clear of the box and
-     the element too. */
+     both, above its top edge; failing that, below its own bottom edge.
+     Every candidate is tier-tested and then clamped into the viewport. The
+     invariant is not "there is always a rail" — it's that a returned rail
+     always clears the box. A box that nearly fills the viewport can leave
+     no candidate that does, and a rail drawn over the box a user types into
+     is worse than none: the version keys it would have shown stay reachable
+     from the chat rows' own keycaps, so there is nothing to lose by
+     omitting it.
+
+     The slot is tested against where the box will render, not where it
+     sits now: the box hasn't stepped down for it yet (that's the scoot,
+     applied by the caller), so testing the pre-scoot box would always see
+     the overlap the scoot exists to resolve. */
   const guaranteed = guaranteedCandidates(orientation, boxRect, element, rail);
-  const chosen = pickGuaranteed(guaranteed, rail, viewport, boxRect, element);
+  const willRenderAt: Box =
+    orientation === "below" ? { ...boxRect, y: boxRect.y + SLOT_PAD + rail.height + SLOT_PAD } : boxRect;
+  const chosen = pickGuaranteed(guaranteed, rail, viewport, willRenderAt, element);
+  if (!chosen) return { box, rail: null, scoot: 0 };
   const r = clampRail(chosen, rail, viewport);
   const scoot = chosen.seat === "slot" ? SLOT_PAD + rail.height + SLOT_PAD : 0;
   return { box, rail: { x: r.x, y: r.y, seat: chosen.seat }, scoot };

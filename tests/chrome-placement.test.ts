@@ -232,3 +232,21 @@ test("narrow viewport: the above guaranteed seat still clears the box near its l
   const boxBox = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: 120 };
   assert.equal(intersects(railBox, boxBox), false, "clears the box");
 });
+
+test("no candidate clears the box: no rail rather than one drawn on top of it", () => {
+  /* Reviewer's exact repro. At 320x155 the docked box occupies nearly the
+     whole viewport (x 12..308, y 23..143); the free strips are at most 8px
+     wide and 19px tall, nowhere near a 140x27 rail. No position clears the
+     box, so there is no honest seat to return. */
+  const element = { x: 100, y: -50, width: 1000, height: 900 };
+  const p = placeSelectionChrome(
+    input({
+      element,
+      loneLeft: 100,
+      rail: { width: 140, height: 27 },
+      viewport: { width: 320, height: 155 },
+    }),
+  );
+  assert.equal(p.box.seat, "docked");
+  assert.equal(p.rail, null);
+});
