@@ -171,13 +171,21 @@ test("occupancy: a rail candidate never intersects the placed box", () => {
 
 test("finding A's original input: the docked guaranteed seat clears the box", () => {
   /* Verbatim repro from the report. This 900px element starts 50px above
-     an 800px viewport, so it spans past both edges — no on-screen position
-     clears it, tier 1 was never reachable here and still isn't. What holds,
-     both before and after this fix, is box-clearance: box-side-right sits
-     on-screen raw with its built-in 8px gap from the box regardless. This
-     exact input does not exercise the fix (see the report's Fix round for
-     a same-element variant, differing only in loneLeft, where the fix does
-     newly clear the element too). */
+     an 800px viewport, so it spans past both edges vertically — every
+     on-screen y falls inside it — but it is only 500px wide in the 1280px
+     viewport, leaving room beside it on the x axis. The docked box sits at
+     {x:12,y:668}. Originally, with guaranteed candidates keyed only off
+     the box, the pick was box-side-right at {x:400,y:761}: clear of the
+     box by its raw 8px gap, but still inside the element's vertical span,
+     so only tier 2 — "tier 1 was never reachable here" was true then.
+     Adding the element-side candidates (this task's sweep fix) changed
+     that: right-of-element clamps to {x:508,y:4}, clear of the element on
+     the x axis alone (508 sits past its right edge at 500) regardless of
+     y, and it happens to clear the box too — this exact input now reaches
+     tier 1. The assertion below only ever checks box-clearance through
+     intersects(), never a seat name or a coordinate, which is exactly why
+     it kept passing, unchanged, across that shift — and is the right way
+     to have written it. */
   const element = { x: 0, y: -50, width: 500, height: 900 };
   const p = placeSelectionChrome(
     input({ element, loneLeft: 0, rail: { width: 140, height: 27 } }),
