@@ -2579,6 +2579,53 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     );
   }, [boxSeat, railSeat]);
 
+  /*
+   * The box drags by its body — no grip, the same discovery pin cards and
+   * the floating label already rely on. What a drag stores is an offset
+   * from the element, so the arrangement travels with the component.
+   * pointercancel abandons: an interrupted drag must never half-move the
+   * thing you type into.
+   */
+  const beginBoxDrag = useCallback(
+    (event: React.PointerEvent) => {
+      if (!chrome || event.button !== 0) return;
+      const primary = liveSelectedPins[0];
+      if (!primary || !chromePlacement) return;
+      const start = { x: event.clientX, y: event.clientY };
+      const origin = { x: chromePlacement.box.x, y: chromePlacement.box.y };
+      let moved = false;
+      const move = (ev: PointerEvent) => {
+        if (!moved && Math.abs(ev.clientX - start.x) < 5 && Math.abs(ev.clientY - start.y) < 5) return;
+        moved = true;
+        setBoxDragPos({ x: origin.x + (ev.clientX - start.x), y: origin.y + (ev.clientY - start.y) });
+      };
+      const done = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", cancel);
+      };
+      const up = (ev: PointerEvent) => {
+        done();
+        const rect = liveRects[primary.id]?.rect;
+        setBoxDragPos(null);
+        if (!moved || !rect) return;
+        const at = { x: origin.x + (ev.clientX - start.x), y: origin.y + (ev.clientY - start.y) };
+        void send("pin/update", {
+          pinId: primary.id,
+          patch: { boxPos: { x: at.x - rect.left, y: at.y - rect.top } },
+        }).catch(() => {});
+      };
+      const cancel = () => {
+        done();
+        setBoxDragPos(null);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", cancel);
+    },
+    [chrome, liveSelectedPins, liveRects],
+  );
+
   return (
     <>
       {/*
@@ -2836,6 +2883,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           position={{ x: chromePlacement.box.x, y: chromePlacement.box.y, width: chromePlacement.box.width }}
           scoot={liveScoot !== 0 ? liveScoot : chromePlacement.scoot}
           onRootEl={onDialogRootEl}
+          onBodyPointerDown={beginBoxDrag}
           versionBusy={versionBusy}
           onVersionBusy={setVersionBusy}
           projectHead={projectHead}

@@ -2763,3 +2763,8 @@ button[aria-expanded="true"] .pin-row__chevron {
   }
   .pin-key[data-landed="true"] { animation-duration: 1ms; }
 }
+
+/* The box is grabbable by its body, like pin cards and the floating label.
+   No grip icon: interactive children keep their own cursors, and the grab
+   cursor on the surface is what says the rest can be moved. */
+.pin-live-note { cursor: grab; }
