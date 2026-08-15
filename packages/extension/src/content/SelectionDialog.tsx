@@ -142,6 +142,18 @@ export function SelectionDialog({
   const input = useRef<HTMLTextAreaElement>(null);
   const primary = pins[0];
 
+  /* Stable across renders as long as onRootEl is: an inline arrow here would
+     be a new function every render, and React tears down and re-attaches a
+     ref whose identity changed — rebuilding the overlay's ResizeObserver on
+     every keystroke. */
+  const setRootEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      onRootEl?.(el);
+    },
+    [onRootEl],
+  );
+
   /*
    * The modifier is watched globally, not on the input: holding ⌘ is a
    * question ("what would this do?") the bar should answer even before the
@@ -575,10 +587,7 @@ export function SelectionDialog({
 
   return (
     <div
-      ref={(el) => {
-        rootRef.current = el;
-        onRootEl?.(el);
-      }}
+      ref={setRootEl}
       onPointerDown={(event) => {
         const target = event.target as Element;
         if (target.closest("textarea, button, a, .pin-key, .pin-kbd")) return;
