@@ -198,13 +198,11 @@ test("finding A's original input: the docked guaranteed seat clears the box", ()
 });
 
 test("finding B's original input: the above guaranteed seat clears the element", () => {
-  /* Verbatim repro from the report (a 200x40 rail). This size needs 208px
-     of clearance beside a 380px box; splitting a 768px viewport around
-     that box never offers more than ~190px on either side, and box-outer
-     has under 12px of headroom above the box. No candidate here clears the
-     box either — box-clearance is not a floor this exact input reaches, so
-     this asserts what does hold, element-clearance, rather than the box
-     tier the fix's design otherwise targets (see the report). */
+  /* Verbatim repro from the report (a 200x40 rail). The box seats "above"
+     at {x:200,y:20}. The below-box-bottom guaranteed candidate lands at
+     {x:380,y:148} — 8px under the box's own bottom edge at y:140 — which
+     clears the box by construction, and for this element it clears that
+     too: this input reaches tier 1. Both assertions below hold. */
   const element = { x: 200, y: 200, width: 500, height: 900 };
   const p = placeSelectionChrome(
     input({
@@ -217,6 +215,8 @@ test("finding B's original input: the above guaranteed seat clears the element",
   assert.equal(p.box.seat, "above");
   assert.ok(p.rail);
   const railBox = { x: p.rail!.x, y: p.rail!.y, width: 200, height: 40 };
+  const boxBox = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: 120 };
+  assert.equal(intersects(railBox, boxBox), false, "clears the box");
   assert.equal(intersects(railBox, element), false, "clears the element");
 });
 
