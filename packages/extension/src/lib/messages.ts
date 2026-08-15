@@ -135,7 +135,7 @@ export interface Contract {
     req: {
       pinId: string;
       patch: Partial<
-        Pick<Pin, "annotation" | "status" | "order" | "groupId" | "styleEdits" | "name" | "railPos">
+        Pick<Pin, "annotation" | "status" | "order" | "groupId" | "styleEdits" | "name" | "railPos" | "boxPos">
       >;
     };
     res: { board: Board };

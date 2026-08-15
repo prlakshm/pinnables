@@ -176,6 +176,7 @@ function pinWith(overrides: Partial<Pin>): Pin {
     versionSeq: 0,
     currentVersionNo: null,
     railPos: null,
+    boxPos: null,
     captureState: "default",
     status: "todo",
     createdAt: "2026-08-14T00:00:00.000Z",
