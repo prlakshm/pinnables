@@ -82,6 +82,10 @@ export interface SelectionDialogProps {
   /** Relate the whole selection to its first pin; null when not applicable. */
   onRelate: (() => void) | null;
   onDismiss: () => void;
+  /** Reports the root element so the overlay can measure the box. */
+  onRootEl?: (el: HTMLDivElement | null) => void;
+  /** A body pointerdown that missed every interactive child — a drag. */
+  onBodyPointerDown?: (event: React.PointerEvent) => void;
 }
 
 /**
@@ -109,6 +113,8 @@ export function SelectionDialog({
   onAddToBoard,
   onRelate,
   onDismiss,
+  onRootEl,
+  onBodyPointerDown,
 }: SelectionDialogProps) {
   const [draft, setDraft] = useState("");
   /*
@@ -569,7 +575,15 @@ export function SelectionDialog({
 
   return (
     <div
-      ref={rootRef}
+      ref={(el) => {
+        rootRef.current = el;
+        onRootEl?.(el);
+      }}
+      onPointerDown={(event) => {
+        const target = event.target as Element;
+        if (target.closest("textarea, button, a, .pin-key, .pin-kbd")) return;
+        onBodyPointerDown?.(event);
+      }}
       className="pin-note pin-note--floating pin-live-note"
       style={{ left: position.x, top: position.y, width: position.width, marginTop: scoot }}
       data-no-drag
