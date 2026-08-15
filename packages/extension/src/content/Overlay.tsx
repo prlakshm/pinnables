@@ -547,8 +547,6 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   /** The open chapter — the commit the project stands on. Keys and rows
       stamped with an earlier head keep their words and go quiet. */
   const [projectHead, setProjectHead] = useState<string | null>(null);
-  /** How far the composer has stepped down to clear the rail. */
-  const [railScoot, setRailScoot] = useState(0);
   const [justPinned, setJustPinned] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -2870,8 +2868,19 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           projectHead={projectHead}
           busy={versionBusy}
           onBusy={setVersionBusy}
-          onScoot={setRailScoot}
-          scoot={railScoot}
+          mainRail={chromePlacement?.rail ?? null}
+          boxRect={
+            chromePlacement && boxSize
+              ? {
+                  x: chromePlacement.box.x,
+                  y: chromePlacement.box.y + Math.max(0, chromePlacement.scoot),
+                  width: chromePlacement.box.width,
+                  height: boxSize.height,
+                }
+              : null
+          }
+          onRailSize={setRailSize}
+          onScoot={setLiveScoot}
         />
       )}
 

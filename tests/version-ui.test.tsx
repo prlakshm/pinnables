@@ -153,7 +153,9 @@ function renderLayer(pin: Pin, captures: Capture[] = [], versionsOk = true): str
       busy={false}
       onBusy={() => {}}
       onScoot={() => {}}
-      scoot={0}
+      mainRail={{ x: 450, y: 280, seat: "card-right" }}
+      boxRect={{ x: 100, y: 400, width: 380, height: 120 }}
+      onRailSize={() => {}}
     />,
   );
 }
@@ -271,7 +273,9 @@ function renderLayerWithHead(pin: Pin, projectHead: string | null): string {
       busy={false}
       onBusy={() => {}}
       onScoot={() => {}}
-      scoot={0}
+      mainRail={{ x: 450, y: 280, seat: "card-right" }}
+      boxRect={{ x: 100, y: 400, width: 380, height: 120 }}
+      onRailSize={() => {}}
     />,
   );
 }

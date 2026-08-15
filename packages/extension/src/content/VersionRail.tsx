@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { Board, Capture, Pin, PinVersion } from "@pinnables/shared";
 import { send } from "../lib/messages";
 import { GripIcon } from "../ui/icons";
+import type { Box } from "./chrome-placement";
 
 /**
  * Version keys — the rail, the captures, and every gesture between them.
@@ -58,6 +59,7 @@ export function seatRail(
   foot: RailBox | null,
   manual: { x: number; y: number } | null,
   viewport: { width: number; height: number },
+  occupied: RailBox[] = [],
 ): { x: number; y: number; placed: string } {
   const { width: w, height: h } = rail;
   const vw = viewport.width;
@@ -81,7 +83,17 @@ export function seatRail(
   };
   const fits = (where: string) => {
     const s = spots[where];
-    return s.x > 4 && s.x + w < vw - 4 && s.y > 4 && s.y + h < vh - 4;
+    const rect = { x: s.x, y: s.y, width: w, height: h };
+    const clear = occupied.every(
+      (zone) =>
+        !(
+          rect.x < zone.x + zone.width &&
+          rect.x + rect.width > zone.x &&
+          rect.y < zone.y + zone.height &&
+          rect.y + rect.height > zone.y
+        ),
+    );
+    return clear && s.x > 4 && s.x + w < vw - 4 && s.y > 4 && s.y + h < vh - 4;
   };
   const order = ["card-right", "below", "card-left"];
   const chosen = order.find(fits) ?? order[order.length - 1];
@@ -256,12 +268,12 @@ export interface VersionLayerProps {
   onBusy: (busy: boolean) => void;
   /** The composer steps down to clear a rail dropped onto it. */
   onScoot: (px: number) => void;
-  /**
-   * The scoot currently applied, fed back so seating re-runs once the
-   * composer has moved — the mock re-placed every frame; here the changed
-   * margin is the signal. The formula's cap makes the loop converge.
-   */
-  scoot: number;
+  /** The main rail's seat from the placement module. Null = no room, no rail. */
+  mainRail: { x: number; y: number; seat: string } | null;
+  /** Where the box actually renders, for capture occupancy and drag seam math. */
+  boxRect: Box | null;
+  /** Reports the rail's rendered size each pass — its width changes with key count. */
+  onRailSize: (size: { width: number; height: number } | null) => void;
 }
 
 /** The version's picture, from storage — falls back to the pin's own shot. */
@@ -297,7 +309,9 @@ export function VersionLayer({
   busy,
   onBusy,
   onScoot,
-  scoot,
+  mainRail,
+  boxRect,
+  onRailSize,
 }: VersionLayerProps) {
   /*
    * Only the open chapter's keys exist here. A stale key filtered at the
@@ -717,6 +731,15 @@ export function VersionLayer({
         if (railId === "main") {
           setRailDragPos(d.at);
         }
+        if (railId === "main" && boxRect && liveRect && d.at) {
+          onScoot(
+            composerScoot(
+              { x: d.at.x, y: d.at.y, width: railEl.offsetWidth, height: railEl.offsetHeight },
+              { x: liveRect.x, y: liveRect.y, width: liveRect.width, height: liveRect.height },
+              boxRect,
+            ),
+          );
+        }
       };
       const finish = (ev: PointerEvent, commit: boolean) => {
         window.removeEventListener("pointermove", move);
@@ -730,6 +753,7 @@ export function VersionLayer({
         railEl.dataset.dragging = "false";
         drag.current = null;
         clearSlots();
+        onScoot(0);
 
         if (!commit || !d.moved) return;
         const to = over ? (over.dataset.rail as RailId) : null;
@@ -744,8 +768,11 @@ export function VersionLayer({
            the board. */
         if (railId === "main") {
           setRailDragPos(null);
-          if (d.at) {
-            void send("pin/update", { pinId: pin.id, patch: { railPos: d.at } }).catch(() => {});
+          if (d.at && liveRect) {
+            void send("pin/update", {
+              pinId: pin.id,
+              patch: { railPos: { x: d.at.x - liveRect.x, y: d.at.y - liveRect.y } },
+            }).catch(() => {});
           }
         } else if (capture && d.at) {
           saveCaptures(
@@ -759,7 +786,7 @@ export function VersionLayer({
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", cancelled);
     },
-    [busy, mainKeys, versions, captures, absorb, saveCaptures, openSlots, clearSlots, pin.id],
+    [busy, mainKeys, versions, captures, absorb, saveCaptures, openSlots, clearSlots, pin.id, liveRect, boxRect, onScoot],
   );
 
   /* The card only ever moves the capture. Dropping one next to another can
@@ -950,56 +977,17 @@ export function VersionLayer({
 
   /* ----------------------------------------------------------- placement */
 
-  const [mainSeat, setMainSeat] = useState<{ x: number; y: number; placed: string } | null>(null);
-
+  /* The rail's width changes as keys arrive and leave, so it reports every
+     pass — the overlay feeds the real size back into the placement module. */
   useLayoutEffect(() => {
-    if (!showMain || !liveRect) {
-      onScoot(0);
+    const el = mainRailRef.current;
+    if (!showMain || !el) {
+      onRailSize(null);
       return;
     }
-    const railEl = mainRailRef.current;
-    if (!railEl) return;
-    const manual = railDragPos ?? pin.railPos;
-    const noteEl = root().querySelector?.(".pin-live-note") as HTMLElement | null;
-    const noteBox = noteEl?.getBoundingClientRect() ?? null;
-    const card: RailBox = {
-      x: liveRect.x,
-      y: liveRect.y,
-      width: liveRect.width,
-      height: liveRect.height,
-    };
-    const seat = seatRail(
-      { width: railEl.offsetWidth || 140, height: railEl.offsetHeight || 27 },
-      card,
-      noteBox
-        ? { x: noteBox.x, y: noteBox.y, width: noteBox.width, height: noteBox.height }
-        : null,
-      manual,
-      { width: window.innerWidth, height: window.innerHeight },
-    );
-    setMainSeat((prev) =>
-      prev && prev.x === seat.x && prev.y === seat.y && prev.placed === seat.placed ? prev : seat,
-    );
-    /* The composer steps down only for the rail that overhangs it. */
-    if (noteBox) {
-      const railBox: RailBox = {
-        x: seat.x,
-        y: seat.y,
-        width: railEl.offsetWidth || 140,
-        height: railEl.offsetHeight || 27,
-      };
-      onScoot(
-        composerScoot(railBox, card, {
-          x: noteBox.x,
-          y: noteBox.y,
-          width: noteBox.width,
-          height: noteBox.height,
-        }),
-      );
-    } else {
-      onScoot(0);
-    }
-  }, [showMain, liveRect, railDragPos, pin.railPos, mainKeys.length, enteringNo, onScoot, scoot]);
+    const next = { width: el.offsetWidth || 140, height: el.offsetHeight || 27 };
+    onRailSize(next);
+  }, [showMain, mainKeys.length, enteringNo, onRailSize]);
 
   useEffect(() => {
     if (!showMain) onScoot(0);
@@ -1040,22 +1028,32 @@ export function VersionLayer({
     </span>
   );
 
+  /* What a capture's rail must clear: the box and the main rail, wherever
+     either actually renders. A capture gets no guaranteed seat of its own —
+     it is placed by hand, so a crowded one is moved by hand. */
+  const mainRailBox: RailBox | null = mainRail
+    ? {
+        x: mainRail.x,
+        y: mainRail.y,
+        width: mainRailRef.current?.offsetWidth || 140,
+        height: mainRailRef.current?.offsetHeight || 27,
+      }
+    : null;
+  const occupied: RailBox[] = [boxRect, mainRailBox].filter((b): b is RailBox => b !== null);
+
   return (
     <div ref={layerRef} style={{ display: "contents" }}>
-      {showMain && (
+      {showMain && mainRail && (
         <div
           ref={mainRailRef}
           className="pin-versions"
           data-rail="main"
           data-armed={armed ? "true" : "false"}
           data-busy={busy ? "true" : "false"}
-          data-placed={mainSeat?.placed ?? "card-right"}
+          data-placed={mainRail.seat}
           role="group"
           aria-label="Versions"
-          style={{
-            left: mainSeat?.x ?? -9999,
-            top: mainSeat?.y ?? -9999,
-          }}
+          style={{ left: mainRail.x, top: mainRail.y }}
         >
           {grip("main", null)}
           <span className="pin-versions__mod" title="hold ⌥ and press a number to jump">
@@ -1076,6 +1074,7 @@ export function VersionLayer({
             grip={grip}
             renderKeys={renderKeys}
             onPointerDown={captureDown}
+            occupied={occupied}
           />
         ))}
     </div>
@@ -1100,6 +1099,7 @@ function CaptureCard({
   grip,
   renderKeys,
   onPointerDown,
+  occupied,
 }: {
   capture: Capture;
   pin: Pin;
@@ -1108,6 +1108,7 @@ function CaptureCard({
   grip: (railId: string, capture: Capture) => React.ReactNode;
   renderKeys: (keys: PinVersion[], railId: string, litNo: number | null) => React.ReactNode;
   onPointerDown: (e: React.PointerEvent, capture: Capture, wrap: HTMLElement) => void;
+  occupied: RailBox[];
 }) {
   const shown = versions.find((v) => v.no === capture.current) ?? null;
   const src = useVersionShot(pin.id, shown);
@@ -1133,11 +1134,12 @@ function CaptureCard({
       null,
       capture.railPos,
       { width: window.innerWidth, height: window.innerHeight },
+      occupied,
     );
     setSeat((prev) =>
       prev && prev.x === placed.x && prev.y === placed.y ? prev : placed,
     );
-  }, [capture.pos.x, capture.pos.y, capture.railPos, keys.length, src]);
+  }, [capture.pos.x, capture.pos.y, capture.railPos, keys.length, src, occupied]);
 
   /*
    * Life size, like the pin card: the stored PNG is device pixels, the
