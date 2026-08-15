@@ -1061,7 +1061,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `tests/version-ui.test.tsx` (the two layer render helpers)
 
 **Interfaces:**
-- Consumes: `chrome` and `boxSize` from Task 5; `Box` from `./chrome-placement`.
+- Consumes: `chromePlacement` and `boxSize` from Task 5; `Box` from `./chrome-placement`.
 - Produces: `VersionLayerProps` loses `scoot` and gains:
 
 ```ts
@@ -1192,13 +1192,13 @@ placed by hand, so a crowded one is moved by hand.
           projectHead={projectHead}
           busy={versionBusy}
           onBusy={setVersionBusy}
-          mainRail={chrome?.rail ?? null}
+          mainRail={chromePlacement?.rail ?? null}
           boxRect={
-            chrome && boxSize
+            chromePlacement && boxSize
               ? {
-                  x: chrome.box.x,
-                  y: chrome.box.y + Math.max(0, chrome.scoot),
-                  width: chrome.box.width,
+                  x: chromePlacement.box.x,
+                  y: chromePlacement.box.y + Math.max(0, chromePlacement.scoot),
+                  width: chromePlacement.box.width,
                   height: boxSize.height,
                 }
               : null
@@ -1248,7 +1248,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: The drag handler**
 
-In `OverlayRoot`, after the `chrome` placement block:
+In `OverlayRoot`, after the `chromePlacement` placement block:
 
 ```ts
   /*
@@ -1264,7 +1264,7 @@ In `OverlayRoot`, after the `chrome` placement block:
       const primary = liveSelectedPins[0];
       if (!primary) return;
       const start = { x: event.clientX, y: event.clientY };
-      const origin = { x: chrome.box.x, y: chrome.box.y };
+      const origin = { x: chromePlacement.box.x, y: chromePlacement.box.y };
       let moved = false;
       const move = (ev: PointerEvent) => {
         if (!moved && Math.abs(ev.clientX - start.x) < 5 && Math.abs(ev.clientY - start.y) < 5) return;
