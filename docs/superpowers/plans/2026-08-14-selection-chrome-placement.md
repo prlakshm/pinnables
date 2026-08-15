@@ -16,13 +16,14 @@
 - Test runner: `npm test` from repo root runs `tests/*.test.ts tests/*.test.tsx` via tsx. Single file: `npx tsx --tsconfig packages/extension/tsconfig.json --test tests/<file>`.
 - Typecheck gates: `npx tsc --noEmit -p packages/extension/tsconfig.json` and `npx tsc --noEmit -p packages/service/tsconfig.json`.
 - Gutters and gaps (exact values, from the spec and shipped code): viewport gutter for box `12`, for rail `4`; box–element gap `12`; rail–element gap `10`; slot padding `8`; hysteresis tolerance `16`; `COMPOSER_WIDTH = 380` (import, do not redefine).
-- The repo's working tree carries finished, uncommitted version-keys work in the same files this plan modifies. **Task 0 commits that work first** so task commits stay clean.
+- Task 0 is already done: the version-keys baseline is committed as `d3882e7`. `fixtures/film-set/index.html` carries an unrelated user edit — never stage it.
+- **The rail can legitimately be absent.** When the annotation box nearly fills the viewport no position clears it, and a rail drawn over the box would cover the input. `placeSelectionChrome` returns `rail: null` there. The invariant is "a returned rail clears the box", never "a rail always exists".
 - Commit messages follow repo style (`Feat:`, `Fix:`, `Docs:`, `Test:` prefixes) and end with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - No `data-*` or copy changes beyond what tasks state; meta-chips stay lowercase; UI copy never uses em dashes.
 
 ---
 
-### Task 0: Commit the pending version-keys work
+### Task 0: Commit the pending version-keys work — DONE (`d3882e7`)
 
 **Files:**
 - Modify: none (git only)
@@ -54,7 +55,7 @@ Expected: empty output.
 
 ---
 
-### Task 1: Box ladder in the pure module
+### Task 1: Box ladder in the pure module — DONE (`22b8b03`)
 
 **Files:**
 - Create: `packages/extension/src/content/chrome-placement.ts`
@@ -328,7 +329,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 2: Rail rings, guaranteed seats, seam scoot
+### Task 2: Rail rings, guaranteed seats, seam scoot — DONE (`55cddd5..e4f5e64`, three fix rounds)
 
 **Files:**
 - Modify: `packages/extension/src/content/chrome-placement.ts`
@@ -576,94 +577,185 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 3: Invariant sweep and the footer regression
 
 **Files:**
-- Test: `tests/chrome-placement.test.ts` (append)
+- Test: `tests/chrome-placement.test.ts` (append only — 19 tests already there)
+- Modify (only if the sweep exposes a real defect): `packages/extension/src/content/chrome-placement.ts`
 
 **Interfaces:**
-- Consumes: `placeSelectionChrome`, `intersects` from Tasks 1–2.
-- Produces: the safety net every later wiring change runs against.
+- Consumes: `placeSelectionChrome`, `intersects` (already imported by the test file).
+- Produces: the safety net every later wiring task runs against.
+
+**What Tasks 1-2 settled that changes this task.** The module went through three
+fix rounds. Two of them changed the contract this task asserts, so the
+invariants below are the corrected ones — they supersede any earlier draft:
+
+- **The rail may legitimately be `null`.** When the annotation box nearly
+  fills the viewport there is no position that clears it (free strips are a
+  few pixels wide), and a rail drawn over the box would cover the input the
+  user types into. The module returns no rail instead. The invariant is
+  therefore *"a returned rail clears the box"*, never *"a rail always
+  exists"*.
+- **Element overlap is sometimes unavoidable.** An element covering the
+  whole viewport leaves nowhere clear of it. The module's tier 2 accepts
+  element overlap in exactly that case. So the element-clearance assertion
+  must be skipped on *geometry* — "could a rail-sized rectangle fit anywhere
+  on-screen outside the element?" — never on the seat's name.
+- **The `slot` seat clears the element.** It sits below the element's bottom
+  edge. Assert element-clearance for it like any other seat.
+- **The box position to test against is post-scoot.** A `slot` seat returns
+  a non-zero `scoot`, and the box only clears the rail once the caller
+  applies it. Test the rail against `{...box, y: box.y + scoot}`.
 
 - [ ] **Step 1: Append the sweep**
 
 ```ts
-test("invariant sweep: no auto seat ever overlaps, everything stays on screen", () => {
+test("invariant sweep: no auto seat overlaps, everything stays on screen", () => {
   const viewports = [
+    { width: 1440, height: 900 },
     { width: 1280, height: 800 },
     { width: 900, height: 600 },
-    { width: 420, height: 700 },
+    { width: 480, height: 800 },
+    { width: 375, height: 667 },
+    { width: 320, height: 480 },
   ];
-  const railSize = { width: 140, height: 27 };
+  const rails = [
+    { width: 140, height: 27 },
+    { width: 60, height: 27 },
+  ];
+  const boxes = [
+    { width: 380, height: 96 },
+    { width: 380, height: 240 },
+  ];
+  let combos = 0;
+  let nullRails = 0;
+  let elementSkips = 0;
+
+  /* Could a rail of this size sit anywhere on screen clear of the element?
+     If not, element overlap is unavoidable and the module's tier 2 is
+     right to accept it — so the assertion is skipped on geometry, never on
+     the seat's name. The four strips around the element are the only
+     candidates worth testing: anything clear of the element lies in one. */
+  const clearRoomExists = (element, rail, viewport) => {
+    const g = 4;
+    const strips = [
+      { w: viewport.width - g * 2, h: element.y - g },
+      { w: viewport.width - g * 2, h: viewport.height - g - (element.y + element.height) },
+      { w: element.x - g, h: viewport.height - g * 2 },
+      { w: viewport.width - g - (element.x + element.width), h: viewport.height - g * 2 },
+    ];
+    return strips.some((s) => s.w >= rail.width && s.h >= rail.height);
+  };
+
   for (const viewport of viewports) {
-    for (let ex = -100; ex <= viewport.width; ex += 120) {
-      for (let ey = -100; ey <= viewport.height; ey += 120) {
-        for (const size of [
-          { width: 240, height: 160 },
-          { width: viewport.width, height: 120 },
-          { width: 300, height: viewport.height + 200 },
-        ]) {
-          const element = { x: ex, y: ey, ...size };
-          const p = placeSelectionChrome({
-            element,
-            labelAbove: 48,
-            labelBelow: 0,
-            loneLeft: ex,
-            box: { width: 380, height: 150 },
-            rail: railSize,
-            manualBox: null,
-            manualRail: null,
-            preferred: { box: null, rail: null },
-            viewport,
-          });
-          const label = `element ${ex},${ey} ${size.width}x${size.height} in ${viewport.width}x${viewport.height}`;
-          const boxRect = { x: p.box.x, y: p.box.y + Math.max(0, p.scoot), width: p.box.width, height: 150 };
-          assert.ok(p.rail, `rail exists — ${label}`);
-          const railRect = { x: p.rail!.x, y: p.rail!.y, width: railSize.width, height: railSize.height };
-          if (p.box.seat !== "docked") {
-            assert.equal(intersects(boxRect, element), false, `box clear of element — ${label}`);
+    for (const rail of rails) {
+      for (const box of boxes) {
+        for (let ex = -80; ex <= viewport.width; ex += 140) {
+          for (let ey = -80; ey <= viewport.height; ey += 140) {
+            for (const size of [
+              { width: 240, height: 160 },
+              { width: viewport.width, height: 120 },
+              { width: 300, height: viewport.height + 200 },
+            ]) {
+              combos += 1;
+              const element = { x: ex, y: ey, ...size };
+              const p = placeSelectionChrome({
+                element,
+                labelAbove: 48,
+                labelBelow: 0,
+                loneLeft: ex,
+                box,
+                rail,
+                manualBox: null,
+                manualRail: null,
+                preferred: { box: null, rail: null },
+                viewport,
+              });
+              const where = `element ${ex},${ey} ${size.width}x${size.height} rail ${rail.width}x${rail.height} box h${box.height} in ${viewport.width}x${viewport.height}`;
+
+              const boxRect = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: box.height };
+              if (p.box.seat !== "docked") {
+                assert.equal(intersects(boxRect, element), false, `box clear of element — ${where}`);
+              }
+              assert.ok(
+                p.box.x >= 12 && p.box.x + p.box.width <= viewport.width - 12,
+                `box inside gutters — ${where}`,
+              );
+
+              if (!p.rail) {
+                nullRails += 1;
+                continue;
+              }
+              const railRect = { x: p.rail.x, y: p.rail.y, width: rail.width, height: rail.height };
+              assert.equal(intersects(railRect, boxRect), false, `rail clear of box — ${where}`);
+              assert.ok(
+                railRect.x >= 4 &&
+                  railRect.y >= 4 &&
+                  railRect.x + railRect.width <= viewport.width - 4 &&
+                  railRect.y + railRect.height <= viewport.height - 4,
+                `rail on screen — ${where}`,
+              );
+              if (clearRoomExists(element, rail, viewport)) {
+                assert.equal(intersects(railRect, element), false, `rail clear of element — ${where}`);
+              } else {
+                elementSkips += 1;
+              }
+            }
           }
-          assert.equal(intersects(railRect, boxRect), false, `rail clear of box — ${label}`);
-          if (p.rail!.seat !== "slot") {
-            assert.equal(intersects(railRect, element), false, `rail clear of element — ${label}`);
-          }
-          assert.ok(p.box.x >= 12 && p.box.x + p.box.width <= viewport.width - 12, `box inside gutters — ${label}`);
-          assert.ok(railRect.x >= 4 && railRect.x + railRect.width <= viewport.width - 4, `rail inside gutters — ${label}`);
         }
       }
     }
   }
+
+  /* Printed, not asserted on exact values: a regression that quietly nulled
+     every rail would otherwise pass a suite that only checks overlaps. */
+  console.log(`sweep: ${combos} combinations, ${nullRails} null rails, ${elementSkips} element skips`);
+  assert.ok(combos > 2000, "the sweep actually swept");
+  assert.ok(nullRails < combos / 2, "most combinations still produce a rail");
 });
 
 test("regression: the film-set footer at the bottom edge", () => {
   const viewport = { width: 1440, height: 900 };
   const footer = { x: 0, y: 830, width: 1440, height: 120 };
+  const box = { width: 380, height: 180 };
+  const rail = { width: 100, height: 27 };
   const p = placeSelectionChrome({
     element: footer,
     labelAbove: 48,
     labelBelow: 0,
     loneLeft: 0,
-    box: { width: 380, height: 180 },
-    rail: { width: 100, height: 27 },
+    box,
+    rail,
     manualBox: null,
     manualRail: null,
     preferred: { box: null, rail: null },
     viewport,
   });
   assert.equal(p.box.seat, "above", "box flips over the footer");
-  assert.equal(p.rail!.seat, "box-side", "full width leaves only the box's side");
-  assert.equal(p.rail!.y, p.box.y + 180 - 27, "flush with the anchored edge");
+  assert.ok(p.rail, "the footer case has room for a rail");
+  const railRect = { x: p.rail!.x, y: p.rail!.y, width: rail.width, height: rail.height };
+  const boxRect = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: box.height };
+  assert.equal(intersects(railRect, boxRect), false, "rail clear of the box");
+  assert.equal(intersects(railRect, footer), false, "rail clear of the footer");
+  assert.equal(intersects(boxRect, footer), false, "box clear of the footer");
 });
 ```
 
-Note: the slot seat intentionally sits inside the element's strip below its
-bottom edge — that is the seam the box vacated — so the element-overlap
-invariant exempts `slot` exactly as the spec's invariant table says `moved`
-is exempt.
-
-- [ ] **Step 2: Run and fix until green**
+- [ ] **Step 2: Run, and fix the module if it fails**
 
 Run: `npx tsx --tsconfig packages/extension/tsconfig.json --test tests/chrome-placement.test.ts`
-Expected: PASS. If the sweep finds a hole (it exists to), fix the module — never weaken an assertion. Typical first failures: clamp order in guaranteed seats; tolerate them by fixing clamps, not tests.
+Expected: 21/21 pass, and the sweep prints its three counts.
 
-- [ ] **Step 3: Commit**
+If an assertion fails, fix `chrome-placement.ts` — never weaken the
+assertion. If you believe an assertion is itself wrong, stop and report it
+rather than editing it silently: two of this plan's original invariants were
+wrong, and saying so is how they got fixed.
+
+- [ ] **Step 3: Full suite and typecheck**
+
+Run: `npm test 2>&1 | grep -E "ℹ tests|ℹ pass|ℹ fail"` then
+`npx tsc --noEmit -p packages/extension/tsconfig.json`
+Expected: all pass, types clean.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add tests/chrome-placement.test.ts packages/extension/src/content/chrome-placement.ts
@@ -677,17 +769,19 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 4: Schema — `boxPos` beside `railPos`, both element-relative
 
 **Files:**
-- Modify: `packages/shared/src/schema.ts` (PinSchema, next to `railPos`)
-- Modify: `packages/extension/src/lib/messages.ts` (pin/update patch allowlist)
+- Modify: `packages/shared/src/schema.ts` (`PinSchema`, at `railPos`)
+- Modify: `packages/extension/src/lib/messages.ts` (the `pin/update` patch type)
 - Modify: `packages/extension/src/background/index.ts` (two pin construction sites)
-- Modify: `tests/version-keys.test.ts`, `tests/version-chapters.test.ts`, `tests/version-ui.test.tsx` (pin fixtures gain the field)
+- Modify: `tests/version-keys.test.ts`, `tests/version-chapters.test.ts`, `tests/version-ui.test.tsx` (pin fixtures)
 
 **Interfaces:**
-- Produces: `PinSchema.boxPos: {x,y} | null` (element-relative offset), `railPos` redocumented as element-relative. `pin/update` accepts `boxPos` in its patch.
+- Produces: `PinSchema.boxPos: {x, y} | null` — an element-relative offset;
+  `railPos` redocumented as the same. `pin/update` accepts both.
 
 - [ ] **Step 1: Schema field**
 
-In `packages/shared/src/schema.ts`, replace the `railPos` block inside `PinSchema` with:
+In `packages/shared/src/schema.ts`, replace the `railPos` block inside
+`PinSchema` with:
 
 ```ts
   /**
@@ -706,9 +800,10 @@ In `packages/shared/src/schema.ts`, replace the `railPos` block inside `PinSchem
   boxPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
 ```
 
-- [ ] **Step 2: Allowlist + construction sites**
+- [ ] **Step 2: Allowlist and construction sites**
 
-In `packages/extension/src/lib/messages.ts`, the pin/update patch type gains `"boxPos"`:
+In `packages/extension/src/lib/messages.ts`, the `pin/update` patch type
+gains `"boxPos"`:
 
 ```ts
       patch: Partial<
@@ -716,17 +811,20 @@ In `packages/extension/src/lib/messages.ts`, the pin/update patch type gains `"b
       >;
 ```
 
-In `packages/extension/src/background/index.ts`, both pin literals (element capture and region capture) gain `boxPos: null,` directly after `railPos: null,`.
+In `packages/extension/src/background/index.ts` both pin literals (the
+element capture and the region capture) gain `boxPos: null,` immediately
+after their existing `railPos: null,`.
 
-- [ ] **Step 3: Rebuild shared, fix fixture fallout**
+- [ ] **Step 3: Rebuild shared, fix the fixture fallout**
 
 Run: `npm run build --workspace @pinnables/shared && npx tsc --noEmit -p packages/extension/tsconfig.json`
-Expected: errors in the three test files' `pinWith` fixtures. Add `boxPos: null,` after `railPos: null,` in each.
+Expected: errors in the three test files' `pinWith` fixtures. Add
+`boxPos: null,` after `railPos: null,` in each.
 
 - [ ] **Step 4: Full suite**
 
 Run: `npm test 2>&1 | grep -E "ℹ tests|ℹ pass|ℹ fail"`
-Expected: all pass (223+ after Task 3).
+Expected: all pass.
 
 - [ ] **Step 5: Commit**
 
@@ -739,52 +837,82 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Overlay wires the module; the dialog consumes it
+### Task 5: Overlay measures the chrome and calls the module
 
 **Files:**
 - Modify: `packages/extension/src/content/Overlay.tsx`
 - Modify: `packages/extension/src/content/SelectionDialog.tsx`
 
 **Interfaces:**
-- Consumes: `placeSelectionChrome`, `ChromePlacement`, `Offset` (Task 1–2); `pin.boxPos`/`pin.railPos` (Task 4).
-- Produces for Task 6: Overlay state `chrome: ChromePlacement | null`; `SelectionDialog` props gain `onRootEl?: (el: HTMLDivElement | null) => void` and `onBodyPointerDown?: (e: React.PointerEvent) => void`. The old `dialogPlacement` IIFE is deleted; `placeGroupComposer` remains only for the card-group composer (`groupBox`).
+- Consumes: `placeSelectionChrome`, `ChromePlacement`, `BoxSeat`, `RailSeat`
+  from `./chrome-placement`; `pin.boxPos` / `pin.railPos` from Task 4.
+- Produces for Task 6: Overlay holds `chrome: ChromePlacement | null`,
+  `boxSize`, `railSize` (set by Task 6's `onRailSize`), `liveScoot`, and
+  `boxDragPos`. `SelectionDialog` gains two optional props:
+  `onRootEl?: (el: HTMLDivElement | null) => void` and
+  `onBodyPointerDown?: (event: React.PointerEvent) => void`.
 
-- [ ] **Step 1: Measure the box and rail in Overlay**
+**This task is bounded.** `Overlay.tsx` is ~2800 lines; you are touching
+three regions and nothing else: the state declarations near the top of
+`OverlayRoot`, the `dialogPlacement` IIFE, and the `<SelectionDialog>` call
+site. Do not refactor anything you pass through.
 
-In `OverlayRoot`, next to the existing version state, add:
+- [ ] **Step 1: Read the two regions first**
+
+Read `packages/extension/src/content/Overlay.tsx` around the existing
+`const dialogPlacement = (() => {` IIFE and the `<SelectionDialog` JSX. The
+IIFE computes the selection's bounding rect, a flipped-label allowance, and
+calls `placeGroupComposer`. You are replacing its placement math while
+keeping its rect and label logic — that logic is correct and hard-won.
+
+`placeGroupComposer` stays in `overlay-geometry.ts`: the card-group composer
+(`groupBox`) still uses it. Only the live-selection dialog stops using it.
+
+- [ ] **Step 2: Add the measurement state**
+
+Inside `OverlayRoot`, beside the existing `versionBusy` / `versionsOk`
+state, add:
 
 ```ts
-  /** Live measurements of the chrome, fed to the placement module. */
-  const dialogEl = useRef<HTMLDivElement | null>(null);
+  /** Live measurements, fed to the placement module each pass. */
   const [boxSize, setBoxSize] = useState<{ width: number; height: number } | null>(null);
   const [railSize, setRailSize] = useState<{ width: number; height: number } | null>(null);
-  const [preferredSeats, setPreferredSeats] = useState<{
-    box: BoxSeat | null;
-    rail: RailSeat | null;
-  }>({ box: null, rail: null });
-  /** Transient viewport position while the user drags the box. */
+  /** Seats are sticky: the module keeps these while they stay legal. */
+  const [preferredSeats, setPreferredSeats] = useState<{ box: BoxSeat | null; rail: RailSeat | null }>({
+    box: null,
+    rail: null,
+  });
+  /** Viewport position of the box while the user is dragging it. */
   const [boxDragPos, setBoxDragPos] = useState<{ x: number; y: number } | null>(null);
+  /** Seam scoot while a rail drag is live; the module's value rules at rest. */
+  const [liveScoot, setLiveScoot] = useState(0);
+  const dialogObserver = useRef<ResizeObserver | null>(null);
 
+  /*
+   * The box measures itself. Its height is an input to the ladder — an
+   * "above" seat is bottom-anchored, so it can only be placed once its real
+   * height is known, and it changes as history rows arrive.
+   */
   const onDialogRootEl = useCallback((el: HTMLDivElement | null) => {
-    dialogEl.current = el;
-    if (!el) {
-      setBoxSize(null);
-      return;
-    }
+    dialogObserver.current?.disconnect();
+    dialogObserver.current = null;
+    if (!el) return;
     const measure = () =>
-      setBoxSize((prev) => {
-        const next = { width: el.offsetWidth, height: el.offsetHeight };
-        return prev && prev.width === next.width && prev.height === next.height ? prev : next;
-      });
+      setBoxSize((prev) =>
+        prev && prev.width === el.offsetWidth && prev.height === el.offsetHeight
+          ? prev
+          : { width: el.offsetWidth, height: el.offsetHeight },
+      );
     measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    (el as HTMLDivElement & { __pinRo?: ResizeObserver }).__pinRo?.disconnect();
-    (el as HTMLDivElement & { __pinRo?: ResizeObserver }).__pinRo = ro;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    dialogObserver.current = observer;
   }, []);
+
+  useEffect(() => () => dialogObserver.current?.disconnect(), []);
 ```
 
-Import `placeSelectionChrome` plus the types at the top:
+Import at the top of the file:
 
 ```ts
 import {
@@ -795,15 +923,18 @@ import {
 } from "./chrome-placement";
 ```
 
-- [ ] **Step 2: Replace `dialogPlacement` with the module call**
+- [ ] **Step 3: Replace the placement IIFE**
 
-Delete the whole `const dialogPlacement = (() => { ... })()` IIFE and put in its place:
+Replace the whole `const dialogPlacement = (() => { ... })();` block with
+the following. Keep its rect-gathering and flipped-label logic exactly as
+you found it — only the final placement call changes.
 
 ```ts
   /*
-   * One placement call seats the box and the rail together. The old
-   * per-piece solvers are gone: the module owns the ladder, the rings, the
-   * reserved seats, and the promise that nothing it places overlaps.
+   * One call seats the box and the rail together. Two solvers agreeing by
+   * luck is what put them on top of each other; the module owns the ladder,
+   * the rings, the reserved seats and the promise that what it places does
+   * not overlap.
    */
   const chrome: ChromePlacement | null = (() => {
     if (drawing || liveSelectedPins.length === 0) return null;
@@ -816,45 +947,48 @@ Delete the whole `const dialogPlacement = (() => { ... })()` IIFE and put in its
     const right = Math.max(...rects.map((rect) => rect.right));
     const top = Math.min(...rects.map((rect) => rect.top));
     const bottom = Math.max(...rects.map((rect) => rect.bottom));
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const flipped = entries.filter(
-      (entry) => entry.rect.top < 60 && entry.rect.bottom >= bottom - 1,
-    );
-    const labelBelow =
-      flipped.length === 0 ? 0 : Math.max(...flipped.map((entry) => (entry.full ? 42 : 26)));
+    /*
+     * A top-of-viewport selection hangs its label below itself, where the
+     * box wants to go — so the box yields that height. Preserved verbatim
+     * from the placement this replaces.
+     */
+    const flipped = entries.filter((entry) => entry.rect.top < 60 && entry.rect.bottom >= bottom - 1);
+    const labelBelow = flipped.length === 0 ? 0 : Math.max(...flipped.map((entry) => (entry.full ? 42 : 26)));
     const labelAbove = flipped.length === 0 ? 48 : 0;
     const primary = liveSelectedPins[0];
-    const measuredBox = boxSize ?? { width: 380, height: 96 };
-    const dragOffset = boxDragPos
-      ? { x: boxDragPos.x - left, y: boxDragPos.y - top }
-      : null;
+    const element = { x: left, y: top, width: right - left, height: bottom - top };
     return placeSelectionChrome({
-      element: { x: left, y: top, width: right - left, height: bottom - top },
+      element,
       labelAbove,
       labelBelow,
       loneLeft: rects.length === 1 ? rects[0].left : null,
-      box: measuredBox,
+      box: boxSize ?? { width: 380, height: 96 },
       rail: railSize,
-      manualBox: dragOffset ?? primary.boxPos ?? null,
+      manualBox: boxDragPos
+        ? { x: boxDragPos.x - element.x, y: boxDragPos.y - element.y }
+        : (primary.boxPos ?? null),
       manualRail: primary.railPos ?? null,
       preferred: preferredSeats,
-      viewport,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
     });
   })();
 
+  const boxSeat = chrome?.box.seat ?? null;
+  const railSeat = chrome?.rail?.seat ?? null;
   useEffect(() => {
-    if (!chrome) return;
     setPreferredSeats((prev) =>
-      prev.box === chrome.box.seat && prev.rail === (chrome.rail?.seat ?? null)
-        ? prev
-        : { box: chrome.box.seat, rail: chrome.rail?.seat ?? null },
+      prev.box === boxSeat && prev.rail === railSeat ? prev : { box: boxSeat, rail: railSeat },
     );
-  }, [chrome?.box.seat, chrome?.rail?.seat]);
+  }, [boxSeat, railSeat]);
 ```
 
-- [ ] **Step 3: Pass it to the dialog**
+- [ ] **Step 4: Point the dialog at it**
 
-Replace the `dialogPlacement && board && ...` render condition and props:
+At the `<SelectionDialog` call site, change the render condition and the
+placement props. Every other prop stays exactly as it is today —
+`targetOf`, `relationshipId`, `drawingSummary`, `onLiveSent`,
+`onAddToBoard`, `onRelate`, `onDismiss`, `versionBusy`, `onVersionBusy`,
+`projectHead` — copy them across unchanged.
 
 ```tsx
       {chrome && board && liveSelectedPins.length > 0 && (
@@ -862,54 +996,53 @@ Replace the `dialogPlacement && board && ...` render condition and props:
           pins={liveSelectedPins}
           board={board}
           position={{ x: chrome.box.x, y: chrome.box.y, width: chrome.box.width }}
-          scoot={chrome.scoot}
+          scoot={liveScoot !== 0 ? liveScoot : chrome.scoot}
           onRootEl={onDialogRootEl}
-          onBodyPointerDown={beginBoxDrag}
-          versionBusy={versionBusy}
-          onVersionBusy={setVersionBusy}
-          projectHead={projectHead}
 ```
 
-then the remaining existing props (`targetOf`, `relationshipId`, `drawingSummary`, `onLiveSent`, `onAddToBoard`, `onRelate`, `onDismiss`) stay exactly as they are today — reproduce them verbatim from the current call site.
+Delete the now-unused `railScoot` state and its `scoot={railScoot}` prop if
+they are still present.
 
-(`beginBoxDrag` arrives in Task 7 — until then pass `undefined`; the prop is optional.) Delete `setRailScoot` usage from this path only if unused after Task 6; `railScoot` state is replaced by `chrome.scoot` — remove the `railScoot` state and the `scoot={railScoot}` wiring, using `chrome.scoot` directly.
-
-- [ ] **Step 4: Dialog accepts the ref and body-drag hooks**
+- [ ] **Step 5: The dialog reports its element**
 
 In `SelectionDialogProps` add:
 
 ```ts
   /** Reports the root element so the overlay can measure the box. */
   onRootEl?: (el: HTMLDivElement | null) => void;
-  /** Body pointerdown that did not hit an interactive child — a drag. */
+  /** A body pointerdown that missed every interactive child — a drag. */
   onBodyPointerDown?: (event: React.PointerEvent) => void;
 ```
 
-On the root div:
+Destructure both in the component signature, then on the root div replace
+the `ref` and add the handler:
 
 ```tsx
-    <div
       ref={(el) => {
         rootRef.current = el;
         onRootEl?.(el);
       }}
-      className="pin-note pin-note--floating pin-live-note"
-      style={{ left: position.x, top: position.y, width: position.width, marginTop: scoot }}
-      data-no-drag
+```
+
+```tsx
       onPointerDown={(event) => {
         const target = event.target as Element;
         if (target.closest("textarea, button, a, .pin-key, .pin-kbd")) return;
         onBodyPointerDown?.(event);
       }}
-    >
 ```
 
-- [ ] **Step 5: Typecheck, full suite**
+`onBodyPointerDown` stays unwired until Task 7 — the prop is optional, so
+the dialog behaves exactly as today until then.
 
-Run: `npx tsc --noEmit -p packages/extension/tsconfig.json && npm test 2>&1 | grep -E "ℹ pass|ℹ fail"`
-Expected: types clean; suite green (the SSR dialog tests pass — new props optional).
+- [ ] **Step 6: Typecheck and full suite**
 
-- [ ] **Step 6: Commit**
+Run: `npx tsc --noEmit -p packages/extension/tsconfig.json` then
+`npm test 2>&1 | grep -E "ℹ tests|ℹ pass|ℹ fail"`
+Expected: types clean; suite green — the SSR dialog tests pass unchanged
+because both new props are optional.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add packages/extension/src/content/Overlay.tsx packages/extension/src/content/SelectionDialog.tsx
@@ -920,31 +1053,40 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: VersionLayer consumes its seat; drags store offsets
+### Task 6: The rail takes its seat from the module
 
 **Files:**
 - Modify: `packages/extension/src/content/VersionRail.tsx`
-- Modify: `packages/extension/src/content/Overlay.tsx` (props at the VersionLayer call site)
-- Modify: `tests/version-ui.test.tsx` (layer render helpers)
+- Modify: `packages/extension/src/content/Overlay.tsx` (the `<VersionLayer>` call site only)
+- Modify: `tests/version-ui.test.tsx` (the two layer render helpers)
 
 **Interfaces:**
-- Consumes: `chrome` from Task 5; `Box`, `intersects` from the module.
-- Produces: `VersionLayerProps` changes — removes `scoot`, `onScoot` stays (live-drag transient), adds:
+- Consumes: `chrome` and `boxSize` from Task 5; `Box` from `./chrome-placement`.
+- Produces: `VersionLayerProps` loses `scoot` and gains:
 
 ```ts
-  /** The main rail's seat, computed by the placement module. Null hides it. */
-  mainRail: { x: number; y: number; seat: RailSeat } | null;
-  /** The box's rect, for capture-rail occupancy and drag seam math. */
+  /** The main rail's seat from the placement module. Null = no room, no rail. */
+  mainRail: { x: number; y: number; seat: string } | null;
+  /** Where the box actually renders, for capture occupancy and drag seam math. */
   boxRect: Box | null;
-  /** Reports the rail's rendered size so placement can seat it. */
+  /** Reports the rail's rendered size each pass — its width changes with key count. */
   onRailSize: (size: { width: number; height: number } | null) => void;
 ```
 
+`onScoot` stays: it carries the transient scoot while a rail drag is live.
+
+**Read before editing.** `VersionRail.tsx` is ~1200 lines and owns drag,
+merge, and capture logic that this task must not disturb. You are changing
+where the *main* rail renders and what a *main* rail drag persists. Capture
+rails keep their own `seatRail` ring; they gain occupancy rejection and
+nothing else.
+
 - [ ] **Step 1: Main rail renders where it is told**
 
-In `VersionRail.tsx`:
-- Delete the `mainSeat` state and the whole main-rail `useLayoutEffect` seating block (the one calling `seatRail` + `composerScoot` + `onScoot`), and the `scoot` prop.
-- Render the main rail at the prop:
+Delete the `mainSeat` state and the whole main-rail seating `useLayoutEffect`
+(the one calling `seatRail` and `composerScoot` and `onScoot`). Delete the
+`scoot` prop from the props interface and the destructure. Render the main
+rail from the prop:
 
 ```tsx
       {showMain && mainRail && (
@@ -961,7 +1103,9 @@ In `VersionRail.tsx`:
         >
 ```
 
-- Report size (place after `mainRailRef` definition):
+- [ ] **Step 2: Report the rail's size**
+
+The rail's width changes as keys arrive and leave, so it reports every pass:
 
 ```ts
   useLayoutEffect(() => {
@@ -970,15 +1114,14 @@ In `VersionRail.tsx`:
       onRailSize(null);
       return;
     }
-    onRailSize({ width: el.offsetWidth || 140, height: el.offsetHeight || 27 });
+    const next = { width: el.offsetWidth || 140, height: el.offsetHeight || 27 };
+    onRailSize(next);
   }, [showMain, mainKeys.length, enteringNo, onRailSize]);
 ```
 
-- `showMain` drops its `liveRect !== null` requirement only if `mainRail` is present; keep `visible && versionsOk && versions.length >= 2`.
+- [ ] **Step 3: A main-rail drag persists an element-relative offset**
 
-- [ ] **Step 2: Rail drag persists an offset; live drag keeps the transient scoot**
-
-In `railDown`'s `finish` for `railId === "main"`, replace the persist:
+In `railDown`'s `finish`, for `railId === "main"`, replace the persist call:
 
 ```ts
         if (railId === "main") {
@@ -992,10 +1135,11 @@ In `railDown`'s `finish` for `railId === "main"`, replace the persist:
         }
 ```
 
-During `move`, keep writing `railEl.style.left/top` directly and keep calling the existing live seam callback: replace the old `clearComposer`-style call with `onScoot(seamScootLive(...))` — import `composerScoot` is already exported from this file; the live transient path keeps using it against `boxRect`:
+In the same handler's `move`, keep writing the element's style directly and
+report the live seam scoot against the real box rect:
 
 ```ts
-        if (railId === "main" && boxRect && liveRect) {
+        if (railId === "main" && boxRect && liveRect && d.at) {
           onScoot(
             composerScoot(
               { x: d.at.x, y: d.at.y, width: railEl.offsetWidth, height: railEl.offsetHeight },
@@ -1006,24 +1150,12 @@ During `move`, keep writing `railEl.style.left/top` directly and keep calling th
         }
 ```
 
-On `finish`, call `onScoot(0)` so the module's resting scoot takes over.
+and call `onScoot(0)` in `finish` so the module's resting value takes over.
 
-- [ ] **Step 3: Captures gain occupancy**
+- [ ] **Step 4: Capture rails reject occupied space**
 
-`seatRail` signature gains an optional last parameter:
-
-```ts
-export function seatRail(
-  rail: { width: number; height: number },
-  card: RailBox,
-  foot: RailBox | null,
-  manual: { x: number; y: number } | null,
-  viewport: { width: number; height: number },
-  occupied: RailBox[] = [],
-): { x: number; y: number; placed: string } {
-```
-
-Replace the whole `fits` function inside `seatRail` with:
+`seatRail` gains an optional trailing parameter and uses it inside `fits`.
+Replace the whole `fits` function with:
 
 ```ts
   const fits = (where: string) => {
@@ -1042,9 +1174,13 @@ Replace the whole `fits` function inside `seatRail` with:
   };
 ```
 
-`CaptureCard` passes `occupied`: the box rect and the main rail rect (new prop `occupied: RailBox[]` threaded from `VersionLayer`, built as `[boxRect, mainRailRect].filter(Boolean)`).
+and the signature gains `occupied: RailBox[] = []` as its last parameter.
+`CaptureCard` takes an `occupied: RailBox[]` prop and passes it through;
+`VersionLayer` builds it as the box rect plus the main rail's rect, both
+filtered for null. A capture rail gets no guaranteed seat — a capture is
+placed by hand, so a crowded one is moved by hand.
 
-- [ ] **Step 4: Overlay call site**
+- [ ] **Step 5: The Overlay call site**
 
 ```tsx
         <VersionLayer
@@ -1059,7 +1195,12 @@ Replace the whole `fits` function inside `seatRail` with:
           mainRail={chrome?.rail ?? null}
           boxRect={
             chrome && boxSize
-              ? { x: chrome.box.x, y: chrome.box.y + Math.max(0, chrome.scoot), width: chrome.box.width, height: boxSize.height }
+              ? {
+                  x: chrome.box.x,
+                  y: chrome.box.y + Math.max(0, chrome.scoot),
+                  width: chrome.box.width,
+                  height: boxSize.height,
+                }
               : null
           }
           onRailSize={setRailSize}
@@ -1067,18 +1208,10 @@ Replace the whole `fits` function inside `seatRail` with:
         />
 ```
 
-`liveScoot` is a new state declared beside `versionBusy` in `OverlayRoot`:
+- [ ] **Step 6: Update the SSR helpers**
 
-```ts
-  /** Seam scoot while a rail drag is live; the module's value takes over at rest. */
-  const [liveScoot, setLiveScoot] = useState(0);
-```
-
-and the dialog's `scoot` prop becomes `liveScoot !== 0 ? liveScoot : chrome.scoot` (live drag wins while it runs).
-
-- [ ] **Step 5: Update SSR tests**
-
-In `tests/version-ui.test.tsx`, `renderLayer`/`renderLayerWithHead` drop `scoot`, gain:
+In `tests/version-ui.test.tsx`, both `renderLayer` and `renderLayerWithHead`
+drop `scoot={0}` and gain:
 
 ```tsx
       mainRail={{ x: 450, y: 280, seat: "card-right" }}
@@ -1086,12 +1219,13 @@ In `tests/version-ui.test.tsx`, `renderLayer`/`renderLayerWithHead` drop `scoot`
       onRailSize={() => {}}
 ```
 
-- [ ] **Step 6: Typecheck + suite + build**
+- [ ] **Step 7: Typecheck, suite, build**
 
-Run: `npx tsc --noEmit -p packages/extension/tsconfig.json && npm test 2>&1 | grep -E "ℹ pass|ℹ fail" && npm run build 2>&1 | tail -1`
+Run: `npx tsc --noEmit -p packages/extension/tsconfig.json`,
+`npm test 2>&1 | grep -E "ℹ tests|ℹ pass|ℹ fail"`, `npm run build 2>&1 | tail -1`
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add packages/extension/src/content/VersionRail.tsx packages/extension/src/content/Overlay.tsx tests/version-ui.test.tsx
@@ -1105,23 +1239,24 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 7: The box drags by its body
 
 **Files:**
-- Modify: `packages/extension/src/content/Overlay.tsx` (`beginBoxDrag`)
+- Modify: `packages/extension/src/content/Overlay.tsx`
 - Modify: `packages/extension/src/ui/ui.css`
 
 **Interfaces:**
-- Consumes: `onBodyPointerDown` prop (Task 5), `boxDragPos` state (Task 5), `pin/update` with `boxPos` (Task 4).
-- Produces: the finished drag behaviour; nothing later depends on it.
+- Consumes: `onBodyPointerDown` and `boxDragPos` from Task 5; `boxPos` in
+  the `pin/update` patch from Task 4.
 
 - [ ] **Step 1: The drag handler**
 
-In `OverlayRoot`, after the chrome placement block:
+In `OverlayRoot`, after the `chrome` placement block:
 
 ```ts
   /*
-   * The box drags by its body — no grip, same discovery as pin cards and
-   * the floating label. What a drag stores is an offset from the element,
-   * so the arrangement travels with the component. pointercancel abandons:
-   * an interrupted drag must never half-move the thing you type into.
+   * The box drags by its body — no grip, the same discovery pin cards and
+   * the floating label already rely on. What a drag stores is an offset
+   * from the element, so the arrangement travels with the component.
+   * pointercancel abandons: an interrupted drag must never half-move the
+   * thing you type into.
    */
   const beginBoxDrag = useCallback(
     (event: React.PointerEvent) => {
@@ -1143,14 +1278,13 @@ In `OverlayRoot`, after the chrome placement block:
       };
       const up = (ev: PointerEvent) => {
         done();
-        if (!moved) return;
         const rect = liveRects[primary.id]?.rect;
         setBoxDragPos(null);
-        if (!rect) return;
-        const pos = { x: origin.x + (ev.clientX - start.x), y: origin.y + (ev.clientY - start.y) };
+        if (!moved || !rect) return;
+        const at = { x: origin.x + (ev.clientX - start.x), y: origin.y + (ev.clientY - start.y) };
         void send("pin/update", {
           pinId: primary.id,
-          patch: { boxPos: { x: pos.x - rect.left, y: pos.y - rect.top } },
+          patch: { boxPos: { x: at.x - rect.left, y: at.y - rect.top } },
         }).catch(() => {});
       };
       const cancel = () => {
@@ -1165,21 +1299,23 @@ In `OverlayRoot`, after the chrome placement block:
   );
 ```
 
-Wire `onBodyPointerDown={beginBoxDrag}` at the dialog call site (replacing the Task 5 `undefined`).
+Wire it at the dialog call site: `onBodyPointerDown={beginBoxDrag}`.
 
-- [ ] **Step 2: Cursor affordance**
+- [ ] **Step 2: The cursor is the whole announcement**
 
-Append to `ui.css` (children keep their own cursors — textarea text, buttons pointer):
+Append to `packages/extension/src/ui/ui.css`:
 
 ```css
 /* The box is grabbable by its body, like pin cards and the floating label.
-   No grip icon: the cursor is the whole announcement. */
+   No grip icon: interactive children keep their own cursors, and the grab
+   cursor on the surface is what says the rest can be moved. */
 .pin-live-note { cursor: grab; }
 ```
 
-- [ ] **Step 3: Typecheck + tokens + suite**
+- [ ] **Step 3: Typecheck, tokens, suite**
 
-Run: `npx tsc --noEmit -p packages/extension/tsconfig.json && node scripts/check-tokens.mjs && npm test 2>&1 | grep -E "ℹ pass|ℹ fail"`
+Run: `npx tsc --noEmit -p packages/extension/tsconfig.json`,
+`node scripts/check-tokens.mjs`, `npm test 2>&1 | grep -E "ℹ pass|ℹ fail"`
 Expected: green.
 
 - [ ] **Step 4: Commit**
@@ -1193,44 +1329,43 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 8: Real-browser verification on the harness and the accession page
+### Task 8: Verify it in a real browser
 
-**Files:**
-- Modify: scratchpad harness (`/private/tmp/claude-501/-Users-pranavi-Documents-GitHub-pinnables/29c9b636-4e06-4ab8-82f7-297fb8b744e5/scratchpad/harness/harness.tsx` — rebuild with `node build.mjs`; if the scratchpad is gone, recreate from Task 8 notes in the session or re-derive: esbuild bundle of VersionLayer + SelectionDialog + chrome stub, alias `@ext` → `packages/extension/src`, `nodePaths` → repo `node_modules`)
+**Files:** none committed unless verification finds a defect.
 
-**Interfaces:**
-- Consumes: everything.
-- Produces: screenshots and DOM probes proving the spec's scenarios.
+**This task is the controller's, not a subagent's.** It drives the Browser
+pane, which a subagent cannot do reliably. The controller runs it directly.
 
-- [ ] **Step 1: Update the harness for the new props**
+The harness is an esbuild bundle of the real `SelectionDialog` and
+`VersionLayer` against a faked background, injected into a page. If the
+scratchpad copy from the version-keys work still exists, update it for the
+new props; otherwise rebuild it: alias `@ext` to `packages/extension/src`,
+set `nodePaths` to the repo's `node_modules`, stub
+`chrome.runtime.sendMessage` in-page, and mirror Task 5-6's wiring
+(`placeSelectionChrome` per pass, `onRootEl`, `onRailSize`, `mainRail`,
+`boxRect`).
 
-The harness `Harness` component mirrors Task 5–6 wiring: it computes `placeSelectionChrome` the same way Overlay does (import from `@ext/content/chrome-placement`), passes `position`/`scoot`/`onRootEl`/`onBodyPointerDown` to the dialog and `mainRail`/`boxRect`/`onRailSize` to the layer. The fake background's `pin/update` handler logs `pin:railPos`/`pin:boxPos` with the offsets.
+Scenarios, each verified by DOM probe and screenshot:
 
-- [ ] **Step 2: Drive the four scenarios**
+1. **Element mid-page** — box `below`, rail `card-right`. The classic.
+2. **Element on the bottom edge** — box `above`, its bottom edge a fixed
+   12px over the element; rail `top-right`. Add history rows and confirm
+   the box's top rises while that gap does not move.
+3. **Full-width footer** — rail takes `box-side`, flush with the box's
+   anchored bottom edge; grow the history and confirm the rail stays put.
+4. **Dragging** — drag the box body 100px and confirm `boxPos` is persisted
+   as an element-relative offset; scroll the page and confirm the box and a
+   dragged rail keep their offsets to the element.
+5. **The original bug** — inject the harness into `fixtures/film-set/index.html`,
+   select the footer, and screenshot: box above it, rail beside the box,
+   nothing overlapping. This is the screenshot that started the spec.
 
-Serve the harness (`node serve.mjs`, port 4644), open in the Browser pane, and verify by DOM probe + screenshot:
+Then the full gates: `npm test`, both typechecks, `npm run build`.
 
-1. Element mid-page → box `below`, rail `card-right` (the classic).
-2. Element pinned to the bottom edge (`.variety` at `top: calc(100vh - 120px)`) → box `above` with fixed 12px gap, rail `top-right`; add history rows via the fixture and confirm the box top rises while the gap holds.
-3. Full-width footer strip → rail `box-side`, flush with the box's bottom edge; grow history, rail does not move.
-4. Drag the box body 100px → `pin:boxPos` logged with element-relative offset; drag near the element seam with the rail manual → scoot animates; scroll the page (`window.scrollTo`) → dragged pieces keep their offsets to the element.
-
-- [ ] **Step 3: The accession page footer — the original bug**
-
-Inject the harness bundle into `fixtures/film-set/index.html` (the `accession.html` pattern), select the footer wordmark strip, and screenshot: box above the footer, rail beside the box, nothing overlapping. This is the screenshot that started this spec — keep it as proof.
-
-- [ ] **Step 4: Full gates**
-
-Run: `npm test 2>&1 | grep -E "ℹ tests|ℹ pass|ℹ fail" && npx tsc --noEmit -p packages/extension/tsconfig.json && npx tsc --noEmit -p packages/service/tsconfig.json && npm run build 2>&1 | tail -1`
-Expected: everything green.
-
-- [ ] **Step 5: Commit any harness-driven fixes**
+Commit only if verification exposed a defect worth fixing:
 
 ```bash
-git add -A packages tests
 git commit -m "Fix: placement fixes from browser verification
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
-
-(Skip if the harness surfaced nothing — do not create an empty commit.)
