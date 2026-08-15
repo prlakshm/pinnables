@@ -2623,7 +2623,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", cancel);
     },
-    [chrome, liveSelectedPins, liveRects],
+    [chromePlacement, liveSelectedPins, liveRects],
   );
 
   return (
