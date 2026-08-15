@@ -16,7 +16,7 @@ export interface Offset { x: number; y: number }
 export type BoxSeat = "below" | "above" | "docked" | "moved";
 export type RailSeat =
   | "card-right" | "below" | "card-left" | "slot"
-  | "top-right" | "top-left" | "box-side"
+  | "top-right" | "top-left" | "box-side" | "element-side"
   | "moved";
 
 export interface ChromeInput {
@@ -133,17 +133,30 @@ function railCandidates(
   ];
 }
 
-/* Guaranteed seats reuse the ring's shape (right, left, then an outer edge)
-   but are keyed off the box, not the element — the box is always where the
+/* Guaranteed seats first reuse the ring's shape (right, left, then an outer
+   edge) keyed off the box, not the element — the box is usually where the
    rail wants to sit when nothing in the ring cleared. At narrow viewports a
    380px box leaves neither side room for the rail, and there's not always
    headroom above it either (box-outer clamps down into the box once box.y
-   drops under RAIL_GUTTER + rail.height) — the last resort is below the
-   box's own bottom edge, clear of it on the y axis by construction
-   regardless of clamping. It will often cost element-clearance; that is
-   exactly what tier 2 is for. Even four candidates aren't always enough —
-   when the box itself nearly fills the viewport there may be nowhere left
-   that clears it either, which is what pickGuaranteed's null path is for. */
+   drops under RAIL_GUTTER + rail.height) — the last resort there is below
+   the box's own bottom edge, clear of it on the y axis by construction
+   regardless of clamping.
+
+   Those four miss whenever the box has decoupled from the element — chiefly
+   the docked seat, pinned to the viewport's bottom edge no matter where the
+   element sits. A tall element that starts well below the viewport's top
+   can leave real, on-screen room hugging one of its own edges that no
+   box-relative candidate ever reaches, because all four are anchored to the
+   box's position instead. The last four hug the element's own edges
+   (above, below, left, right), each clear of the element on one axis by
+   construction — the same trick "slot" already relies on for the below
+   orientation, just without slot's scoot since the box isn't making room
+   for these.
+
+   It will often cost element-clearance anyway; that is exactly what tier 2
+   is for. Even eight candidates aren't always enough — when the box itself
+   nearly fills the viewport there may be nowhere left that clears it
+   either, which is what pickGuaranteed's null path is for. */
 function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: Box, rail: Size): RailCandidate[] {
   if (orientation === "below") {
     return [{ seat: "slot", x: boxRect.x + boxRect.width - rail.width, y: element.y + element.height + SLOT_PAD }];
@@ -154,6 +167,10 @@ function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: B
     { seat: "box-side", x: boxRect.x - SLOT_PAD - rail.width, y: flushY },
     { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y - SLOT_PAD - rail.height },
     { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y + boxRect.height + SLOT_PAD },
+    { seat: "element-side", x: boxRect.x + boxRect.width - rail.width, y: element.y - SLOT_PAD - rail.height },
+    { seat: "element-side", x: boxRect.x + boxRect.width - rail.width, y: element.y + element.height + SLOT_PAD },
+    { seat: "element-side", x: element.x - SLOT_PAD - rail.width, y: element.y },
+    { seat: "element-side", x: element.x + element.width + SLOT_PAD, y: element.y },
   ];
 }
 

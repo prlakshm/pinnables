@@ -5,6 +5,8 @@ import {
   placeSelectionChrome,
   intersects,
   type ChromeInput,
+  type Box,
+  type Size,
 } from "../packages/extension/src/content/chrome-placement";
 
 const VIEWPORT = { width: 1280, height: 800 };
@@ -249,4 +251,134 @@ test("no candidate clears the box: no rail rather than one drawn on top of it", 
   );
   assert.equal(p.box.seat, "docked");
   assert.equal(p.rail, null);
+});
+
+test("invariant sweep: no auto seat overlaps, everything stays on screen", () => {
+  const viewports = [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 800 },
+    { width: 900, height: 600 },
+    { width: 480, height: 800 },
+    { width: 375, height: 667 },
+    { width: 320, height: 480 },
+  ];
+  const rails = [
+    { width: 140, height: 27 },
+    { width: 60, height: 27 },
+  ];
+  const boxes = [
+    { width: 380, height: 96 },
+    { width: 380, height: 240 },
+  ];
+  let combos = 0;
+  let nullRails = 0;
+  let elementSkips = 0;
+
+  /* Could a rail of this size sit anywhere on screen clear of the element?
+     If not, element overlap is unavoidable and the module's tier 2 is
+     right to accept it — so the assertion is skipped on geometry, never on
+     the seat's name. The four strips around the element are the only
+     candidates worth testing: anything clear of the element lies in one. */
+  const clearRoomExists = (element: Box, rail: Size, viewport: Size): boolean => {
+    const g = 4;
+    const strips = [
+      { w: viewport.width - g * 2, h: element.y - g },
+      { w: viewport.width - g * 2, h: viewport.height - g - (element.y + element.height) },
+      { w: element.x - g, h: viewport.height - g * 2 },
+      { w: viewport.width - g - (element.x + element.width), h: viewport.height - g * 2 },
+    ];
+    return strips.some((s) => s.w >= rail.width && s.h >= rail.height);
+  };
+
+  for (const viewport of viewports) {
+    for (const rail of rails) {
+      for (const box of boxes) {
+        for (let ex = -80; ex <= viewport.width; ex += 140) {
+          for (let ey = -80; ey <= viewport.height; ey += 140) {
+            for (const size of [
+              { width: 240, height: 160 },
+              { width: viewport.width, height: 120 },
+              { width: 300, height: viewport.height + 200 },
+            ]) {
+              combos += 1;
+              const element = { x: ex, y: ey, ...size };
+              const p = placeSelectionChrome({
+                element,
+                labelAbove: 48,
+                labelBelow: 0,
+                loneLeft: ex,
+                box,
+                rail,
+                manualBox: null,
+                manualRail: null,
+                preferred: { box: null, rail: null },
+                viewport,
+              });
+              const where = `element ${ex},${ey} ${size.width}x${size.height} rail ${rail.width}x${rail.height} box h${box.height} in ${viewport.width}x${viewport.height}`;
+
+              const boxRect = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: box.height };
+              if (p.box.seat !== "docked") {
+                assert.equal(intersects(boxRect, element), false, `box clear of element — ${where}`);
+              }
+              assert.ok(
+                p.box.x >= 12 && p.box.x + p.box.width <= viewport.width - 12,
+                `box inside gutters — ${where}`,
+              );
+
+              if (!p.rail) {
+                nullRails += 1;
+                continue;
+              }
+              const railRect = { x: p.rail.x, y: p.rail.y, width: rail.width, height: rail.height };
+              assert.equal(intersects(railRect, boxRect), false, `rail clear of box — ${where}`);
+              assert.ok(
+                railRect.x >= 4 &&
+                  railRect.y >= 4 &&
+                  railRect.x + railRect.width <= viewport.width - 4 &&
+                  railRect.y + railRect.height <= viewport.height - 4,
+                `rail on screen — ${where}`,
+              );
+              if (clearRoomExists(element, rail, viewport)) {
+                assert.equal(intersects(railRect, element), false, `rail clear of element — ${where}`);
+              } else {
+                elementSkips += 1;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* Printed, not asserted on exact values: a regression that quietly nulled
+     every rail would otherwise pass a suite that only checks overlaps. */
+  console.log(`sweep: ${combos} combinations, ${nullRails} null rails, ${elementSkips} element skips`);
+  assert.ok(combos > 2000, "the sweep actually swept");
+  assert.ok(nullRails < combos / 2, "most combinations still produce a rail");
+});
+
+test("regression: the film-set footer at the bottom edge", () => {
+  const viewport = { width: 1440, height: 900 };
+  const footer = { x: 0, y: 830, width: 1440, height: 120 };
+  const box = { width: 380, height: 180 };
+  const rail = { width: 100, height: 27 };
+  const p = placeSelectionChrome({
+    element: footer,
+    labelAbove: 48,
+    labelBelow: 0,
+    loneLeft: 0,
+    box,
+    rail,
+    manualBox: null,
+    manualRail: null,
+    preferred: { box: null, rail: null },
+    viewport,
+  });
+  assert.equal(p.box.seat, "above", "box flips over the footer");
+  assert.ok(p.rail, "the footer case has room for a rail");
+  const railRect = { x: p.rail!.x, y: p.rail!.y, width: rail.width, height: rail.height };
+  const boxRect = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: box.height };
+  assert.equal(intersects(railRect, boxRect), false, "rail clear of the box");
+  assert.equal(intersects(railRect, footer), false, "rail clear of the footer");
+  assert.equal(intersects(boxRect, footer), false, "box clear of the footer");
 });
