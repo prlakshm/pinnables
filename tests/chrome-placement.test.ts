@@ -209,3 +209,26 @@ test("finding B's original input: the above guaranteed seat clears the element",
   const railBox = { x: p.rail!.x, y: p.rail!.y, width: 200, height: 40 };
   assert.equal(intersects(railBox, element), false, "clears the element");
 });
+
+test("narrow viewport: the above guaranteed seat still clears the box near its legal top", () => {
+  /* At 320px wide, a 296px box leaves neither side room for a 140px rail,
+     and box-outer clamps its y down into the box whenever box.y sits near
+     its legal minimum (12px) — this exercises the fourth guaranteed
+     candidate, below the box's own bottom edge, clear of it by
+     construction regardless of clamping. The full-width element denies
+     the ring on x alone, independent of y. */
+  const element = { x: 0, y: 200, width: 1280, height: 500 };
+  const p = placeSelectionChrome(
+    input({
+      element,
+      loneLeft: 0,
+      rail: { width: 140, height: 27 },
+      viewport: { width: 320, height: 700 },
+    }),
+  );
+  assert.equal(p.box.seat, "above");
+  assert.ok(p.rail);
+  const railBox = { x: p.rail!.x, y: p.rail!.y, width: 140, height: 27 };
+  const boxBox = { x: p.box.x, y: p.box.y + p.scoot, width: p.box.width, height: 120 };
+  assert.equal(intersects(railBox, boxBox), false, "clears the box");
+});
