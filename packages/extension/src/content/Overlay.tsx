@@ -51,6 +51,12 @@ import {
   shouldRevealForCapture,
   unionBoxes,
 } from "./overlay-geometry";
+import {
+  placeSelectionChrome,
+  type BoxSeat,
+  type ChromePlacement,
+  type RailSeat,
+} from "./chrome-placement";
 import { defaultEdgeFor, detectScheme, watchScheme, type AnchorEdge, type Scheme } from "../ui/theme";
 
 interface HighlightBox {
@@ -502,6 +508,42 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [versionBusy, setVersionBusy] = useState(false);
   /** Whether the service can honour version keys (needs a git tree). */
   const [versionsOk, setVersionsOk] = useState(false);
+  /** Live measurements, fed to the placement module each pass. */
+  const [boxSize, setBoxSize] = useState<{ width: number; height: number } | null>(null);
+  const [railSize, setRailSize] = useState<{ width: number; height: number } | null>(null);
+  /** Seats are sticky: the module keeps these while they stay legal. */
+  const [preferredSeats, setPreferredSeats] = useState<{ box: BoxSeat | null; rail: RailSeat | null }>({
+    box: null,
+    rail: null,
+  });
+  /** Viewport position of the box while the user is dragging it. */
+  const [boxDragPos, setBoxDragPos] = useState<{ x: number; y: number } | null>(null);
+  /** Seam scoot while a rail drag is live; the module's value rules at rest. */
+  const [liveScoot, setLiveScoot] = useState(0);
+  const dialogObserver = useRef<ResizeObserver | null>(null);
+
+  /*
+   * The box measures itself. Its height is an input to the ladder — an
+   * "above" seat is bottom-anchored, so it can only be placed once its real
+   * height is known, and it changes as history rows arrive.
+   */
+  const onDialogRootEl = useCallback((el: HTMLDivElement | null) => {
+    dialogObserver.current?.disconnect();
+    dialogObserver.current = null;
+    if (!el) return;
+    const measure = () =>
+      setBoxSize((prev) =>
+        prev && prev.width === el.offsetWidth && prev.height === el.offsetHeight
+          ? prev
+          : { width: el.offsetWidth, height: el.offsetHeight },
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    dialogObserver.current = observer;
+  }, []);
+
+  useEffect(() => () => dialogObserver.current?.disconnect(), []);
   /** The open chapter — the commit the project stands on. Keys and rows
       stamped with an earlier head keep their words and go quiet. */
   const [projectHead, setProjectHead] = useState<string | null>(null);
@@ -2484,8 +2526,17 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     return { from: edgePoint(from, edge), to: liveConnect.cursor };
   })();
 
-  /** The annotation bar sits under the selection, like the group composer. */
-  const dialogPlacement = (() => {
+  /*
+   * One call seats the box and the rail together. Two solvers agreeing by
+   * luck is what put them on top of each other; the module owns the ladder,
+   * the rings, the reserved seats and the promise that what it places does
+   * not overlap.
+   *
+   * Named `chromePlacement` rather than `chrome`: this function already uses
+   * the global `chrome` extension API (storage, runtime) throughout — a
+   * local `const chrome` here would shadow it for the whole component.
+   */
+  const chromePlacement: ChromePlacement | null = (() => {
     if (drawing || liveSelectedPins.length === 0) return null;
     const entries = liveSelected
       .map((pinId, index) => ({ rect: liveRects[pinId]?.rect, full: index === 0 }))
@@ -2494,40 +2545,41 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     const rects = entries.map((entry) => entry.rect);
     const left = Math.min(...rects.map((rect) => rect.left));
     const right = Math.max(...rects.map((rect) => rect.right));
+    const top = Math.min(...rects.map((rect) => rect.top));
     const bottom = Math.max(...rects.map((rect) => rect.bottom));
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
     /*
-     * A top-of-viewport selection hangs its label below itself — there is no
-     * room above. When that flipped label belongs to the lowest rect it sits
-     * exactly where the bar would land, so the bar yields the label's height
-     * and the stack reads component, label, bar.
+     * A top-of-viewport selection hangs its label below itself, where the
+     * box wants to go — so the box yields that height. Preserved verbatim
+     * from the placement this replaces.
      */
-    const flipped = entries.filter(
-      (entry) => entry.rect.top < 60 && entry.rect.bottom >= bottom - 1,
-    );
-    /*
-     * Allowance = label height minus most of the bar's own 12px offset, so
-     * the stacked pair reads as one unit: the bar starts ~6px under the
-     * label instead of a full gap below it.
-     */
-    const labelAllowance =
-      flipped.length === 0 ? 0 : Math.max(...flipped.map((entry) => (entry.full ? 42 : 26)));
-    const placed = placeGroupComposer(
-      { left, right, bottom: bottom + labelAllowance },
-      viewport,
-    );
-    if (rects.length > 1) return placed;
-    /*
-     * A lone selection reads as one block: label, component, bar — all
-     * starting on the same left edge. Centering is for the multi-select case,
-     * where the bar belongs to the group rather than any one component.
-     */
-    const gutter = 12;
-    return {
-      ...placed,
-      x: Math.min(Math.max(rects[0].left, gutter), viewport.width - gutter - placed.width),
-    };
+    const flipped = entries.filter((entry) => entry.rect.top < 60 && entry.rect.bottom >= bottom - 1);
+    const labelBelow = flipped.length === 0 ? 0 : Math.max(...flipped.map((entry) => (entry.full ? 42 : 26)));
+    const labelAbove = flipped.length === 0 ? 48 : 0;
+    const primary = liveSelectedPins[0];
+    const element = { x: left, y: top, width: right - left, height: bottom - top };
+    return placeSelectionChrome({
+      element,
+      labelAbove,
+      labelBelow,
+      loneLeft: rects.length === 1 ? rects[0].left : null,
+      box: boxSize ?? { width: 380, height: 96 },
+      rail: railSize,
+      manualBox: boxDragPos
+        ? { x: boxDragPos.x - element.x, y: boxDragPos.y - element.y }
+        : (primary.boxPos ?? null),
+      manualRail: primary.railPos ?? null,
+      preferred: preferredSeats,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
   })();
+
+  const boxSeat = chromePlacement?.box.seat ?? null;
+  const railSeat = chromePlacement?.rail?.seat ?? null;
+  useEffect(() => {
+    setPreferredSeats((prev) =>
+      prev.box === boxSeat && prev.rail === railSeat ? prev : { box: boxSeat, rail: railSeat },
+    );
+  }, [boxSeat, railSeat]);
 
   return (
     <>
@@ -2779,12 +2831,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         </div>
       )}
 
-      {dialogPlacement && board && liveSelectedPins.length > 0 && (
+      {chromePlacement && board && liveSelectedPins.length > 0 && (
         <SelectionDialog
           pins={liveSelectedPins}
           board={board}
-          position={dialogPlacement}
-          scoot={railScoot}
+          position={{ x: chromePlacement.box.x, y: chromePlacement.box.y, width: chromePlacement.box.width }}
+          scoot={liveScoot !== 0 ? liveScoot : chromePlacement.scoot}
+          onRootEl={onDialogRootEl}
           versionBusy={versionBusy}
           onVersionBusy={setVersionBusy}
           projectHead={projectHead}
