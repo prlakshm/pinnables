@@ -2588,7 +2588,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    */
   const beginBoxDrag = useCallback(
     (event: React.PointerEvent) => {
-      if (!chrome || event.button !== 0) return;
+      if (event.button !== 0) return;
       const primary = liveSelectedPins[0];
       if (!primary || !chromePlacement) return;
       const start = { x: event.clientX, y: event.clientY };
