@@ -29,7 +29,7 @@ import {
   refindElement,
   routeForLocation,
 } from "../lib/capture";
-import { liveSendNeedsPoll, recordableLiveSendState } from "../lib/live-send";
+import { pendingLiveSendIds, recordableLiveSendState } from "../lib/live-send";
 import { ExtensionReloadedError, send, type Broadcast, type Contract } from "../lib/messages";
 import { onScreenPinsKey, overlayFocusKey } from "../lib/presence";
 import { CloseIcon } from "../ui/icons";
@@ -506,7 +506,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [liveConnect, setLiveConnect] = useState<LiveConnect | null>(null);
   /** A version restore in flight — the rail and the chat keys go quiet. */
   const [versionBusy, setVersionBusy] = useState(false);
-  /** Whether the service can honour version keys (needs a git tree). */
+  /** Whether minting can be honoured (needs a git tree). The rail
+      still shows stored keys while this is false, and restore still runs. */
   const [versionsOk, setVersionsOk] = useState(false);
   /** Live measurements, fed to the placement module each pass. */
   const [boxSize, setBoxSize] = useState<{ width: number; height: number } | null>(null);
@@ -666,13 +667,11 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     };
   }, []);
 
-  /*
-   * Whether version keys can work at all — the service needs a git tree
-   * behind the project — and which chapter is open. Asked when the overlay
-   * arms and again on every selection change: a commit between clicks moves
-   * HEAD, and the next click must show the new chapter, not the one the
-   * page was armed under.
-   */
+  /** Whether minting can work — the service needs a git tree —
+      and which chapter is open. Asked when the overlay arms and again on
+      every selection change. The rail itself does not wait on this: stored
+      keys show as soon as the element is re-found, and a visible key still
+      restores even when this probe timed out. */
   const selectionKey = liveSelected.join(" ");
   useEffect(() => {
     if (!state.enabled) return;
@@ -752,31 +751,27 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * History tags live on the pin. The bar that sent the message may already
    * be gone (another component selected), so the overlay watches every
    * in-flight send on the board and records starting/working/done itself.
+   *
+   * Keyed by message id, not the board object: recording Working rewrites
+   * the board and must not cancel the poll that still owes Done to an
+   * earlier send. A later Send while the first is Working is the same list
+   * plus a new id — both keep ticking until they settle.
    */
+  const pendingLiveKey = board ? pendingLiveSendIds(board.pins).join("\0") : "";
   useEffect(() => {
-    if (!board) return;
-    const pending = board.pins.flatMap((pin) =>
-      pin.liveSends.filter(
-        (sent) => sent.messageId !== null && liveSendNeedsPoll(sent.state),
-      ),
-    );
-    if (pending.length === 0) return;
+    if (!pendingLiveKey) return;
+    const pending = pendingLiveKey.split("\0");
     let cancelled = false;
     let timer: number | null = null;
     const tick = async () => {
-      for (const sent of pending) {
+      for (const messageId of pending) {
         if (cancelled) return;
-        if (!sent.messageId) continue;
         try {
-          const status = await send("agent/status", { messageId: sent.messageId });
+          const status = await send("agent/status", { messageId });
           if (cancelled) return;
-          if (status.state === sent.state) continue;
           const recorded = recordableLiveSendState(status.state);
           if (recorded) {
-            await send("agent/recordOutcome", {
-              messageId: sent.messageId,
-              state: recorded,
-            });
+            await send("agent/recordOutcome", { messageId, state: recorded });
           }
         } catch {
           /* The next tick retries; a blip must not fail the rest. */
@@ -789,7 +784,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [board]);
+  }, [pendingLiveKey]);
 
   /* ------------------------------------------------------------- board sync */
 
@@ -2903,6 +2898,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           versionBusy={versionBusy}
           onVersionBusy={setVersionBusy}
           projectHead={projectHead}
+          versionsOk={versionsOk}
           targetOf={targetContext?.sourceName ?? null}
           relationshipId={targetContext?.relationshipId ?? null}
           drawingSummary={ownedShapes.length > 0 ? describeDrawings(ownedShapes) : null}

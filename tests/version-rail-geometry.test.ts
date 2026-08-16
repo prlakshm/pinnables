@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { composerScoot, seatRail } from "../packages/extension/src/content/VersionRail";
-import { versionKeyFor } from "@pinnables/shared";
+import { readFileSync } from "node:fs";
+
+import {
+  composerScoot,
+  flightMode,
+  LOCAL_FLIGHT_MIN_PX,
+  seatRail,
+  versionShortcutDigit,
+} from "../packages/extension/src/content/VersionRail";
+import { versionInChapter, versionKeyFor } from "@pinnables/shared";
+
+const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 /**
  * The rail's seating ring and the composer's scoot, held to the mock's
@@ -77,4 +87,73 @@ test("the composer steps down for a rail on its doorstep, and no further", () =>
 
 test("numerals ring 1..5 and start over", () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 11].map(versionKeyFor), [1, 2, 3, 4, 5, 1, 2, 1]);
+});
+
+test("flightMode still classifies distance; live flight ignores it and always translates", () => {
+  const origin = { left: 0, top: 0 };
+  assert.equal(flightMode(origin, { left: 0, top: 0 }), "fly");
+  assert.equal(flightMode(origin, { left: 100, top: 0 }), "fly");
+  assert.equal(flightMode(origin, { left: LOCAL_FLIGHT_MIN_PX, top: 0 }), "local");
+  assert.equal(flightMode(origin, { left: 800, top: 0 }), "local");
+});
+
+test("a null chapter head keeps stored keys visible", () => {
+  assert.equal(versionInChapter({ head: "H1" }, null), true);
+  assert.equal(versionInChapter({ head: null }, "H2"), true);
+  assert.equal(versionInChapter({ head: "H1" }, "H2"), false);
+  assert.equal(versionInChapter({ head: "H2" }, "H2"), true);
+});
+
+test("Done flash, flight hold, and ghost parenting match the handoff", () => {
+  const dialog = source("../packages/extension/src/content/SelectionDialog.tsx");
+  const rail = source("../packages/extension/src/content/VersionRail.tsx");
+  assert.match(dialog, /DONE_FLASH_MS = 540/);
+  assert.doesNotMatch(dialog, /setTimeout\(\(\) => \{[\s\S]*flyKeyToRail[\s\S]*\}, 220\)/);
+  assert.match(dialog, /const startDoneHandoff = useCallback/);
+  assert.match(dialog, /takeIsFresh/);
+  const poll = dialog.slice(dialog.indexOf("const poll = useCallback"), dialog.indexOf("const staging ="));
+  assert.doesNotMatch(poll, /setCompletedFlash/);
+  assert.doesNotMatch(poll, /flyKeyToRail/);
+  assert.match(rail, /DONE_FLASH_MS = 540/);
+  assert.match(rail, /ENTER_HOLD_MS = DONE_FLASH_MS \+ ROW_LAYOUT_MS \+ FLIGHT_MS \+ ENTER_HOLD_SLACK_MS/);
+  assert.match(rail, /root instanceof ShadowRoot \? root : document\.body/);
+  assert.match(rail, /querySelector\("\.pin-key__mod"\)\?\.remove\(\)/);
+});
+
+test("fly starts when versionNo appears even if the poll never set justSettled", () => {
+  const dialog = source("../packages/extension/src/content/SelectionDialog.tsx");
+  assert.match(dialog, /prevVersionNos/);
+  assert.match(dialog, /flownIds/);
+  assert.match(dialog, /newlyMinted/);
+  assert.match(dialog, /waitForKeysAndFly/);
+  assert.doesNotMatch(dialog, /setJustSettled/);
+  const poll = dialog.slice(dialog.indexOf("const poll = useCallback"), dialog.indexOf("const staging ="));
+  assert.doesNotMatch(poll, /justSettled/);
+  assert.doesNotMatch(poll, /flyKeyToRail/);
+});
+
+test("Option+DigitN restores even when e.key is the Mac Option glyph", () => {
+  assert.equal(versionShortcutDigit({ code: "Digit1", key: "¡" }), 1);
+  assert.equal(versionShortcutDigit({ code: "Digit2", key: "™" }), 2);
+  assert.equal(versionShortcutDigit({ code: "Digit1", key: "1" }), 1);
+  assert.equal(versionShortcutDigit({ code: "", key: "3" }), 3);
+  assert.equal(versionShortcutDigit({ code: "", key: "¡" }), null);
+});
+
+test("flyKeyToRail always translates and waits for the rail key", () => {
+  const rail = source("../packages/extension/src/content/VersionRail.tsx");
+  const fly = rail.slice(rail.indexOf("export function flyKeyToRail"), rail.indexOf("function launchMintFlight"));
+  const launch = rail.slice(rail.indexOf("function launchMintFlight"));
+  assert.match(rail, /RAIL_KEY_WAIT_MS = 800/);
+  assert.match(fly, /RAIL_KEY_WAIT_MS/);
+  assert.match(fly, /railReady/);
+  assert.match(fly, /getBoundingClientRect/);
+  assert.match(fly, /requestAnimationFrame\(tryFly\)/);
+  assert.doesNotMatch(fly, /flightMode\(/);
+  assert.doesNotMatch(launch, /flightMode\(/);
+  assert.doesNotMatch(launch, /scale\(0\.55\)/);
+  assert.doesNotMatch(launch, /opacity = "0"/);
+  assert.match(launch, /translate\(\$\{to\.left - from\.left\}px, \$\{to\.top - from\.top\}px\)/);
+  assert.match(launch, /transition:transform 420ms var\(--ease\), width 420ms var\(--ease\)/);
+  assert.match(launch, /ghost\.style\.width = `\$\{to\.width\}px`/);
 });

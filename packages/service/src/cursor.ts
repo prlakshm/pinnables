@@ -15,7 +15,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Agent,
-  Cursor,
   AgentBusyError,
   type ModelSelection,
   type Run,
@@ -23,6 +22,7 @@ import {
   type ToolName,
 } from "@cursor/sdk";
 import { pinnablesHome } from "@pinnables/shared/storage";
+import { projectRoot } from "./versions.js";
 
 function apiBase(): string {
   return (process.env.CURSOR_API_BASE ?? "https://api.cursor.com").replace(/\/$/, "");
@@ -78,6 +78,8 @@ interface SessionFile {
 const localAgents = new Map<string, SDKAgent>();
 /** Live Run handles for status polling before they settle. */
 const localRuns = new Map<string, Run>();
+/** wait() settlement — the send() handle's status is a snapshot and must not mint Done. */
+const localRunResults = new Map<string, { state: "done" | "failed"; detail: string | null }>();
 
 function apiKey(): string | null {
   const key = process.env.CURSOR_API_KEY?.trim();
@@ -93,9 +95,9 @@ export function cursorRuntime(): CursorRuntime {
   return raw === "cloud" ? "cloud" : "local";
 }
 
-/** Repo the local agent edits — the app under annotation, not necessarily this package. */
+/** Repo the local agent edits — the app under annotation, not this package. */
 export function projectDir(): string {
-  return process.env.PINNABLES_PROJECT_DIR?.trim() || process.cwd();
+  return projectRoot();
 }
 
 /**
@@ -145,15 +147,28 @@ function authHeader(): string {
 }
 
 async function cursorFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBase()}${path}`, {
-    ...init,
-    headers: {
-      authorization: authHeader(),
-      "content-type": "application/json",
-      accept: "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, {
+      ...init,
+      headers: {
+        authorization: authHeader(),
+        "content-type": "application/json",
+        accept: "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    recordCursorHealth(false, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+  /* Any answer proves the API is reachable — a 409 busy or a 4xx complaint is
+     still Cursor talking. Only a rejected key unreadies the connection. */
+  if (res.status === 401 || res.status === 403) {
+    recordCursorHealth(false, `Cursor API ${res.status}: check CURSOR_API_KEY`);
+  } else {
+    recordCursorHealth(true, null);
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Cursor API ${res.status} ${path}: ${body.slice(0, 500)}`);
@@ -330,10 +345,23 @@ async function sendLocal(req: CursorSendRequest): Promise<CursorSendResult> {
     ...(req.images?.length ? { images: req.images } : {}),
   });
   localRuns.set(run.id, run);
-  // Keep the handle warm; status polling uses getRun / the cached Run.
-  void run.wait().catch(() => {
-    /* statusFromCursor surfaces the failure */
-  });
+  /*
+   * The object returned by send() is a snapshot. Polling its .status as Done
+   * mints a take against the baseline tree (Working, no edits yet) and restore
+   * becomes a no-op. wait() is when the run actually finished and the patch
+   * has the edits; statusFromCursor reads this map first.
+   */
+  void run.wait().then(
+    () => {
+      localRunResults.set(run.id, { state: "done", detail: null });
+    },
+    (err: unknown) => {
+      localRunResults.set(run.id, {
+        state: "failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    },
+  );
   await writeStickyAgentId(agent.agentId, "local", cwd);
   return {
     agentId: agent.agentId,
@@ -470,10 +498,23 @@ export async function sendToCursor(req: CursorSendRequest): Promise<CursorSendRe
     );
   }
 
-  if (cursorRuntime() === "local") {
-    return sendLocal(req);
+  const runtime = cursorRuntime();
+  try {
+    const result = runtime === "local" ? await sendLocal(req) : await sendCloud(req);
+    recordCursorHealth(true, null);
+    return result;
+  } catch (err) {
+    /*
+     * Cloud failures were already recorded at the fetch layer with the right
+     * verdict (a 409 busy is still connectivity). Local runs never touch
+     * cursorFetch, so their failures are recorded here — except busy, which
+     * proves the agent is alive.
+     */
+    if (runtime === "local" && !(err instanceof AgentBusyError)) {
+      recordCursorHealth(false, err instanceof Error ? err.message : String(err));
+    }
+    throw err;
   }
-  return sendCloud(req);
 }
 
 export async function statusFromCursor(agentId: string, runId: string): Promise<CursorStatus> {
@@ -489,17 +530,42 @@ export async function statusFromCursor(agentId: string, runId: string): Promise<
     };
   }
 
+  const settled = localRunResults.get(runId);
+  if (settled) {
+    localRuns.delete(runId);
+    return { ...settled, agentId, runId, url: null };
+  }
+
   try {
-    const cached = localRuns.get(runId);
-    const run =
-      cached ??
-      (await Agent.getRun(runId, {
+    /*
+     * Always re-fetch. The send() handle's status is what it was at
+     * agent.send() — treating that as finished mints take 2 while the
+     * composer still says Working, and 1 and 2 are the same tree.
+     */
+    let run: Run | undefined;
+    try {
+      run = await Agent.getRun(runId, {
         runtime: "local",
         cwd: projectDir(),
-      }));
+      });
+      localRuns.set(runId, run);
+    } catch {
+      run = localRuns.get(runId);
+    }
+    if (!run) {
+      return { state: "failed", detail: "Unknown local run", agentId, runId, url: null };
+    }
     const detail = run.error?.message ?? null;
     const mapped = mapLocalRunStatus(run.status, detail);
-    if (mapped.state === "done" || mapped.state === "failed") {
+    /*
+     * Fresh getRun may still say "finished" before wait() has flushed the
+     * edits. Keep reporting working until wait() settles so the snapshot
+     * (and the take key) contain the real patch.
+     */
+    if (mapped.state === "done") {
+      return { state: "working", detail: null, agentId, runId, url: null };
+    }
+    if (mapped.state === "failed") {
       localRuns.delete(runId);
     }
     return { ...mapped, agentId, runId, url: null };
@@ -510,30 +576,37 @@ export async function statusFromCursor(agentId: string, runId: string): Promise<
 }
 
 /** Probe auth without starting work — used by /health. */
-export async function probeCursor(): Promise<{
+/*
+ * Last-known Cursor connectivity, recorded from real traffic.
+ *
+ * /health used to probe the API on every poll. With the panel open that was a
+ * network round trip every few seconds, and one stalled probe held every
+ * health answer behind it, freezing the whole extension's view of the
+ * service. Now the API is only touched by work the user asked for, and health
+ * reports what that work last learned.
+ */
+let lastCursorHealth: { ok: boolean; detail: string | null } | null = null;
+
+function recordCursorHealth(ok: boolean, detail: string | null): void {
+  lastCursorHealth = { ok, detail };
+}
+
+/** What /health reports, without touching the network. */
+export function cursorStatusSnapshot(): {
   ok: boolean;
   detail: string | null;
   runtime: CursorRuntime;
   cwd: string;
-}> {
+} {
   const runtime = cursorRuntime();
   const cwd = projectDir();
   if (!cursorConfigured()) {
     return { ok: false, detail: "CURSOR_API_KEY not set", runtime, cwd };
   }
-  try {
-    if (runtime === "local") {
-      await Cursor.models.list({ apiKey: apiKey()! });
-      return { ok: true, detail: null, runtime, cwd };
-    }
-    await cursorFetch<{ items?: unknown[] }>("/v1/agents?limit=1");
-    return { ok: true, detail: null, runtime, cwd };
-  } catch (err) {
-    return {
-      ok: false,
-      detail: err instanceof Error ? err.message : String(err),
-      runtime,
-      cwd,
-    };
-  }
+  return {
+    ok: lastCursorHealth?.ok ?? false,
+    detail: lastCursorHealth ? lastCursorHealth.detail : "waiting for the first send",
+    runtime,
+    cwd,
+  };
 }

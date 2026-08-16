@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -88,12 +89,13 @@ function boardWith(pins: Pin[], captures: Capture[] = []): Board {
   };
 }
 
-function renderDialog(pin: Pin): string {
+function renderDialog(pin: Pin, versionsOk = true): string {
   return renderToStaticMarkup(
     <SelectionDialog
       pins={[pin]}
       board={boardWith([pin])}
       position={{ x: 100, y: 100, width: 380 }}
+      versionsOk={versionsOk}
       targetOf={null}
       relationshipId={null}
       drawingSummary={null}
@@ -190,22 +192,145 @@ test("the rail shows the remainder: keys held by captures leave the main rail", 
   assert.match(html, /pin-versions__mod/);
 });
 
-test("one key is no rail: nothing renders until there are two states", () => {
-  const pin = pinWith({
+test("no versions is no rail", () => {
+  assert.equal(renderLayer(pinWith({})), "");
+});
+
+test("only the original is no rail: it appears when the first take lands", () => {
+  const originalOnly = pinWith({
     versionSeq: 1,
     currentVersionNo: 1,
     versions: [ver(1, null, "original")],
   });
-  assert.equal(renderLayer(pin), "");
+  assert.equal(renderLayer(originalOnly), "");
+
+  const withTake = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [ver(1, null, "original"), ver(2, "m2", "change card background to rose")],
+  });
+  const html = renderLayer(withTake);
+  assert.match(html, /data-rail="main"/);
+  assert.match(html, /data-no="1"/);
+  assert.match(html, /data-no="2"/);
 });
 
-test("without a git tree behind the service, the rail never appears", () => {
+test("a working row wears Working, not the original or a take key", () => {
+  const pin = pinWith({
+    versionSeq: 1,
+    currentVersionNo: 1,
+    versions: [ver(1, null, "original")],
+    liveSends: [
+      {
+        text: "change card background to rose",
+        at: "2026-08-13T00:01:00.000Z",
+        messageId: "m-new",
+        state: "working",
+        versionNo: null,
+      },
+    ],
+  });
+  const html = renderDialog(pin);
+  assert.match(html, /Working/);
+  assert.doesNotMatch(html, /data-msg="m-new"/);
+  assert.doesNotMatch(html, /data-no="2"/);
+});
+
+test("a settled take row wears only its own numeral, never the original as well", () => {
+  const pin = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [ver(1, null, "original"), ver(2, "m-new", "change card background to rose")],
+    liveSends: [
+      {
+        text: "change card background to rose",
+        at: "2026-08-13T00:01:00.000Z",
+        messageId: "m-new",
+        state: "done",
+        versionNo: 2,
+      },
+    ],
+  });
+  const html = renderDialog(pin);
+  assert.match(html, /data-msg="m-new"[^>]*data-no="2"|data-no="2"[^>]*data-msg="m-new"/);
+  assert.equal([...html.matchAll(/data-no="/g)].length, 1);
+});
+
+test("a visible chat key is not disabled when versionsOk is false", () => {
+  const pin = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [ver(1, null, "original"), ver(2, "m-new", "rose")],
+    liveSends: [
+      {
+        text: "rose",
+        at: "2026-08-13T00:01:00.000Z",
+        messageId: "m-new",
+        state: "done",
+        versionNo: 2,
+      },
+    ],
+  });
+  const html = renderDialog(pin, false);
+  assert.match(html, /data-msg="m-new"/);
+  assert.doesNotMatch(html, /class="pin-key"[^>]*\sdisabled/);
+});
+
+test("restore is not skipped when versionsOk is false but keys exist", () => {
+  const rail = readFileSync(
+    new URL("../packages/extension/src/content/VersionRail.tsx", import.meta.url),
+    "utf8",
+  );
+  const dialog = readFileSync(
+    new URL("../packages/extension/src/content/SelectionDialog.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(rail, /if \(!versionsOk \|\| busy \|\| pin\.currentVersionNo === no\) return/);
+  assert.doesNotMatch(rail, /if \(!hit \|\| busy \|\| !versionsOk\) return/);
+  assert.doesNotMatch(dialog, /if \(!versionsOk \|\| versionBusy \|\| primary\?\.currentVersionNo === no\) return/);
+  assert.doesNotMatch(dialog, /busy=\{versionBusy \|\| !versionsOk\}/);
+  assert.match(rail, /send\("version\/restore"/);
+  assert.match(dialog, /send\("version\/restore"/);
+  assert.match(rail, /if \(railId === "main"\) restore\(o\.no\)/);
+  assert.match(rail, /versionShortcutDigit\(e\)/);
+});
+
+test("existing versions still render the rail when health has not said versions are ok", () => {
   const pin = pinWith({
     versionSeq: 2,
     currentVersionNo: 2,
     versions: [ver(1, null, "original"), ver(2, "m2")],
   });
-  assert.equal(renderLayer(pin, [], false), "");
+  const html = renderLayer(pin, [], false);
+  assert.match(html, /data-rail="main"/);
+  assert.match(html, /data-no="1"/);
+  assert.match(html, /data-no="2"/);
+});
+
+test("versionsOk no longer hides an existing rail in source", () => {
+  const rail = readFileSync(
+    new URL("../packages/extension/src/content/VersionRail.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(rail, /const hasTake = versions\.some\(\(v\) => v\.messageId !== null\)/);
+  assert.match(rail, /const showMain = visible && hasTake && liveRect !== null/);
+  assert.match(rail, /if \(!visible \|\| !hasTake\) return null/);
+  assert.doesNotMatch(rail, /if \(!visible \|\| !versionsOk \|\| !hasTake\) return null/);
+});
+
+test("existing versions still render the rail when the chapter head is not known yet", () => {
+  const pin = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [
+      { ...ver(1, null, "original"), head: "H1" },
+      { ...ver(2, "m2"), head: "H1" },
+    ],
+  });
+  const html = renderLayerWithHead(pin, null);
+  assert.match(html, /data-rail="main"/);
+  assert.match(html, /data-no="1"/);
+  assert.match(html, /data-no="2"/);
 });
 
 /* ------------------------------------------------------------- chapters */
@@ -280,7 +405,7 @@ function renderLayerWithHead(pin: Pin, projectHead: string | null): string {
   );
 }
 
-test("stale keys leave the rail; a chapter with under two fresh keys has no rail", () => {
+test("stale keys leave the rail; a chapter with no fresh keys has no rail", () => {
   const mixed = pinWith({
     versionSeq: 4,
     currentVersionNo: 4,

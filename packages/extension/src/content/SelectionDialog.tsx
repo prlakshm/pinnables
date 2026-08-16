@@ -69,6 +69,8 @@ export interface SelectionDialogProps {
    * offline services — everything shows.
    */
   projectHead?: string | null;
+  /** Whether restore can be honoured. Keys still show; presses attempt restore even when off. */
+  versionsOk?: boolean;
   /** Set when this selection is the target of an on-screen relationship. */
   targetOf: string | null;
   /** The relationship the message is about, when there is exactly one. */
@@ -91,12 +93,12 @@ export interface SelectionDialogProps {
 /**
  * How long "Done" holds before handing its seat to the version key.
  *
- * Shorter than the old 4s goodbye flash, because the job changed: the row
- * used to leave the log for good, so the tag was a farewell. Now the row
- * stays and keeps a key, so the tag only has to be readable before it hands
- * over.
+ * One beat of a continuous handoff — Working → Done → keycap → flight —
+ * not a farewell flash. Long enough to read "Done", then the tag collapses
+ * and the key takes off. Leave still starts at DONE_FLASH_MS - 260 so the
+ * 260ms tag collapse stays in sync with ui.css.
  */
-const DONE_FLASH_MS = 1200;
+const DONE_FLASH_MS = 540;
 
 export function SelectionDialog({
   pins,
@@ -106,6 +108,7 @@ export function SelectionDialog({
   versionBusy = false,
   onVersionBusy,
   projectHead = null,
+  versionsOk: _versionsOk = true,
   targetOf,
   relationshipId,
   drawingSummary,
@@ -135,10 +138,21 @@ export function SelectionDialog({
   const [completedFlash, setCompletedFlash] = useState<Set<string>>(new Set());
   /** The tag's exit: it narrows away along the axis the keycap arrives on. */
   const [flashLeaving, setFlashLeaving] = useState<Set<string>>(new Set());
-  /** A row whose Done just cleared — its keycap flies to the rail. */
-  const [justSettled, setJustSettled] = useState<string | null>(null);
+  /** Restore failed — the same alert row that reports a failed send. */
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  /** Last known live-send state, so Done flash starts on the transition. */
+  const prevSentStates = useRef<Map<string, LiveSend["state"]>>(new Map());
+  /** Last known versionNo per message, so a newly minted take can fly. */
+  const prevVersionNos = useRef<Map<string, number | null>>(new Map());
+  /** One fly per take — poll, reconcile, and versionNo-watch share this. */
+  const flownIds = useRef<Set<string>>(new Set());
+  /** One Working → Done flash per messageId. */
+  const doneHandoffStarted = useRef<Set<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
-  const pollTimer = useRef<number | null>(null);
+  /** One timer per in-flight message — a later Send must not steal the first's Done. */
+  const pollTimers = useRef<Map<string, number>>(new Map());
+  /** The run the composer phase is describing; older runs still poll silently. */
+  const watchingId = useRef<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const primary = pins[0];
 
@@ -193,11 +207,16 @@ export function SelectionDialog({
     input.current?.focus();
   }, [primary?.id]);
 
+  const clearPolls = useCallback(() => {
+    for (const handle of pollTimers.current.values()) window.clearTimeout(handle);
+    pollTimers.current.clear();
+  }, []);
+
   useEffect(
     () => () => {
-      if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
+      clearPolls();
     },
-    [],
+    [clearPolls],
   );
 
   /*
@@ -212,13 +231,118 @@ export function SelectionDialog({
     setPhase({ kind: "idle" });
     setDraft("");
     setEcho(null);
-    if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
-  }, [selectionKey]);
+    watchingId.current = null;
+    clearPolls();
+  }, [selectionKey, clearPolls]);
+
+  /*
+   * Working → Done → keycap → fly. Flash when the board row becomes done
+   * (including a first look at a take minted moments ago — the overlay can
+   * skip Working if the outcome lands in one broadcast). Fly is kicked
+   * when versionNo appears, not from the poll.
+   */
+  const startDoneHandoff = useCallback((messageId: string) => {
+    if (doneHandoffStarted.current.has(messageId)) return;
+    doneHandoffStarted.current.add(messageId);
+    setCompletedFlash((previous) => new Set(previous).add(messageId));
+    window.setTimeout(() => {
+      setFlashLeaving((previous) => new Set(previous).add(messageId));
+    }, DONE_FLASH_MS - 260);
+    window.setTimeout(() => {
+      setCompletedFlash((previous) => {
+        const next = new Set(previous);
+        next.delete(messageId);
+        return next;
+      });
+      setFlashLeaving((previous) => {
+        const next = new Set(previous);
+        next.delete(messageId);
+        return next;
+      });
+    }, DONE_FLASH_MS);
+  }, []);
+
+  const waitForKeysAndFly = useCallback((messageId: string, no: number) => {
+    const started = performance.now();
+    const tryFly = () => {
+      const rowKey = rootRef.current?.querySelector<HTMLElement>(
+        `.pin-key[data-msg="${messageId}"]`,
+      );
+      const root = (rootRef.current?.getRootNode() ?? document) as ShadowRoot | Document;
+      const railKey = root.querySelector<HTMLElement>(
+        `.pin-versions[data-rail="main"] .pin-key[data-no="${no}"]`,
+      );
+      const rowBox = rowKey?.getBoundingClientRect();
+      const rowReady = Boolean(rowKey && rowBox && rowBox.width > 0 && rowBox.height > 0);
+      let railReady = false;
+      if (railKey) {
+        const entering = railKey.dataset.entering;
+        railKey.dataset.entering = "false";
+        const to = railKey.getBoundingClientRect();
+        if (entering) railKey.dataset.entering = entering;
+        else delete railKey.dataset.entering;
+        railReady = to.width > 0 && to.height > 0;
+      }
+      if (rowReady && railReady && rowKey) {
+        flyKeyToRail(rowKey, no);
+        return;
+      }
+      if (performance.now() - started >= 800) {
+        if (rowKey) flyKeyToRail(rowKey, no);
+        return;
+      }
+      requestAnimationFrame(tryFly);
+    };
+    tryFly();
+  }, []);
+
+  useEffect(() => {
+    if (!primary) return;
+    for (const sent of primary.liveSends) {
+      if (!sent.messageId) continue;
+      const id = sent.messageId;
+      const prevState = prevSentStates.current.get(id);
+      prevSentStates.current.set(id, sent.state);
+      const hadNo = prevVersionNos.current.has(id);
+      const prevNo = prevVersionNos.current.get(id);
+      prevVersionNos.current.set(id, sent.versionNo);
+
+      const fresh = takeIsFresh(primary, id);
+      if (sent.state === "done" && prevState !== "done") {
+        if (prevState !== undefined || fresh) startDoneHandoff(id);
+      }
+
+      const newlyMinted =
+        sent.versionNo !== null &&
+        !flownIds.current.has(id) &&
+        ((hadNo && prevNo === null) || (!hadNo && fresh));
+      if (newlyMinted && sent.versionNo !== null) {
+        flownIds.current.add(id);
+        const no = sent.versionNo;
+        const delay = doneHandoffStarted.current.has(id) ? DONE_FLASH_MS : 0;
+        window.setTimeout(() => waitForKeysAndFly(id, no), delay);
+      }
+    }
+  }, [primary, startDoneHandoff, waitForKeysAndFly]);
 
   const poll = useCallback((messageId: string, key: string) => {
     const startedAt = Date.now();
+    const schedule = () => {
+      const prev = pollTimers.current.get(messageId);
+      if (prev !== undefined) window.clearTimeout(prev);
+      pollTimers.current.set(
+        messageId,
+        window.setTimeout(() => void tick(), STATUS_POLL_MS),
+      );
+    };
+    const stop = () => {
+      const prev = pollTimers.current.get(messageId);
+      if (prev !== undefined) window.clearTimeout(prev);
+      pollTimers.current.delete(messageId);
+    };
     const tick = async () => {
       if (selectionKeyRef.current !== key) return;
+      const watched = watchingId.current === messageId;
       try {
         const status = await send("agent/status", { messageId });
         if (selectionKeyRef.current !== key) return;
@@ -236,68 +360,51 @@ export function SelectionDialog({
             status.state === "starting"
               ? "The agent didn’t start within 5 minutes. Resend to retry."
               : "No result after 10 minutes. The run looks stuck, so resend to retry.";
-          setPhase({ kind: "failed", detail });
+          if (watched) setPhase({ kind: "failed", detail });
           void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          stop();
           return;
         }
         // Queued behind an active Cursor run — keep polling; no starting timeout.
         if (status.state === "queued") {
-          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          schedule();
           return;
         }
         const recorded = recordableLiveSendState(status.state);
         if (status.state === "starting" || status.state === "working") {
           // Record leaving the queue, or the agent starting, onto the board —
           // otherwise the history tag stays "Queued" for the whole run.
-          setPhase(
-            status.state === "working"
-              ? { kind: "working", messageId }
-              : { kind: "starting", messageId },
-          );
+          if (watched) {
+            setPhase(
+              status.state === "working"
+                ? { kind: "working", messageId }
+                : { kind: "starting", messageId },
+            );
+          }
           if (recorded)
             void send("agent/recordOutcome", { messageId, state: recorded }).catch(() => {});
-          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          schedule();
           return;
         }
-        setPhase(
-          status.state === "done"
-            ? { kind: "done" }
-            : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
-        );
+        if (watched) {
+          setPhase(
+            status.state === "done"
+              ? { kind: "done" }
+              : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
+          );
+        }
         // The outcome belongs to the board, not to this bar — recording it is
         // what resolves the history tag even after this dialog is gone.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
-        if (status.state === "done") {
-          /*
-           * The "Done" tag gets its moment, then hands its seat to the
-           * version key: the tag narrows away, the keycap grows in on the
-           * same axis, and the copy flies to the rail. The row itself stays —
-           * a finished line's number is the way back to its state.
-           */
-          setCompletedFlash((previous) => new Set(previous).add(messageId));
-          window.setTimeout(() => {
-            setFlashLeaving((previous) => new Set(previous).add(messageId));
-          }, DONE_FLASH_MS - 260);
-          window.setTimeout(() => {
-            setCompletedFlash((previous) => {
-              const next = new Set(previous);
-              next.delete(messageId);
-              return next;
-            });
-            setFlashLeaving((previous) => {
-              const next = new Set(previous);
-              next.delete(messageId);
-              return next;
-            });
-            setJustSettled(messageId);
-          }, DONE_FLASH_MS);
-        }
+        stop();
+        // Done flash starts when the board row becomes done (see startDoneHandoff).
       } catch {
         if (selectionKeyRef.current !== key) return;
-        setPhase({ kind: "failed", detail: "Lost contact with the local service." });
+        if (watched) setPhase({ kind: "failed", detail: "Lost contact with the local service." });
+        stop();
       }
     };
-    pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+    schedule();
   }, []);
 
   const staging = useRef(false);
@@ -348,6 +455,7 @@ export function SelectionDialog({
           resendOf,
         });
         if (selectionKeyRef.current !== key) return "sent";
+        watchingId.current = messageId;
         setPhase({ kind: "starting", messageId });
         onLiveSent(pins.map((pin) => pin.id));
         // A multi-selection that has now spoken becomes a group the shelf can
@@ -485,37 +593,38 @@ export function SelectionDialog({
   }, [draft, stage, keepNow]);
 
   /*
-   * The settled row's keycap flies to the rail — the same key, seen leaving
-   * one place and arriving in the other. Waits for the mint to land on the
-   * board (versionNo appears via the outcome broadcast), then launches from
-   * the row's own element. If the mint never lands there is nothing to fly.
+   * The settled row's keycap flies to the rail when versionNo appears —
+   * see the liveSends watcher above. Poll justSettled is not the trigger.
    */
-  useEffect(() => {
-    if (!justSettled) return;
-    const sent = primary?.liveSends.find((s) => s.messageId === justSettled);
-    if (!sent || sent.versionNo === null) return;
-    const no = sent.versionNo;
-    const timer = window.setTimeout(() => {
-      const rowKey = rootRef.current?.querySelector<HTMLElement>(
-        `.pin-key[data-msg="${justSettled}"]`,
-      );
-      if (rowKey) flyKeyToRail(rowKey, no);
-    }, 220);
-    setJustSettled(null);
-    void timer;
-  }, [justSettled, primary?.liveSends]);
 
   /** Press a chat key: same restore the rail runs, same quiet while it runs. */
   const pressVersion = useCallback(
     (no: number) => {
-      if (versionBusy || primary?.currentVersionNo === no) return;
+      if (!primary || versionBusy || primary.currentVersionNo === no) return;
+      setRestoreError(null);
       onVersionBusy?.(true);
       void send("version/restore", { pinId: primary.id, no })
-        .catch(() => {})
+        .catch((err) => {
+          console.error("[pinnables] restore failed", err);
+          setRestoreError(
+            err instanceof Error && err.message.trim()
+              ? err.message
+              : "Couldn’t restore that version.",
+          );
+        })
         .finally(() => onVersionBusy?.(false));
     },
     [versionBusy, primary, onVersionBusy],
   );
+
+  useEffect(() => {
+    const onFail = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message;
+      setRestoreError(message?.trim() || "Couldn’t restore that version.");
+    };
+    window.addEventListener("pin:restore-failed", onFail);
+    return () => window.removeEventListener("pin:restore-failed", onFail);
+  }, []);
 
   if (!primary) return null;
 
@@ -584,6 +693,9 @@ export function SelectionDialog({
         return null;
     }
   })();
+
+  const alertText = restoreError ?? statusLine;
+  const alertIsQuiet = !restoreError && phase.kind === "kept";
 
   return (
     <div
@@ -797,14 +909,14 @@ export function SelectionDialog({
           target of {targetOf}
         </div>
       )}
-      {statusLine && (
+      {alertText && (
         <div
-          className={phase.kind === "kept" ? "pin-note__rel" : "pin-note__rel pin-note__alert"}
-          data-state={phase.kind}
-          role={phase.kind === "kept" ? "status" : "alert"}
-          aria-live={phase.kind === "kept" ? "polite" : "assertive"}
+          className={alertIsQuiet ? "pin-note__rel" : "pin-note__rel pin-note__alert"}
+          data-state={restoreError ? "failed" : phase.kind}
+          role={alertIsQuiet ? "status" : "alert"}
+          aria-live={alertIsQuiet ? "polite" : "assertive"}
         >
-          {statusLine}
+          {alertText}
         </div>
       )}
     </div>
@@ -824,6 +936,14 @@ function versionKeyOf(sent: LiveSend, pin: Pin): number | null {
     (v) => v.no === sent.versionNo && v.messageId === sent.messageId,
   );
   return owned ? sent.versionNo : null;
+}
+
+/** A take minted in the last 10s is still the live handoff, even on first look. */
+function takeIsFresh(pin: Pin, messageId: string): boolean {
+  const minted = (pin.versions ?? []).find((v) => v.messageId === messageId);
+  if (!minted) return false;
+  const at = Date.parse(minted.at);
+  return Number.isFinite(at) && Date.now() - at < 10_000;
 }
 
 /**

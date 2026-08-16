@@ -29,6 +29,7 @@ let backgroundListener: BackgroundListener | null = null;
 
 /* The service, faked at the fetch boundary. */
 let healthVersionsOk = true;
+let healthUnreachable = false;
 let restoreCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
 let restoreConflicts: string[] = [];
 
@@ -36,12 +37,21 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   if (url.endsWith("/health")) {
+    if (healthUnreachable) {
+      return new Response("down", { status: 500 });
+    }
     return new Response(
       JSON.stringify({
         ok: true,
         home: "/tmp",
         versions: { ok: healthVersionsOk, detail: healthVersionsOk ? null : "no git" },
       }),
+      { status: 200 },
+    );
+  }
+  if (url.endsWith("/messages")) {
+    return new Response(
+      JSON.stringify({ messageId: "live-1", transport: "local", url: null, state: "starting" }),
       { status: 200 },
     );
   }
@@ -191,6 +201,167 @@ function ver(no: number, messageId: string | null, label = `take ${no}`): PinVer
 
 /* ------------------------------------------------------------------ mint */
 
+test("the first send on a pin with no versions mints original as key 1 immediately", async () => {
+  healthVersionsOk = true;
+  install(boardWith([pinWith({})]));
+
+  const res = await dispatch<{ messageId: string }>({
+    type: "agent/send",
+    text: "change card background to rose",
+    pinIds: ["pin-v"],
+  });
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].messageId, "live-1");
+  assert.equal(pin.liveSends[0].versionNo, null, "the take is not minted until done");
+  assert.equal(pin.versionSeq, 1);
+  assert.equal(pin.currentVersionNo, 1);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId, v.label]),
+    [[1, null, "original"]],
+  );
+});
+
+test("working never mints a take — only recordOutcome done does", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 1,
+        currentVersionNo: 1,
+        versions: [ver(1, null, "original")],
+        liveSends: [
+          {
+            text: "change card background to rose",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "msg-working",
+            state: "starting",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({
+    type: "agent/recordOutcome",
+    messageId: "msg-working",
+    state: "working",
+  });
+  assert.equal(res.ok, true);
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].state, "working");
+  assert.equal(pin.liveSends[0].versionNo, null, "no take key during Working");
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId]),
+    [[1, null]],
+    "original stays stored and hidden; rail has no take yet",
+  );
+});
+
+test("the first send can still record done after a second send has started", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 1,
+        currentVersionNo: 1,
+        versions: [ver(1, null, "original")],
+        liveSends: [
+          {
+            text: "change card background to green",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "msg-first",
+            state: "working",
+            versionNo: null,
+          },
+          {
+            text: "change card background to rose",
+            at: "2026-08-13T00:00:02.000Z",
+            messageId: "msg-second",
+            state: "starting",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({
+    type: "agent/recordOutcome",
+    messageId: "msg-first",
+    state: "done",
+  });
+  assert.equal(res.ok, true);
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].state, "done");
+  assert.equal(pin.liveSends[0].versionNo, 2);
+  assert.equal(pin.liveSends[1].state, "starting", "the later send is untouched");
+  assert.equal(pin.liveSends[1].versionNo, null);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId]),
+    [
+      [1, null],
+      [2, "msg-first"],
+    ],
+  );
+});
+
+test("a later Working poll cannot un-done a finished run or mint another take", async () => {
+  const before = structuredClone(storedBoard().pins[0]);
+  const res = await dispatch({
+    type: "agent/recordOutcome",
+    messageId: "msg-first",
+    state: "working",
+  });
+  assert.equal(res.ok, true);
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].state, "done");
+  assert.equal(pin.liveSends[0].versionNo, 2);
+  assert.equal(pin.versions.length, before.versions.length);
+});
+
+test("that run's done mints only the take and does not re-mint original", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 1,
+        currentVersionNo: 1,
+        versions: [ver(1, null, "original")],
+        liveSends: [
+          {
+            text: "change card background to rose",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "live-1",
+            state: "working",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({ type: "agent/recordOutcome", messageId: "live-1", state: "done" });
+  assert.equal(res.ok, true);
+
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.versionSeq, 2);
+  assert.equal(pin.currentVersionNo, 2);
+  assert.equal(pin.versions.filter((v) => v.label === "original").length, 1);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId, v.label]),
+    [
+      [1, null, "original"],
+      [2, "live-1", "change card background to rose"],
+    ],
+  );
+  assert.equal(pin.liveSends[0].state, "done");
+  assert.equal(pin.liveSends[0].versionNo, 2);
+});
+
 test("a run landing done mints the original plus its own key", async () => {
   healthVersionsOk = true;
   install(
@@ -232,6 +403,51 @@ test("a repeated done for the same message never mints twice", async () => {
   assert.equal(res.ok, true);
   /* mutateBoard stamps updatedAt on every pass; the pins are the claim. */
   assert.deepEqual(storedBoard().pins, before);
+});
+
+test("a second done in the same chapter, with 1 and 2 showing, earns key 3", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 2,
+        currentVersionNo: 2,
+        versions: [ver(1, null, "original"), ver(2, "m1", "change to green")],
+        liveSends: [
+          {
+            text: "change to green",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "msg-1",
+            state: "done",
+            versionNo: 2,
+          },
+          {
+            text: "make it rose",
+            at: "2026-08-13T00:00:02.000Z",
+            messageId: "msg-2",
+            state: "working",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({ type: "agent/recordOutcome", messageId: "msg-2", state: "done" });
+  assert.equal(res.ok, true);
+
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.versionSeq, 3);
+  assert.equal(pin.currentVersionNo, 3);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId]),
+    [
+      [1, null],
+      [2, "m1"],
+      [3, "msg-2"],
+    ],
+  );
+  assert.equal(pin.liveSends[1].versionNo, 3);
 });
 
 test("a failed run records its outcome and earns nothing", async () => {
@@ -398,6 +614,33 @@ test("restore surfaces the files where the version overwrote a hand edit", async
   assert.equal(res.ok, true);
   if (res.ok) assert.deepEqual(res.data.conflicts, ["src/components/VarietyCard.tsx"]);
   restoreConflicts = [];
+});
+
+test("restore still runs when health is unreachable if the key exists", async () => {
+  healthUnreachable = true;
+  restoreCalls = [];
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 2,
+        currentVersionNo: 2,
+        versions: [
+          { ...ver(1, null, "original"), head: "H1" },
+          { ...ver(2, "m2", "change to green"), head: "H1" },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch<{ board: Board; conflicts: string[] }>({
+    type: "version/restore",
+    pinId: "pin-v",
+    no: 1,
+  });
+  assert.equal(res.ok, true, res.ok ? undefined : res.error);
+  assert.equal(restoreCalls.length, 1);
+  assert.equal(storedBoard().pins[0].currentVersionNo, 1);
+  healthUnreachable = false;
 });
 
 /* --------------------------------------------------------------- captures */

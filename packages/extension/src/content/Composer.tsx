@@ -54,7 +54,8 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [chordHeld, setChordHeld] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  const pollTimer = useRef<number | null>(null);
+  const pollTimers = useRef<Map<string, number>>(new Map());
+  const watchingId = useRef<string | null>(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -64,7 +65,8 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
   useEffect(
     () => () => {
       alive.current = false;
-      if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
+      for (const handle of pollTimers.current.values()) window.clearTimeout(handle);
+      pollTimers.current.clear();
     },
     [],
   );
@@ -117,8 +119,22 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
 
   const poll = useCallback((messageId: string) => {
     const startedAt = Date.now();
+    const schedule = () => {
+      const prev = pollTimers.current.get(messageId);
+      if (prev !== undefined) window.clearTimeout(prev);
+      pollTimers.current.set(
+        messageId,
+        window.setTimeout(() => void tick(), STATUS_POLL_MS),
+      );
+    };
+    const stop = () => {
+      const prev = pollTimers.current.get(messageId);
+      if (prev !== undefined) window.clearTimeout(prev);
+      pollTimers.current.delete(messageId);
+    };
     const tick = async () => {
       if (!alive.current) return;
+      const watched = watchingId.current === messageId;
       try {
         const status = await send("agent/status", { messageId });
         if (!alive.current) return;
@@ -132,41 +148,48 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
             status.state === "starting"
               ? "The agent didn’t start within 5 minutes. Resend to retry."
               : "No result after 10 minutes. The run looks stuck, so resend to retry.";
-          setPhase({ kind: "failed", detail });
+          if (watched) setPhase({ kind: "failed", detail });
           void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          stop();
           return;
         }
         // Queued behind an active Cursor run — keep polling; no starting timeout.
         if (status.state === "queued") {
-          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          schedule();
           return;
         }
         const recorded = recordableLiveSendState(status.state);
         if (status.state === "starting" || status.state === "working") {
-          setPhase(
-            status.state === "working"
-              ? { kind: "working", messageId }
-              : { kind: "starting", messageId },
-          );
+          if (watched) {
+            setPhase(
+              status.state === "working"
+                ? { kind: "working", messageId }
+                : { kind: "starting", messageId },
+            );
+          }
           if (recorded)
             void send("agent/recordOutcome", { messageId, state: recorded }).catch(() => {});
-          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          schedule();
           return;
         }
-        setPhase(
-          status.state === "done"
-            ? { kind: "done" }
-            : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
-        );
+        if (watched) {
+          setPhase(
+            status.state === "done"
+              ? { kind: "done" }
+              : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
+          );
+        }
         // Resolve the message's board-side tag whichever bar was watching.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
+        stop();
       } catch {
-        if (alive.current) {
+        if (alive.current && watched) {
           setPhase({ kind: "failed", detail: "Lost contact with the local service." });
         }
+        stop();
       }
     };
-    pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+    schedule();
   }, []);
 
   const sendToAgent = useCallback(async () => {
@@ -183,6 +206,7 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
       const { messageId } = await send("agent/send", { text: message, pinIds: agentPinIds });
       if (!alive.current) return;
       setDraft("");
+      watchingId.current = messageId;
       setPhase({ kind: "starting", messageId });
       poll(messageId);
     } catch (err) {

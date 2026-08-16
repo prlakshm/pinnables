@@ -430,6 +430,147 @@ test("a live send is stamped with the chapter it was written in", async () => {
     pinIds: ["pin-live"],
   });
   assert.equal(res.ok, true);
-  const sent = readBoardFromMemory(BOARD_ID).pins[0].liveSends[0];
-  assert.equal(sent.head, "H9");
+  const pin = readBoardFromMemory(BOARD_ID).pins[0];
+  assert.equal(pin.liveSends[0].head, "H9");
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId, v.head]),
+    [[1, null, "H9"]],
+    "original is minted at send so the rail can show during Working",
+  );
+});
+
+test("after the chapter moves, the next done restarts at 1 and 2, not 4", async () => {
+  head = "H2";
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 3,
+        currentVersionNo: 3,
+        versions: [
+          {
+            no: 1,
+            messageId: null,
+            label: "original",
+            at: "2026-08-14T00:00:00.000Z",
+            screenshotKey: null,
+            head: "H1",
+          },
+          {
+            no: 2,
+            messageId: "old-2",
+            label: "old take",
+            at: "2026-08-14T00:00:01.000Z",
+            screenshotKey: null,
+            head: "H1",
+          },
+          {
+            no: 3,
+            messageId: "old-3",
+            label: "later",
+            at: "2026-08-14T00:00:02.000Z",
+            screenshotKey: null,
+            head: "H1",
+          },
+        ],
+        liveSends: [
+          {
+            text: "new chapter take",
+            at: "2026-08-14T00:01:00.000Z",
+            messageId: "new-1",
+            state: "working",
+            versionNo: null,
+            head: "H2",
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({ type: "agent/recordOutcome", messageId: "new-1", state: "done" });
+  assert.equal(res.ok, true);
+
+  const pin = readBoardFromMemory(BOARD_ID).pins[0];
+  assert.equal(pin.versionSeq, 2, "must not keep climbing to 4 after a chapter reset");
+  assert.equal(pin.currentVersionNo, 2);
+  assert.deepEqual(
+    pin.versions.filter((v) => v.head === "H1").map((v) => v.no),
+    [1, 2, 3],
+    "stale-chapter keys stay stored",
+  );
+  assert.deepEqual(
+    pin.versions.filter((v) => v.head === "H2").map((v) => [v.no, v.messageId]),
+    [
+      [1, null],
+      [2, "new-1"],
+    ],
+  );
+  assert.equal(pin.liveSends[0].versionNo, 2);
+});
+
+test("after the chapter moves, the next send mints original 1; done adds only 2", async () => {
+  head = "H2";
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 3,
+        currentVersionNo: 3,
+        versions: [
+          {
+            no: 1,
+            messageId: null,
+            label: "original",
+            at: "2026-08-14T00:00:00.000Z",
+            screenshotKey: null,
+            head: "H1",
+          },
+          {
+            no: 2,
+            messageId: "old-2",
+            label: "old take",
+            at: "2026-08-14T00:00:01.000Z",
+            screenshotKey: null,
+            head: "H1",
+          },
+          {
+            no: 3,
+            messageId: "old-3",
+            label: "later",
+            at: "2026-08-14T00:00:02.000Z",
+            screenshotKey: null,
+            head: "H1",
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const sent = await dispatch<{ messageId: string }>({
+    type: "agent/send",
+    text: "new chapter take",
+    pinIds: ["pin-a"],
+  });
+  assert.equal(sent.ok, true);
+
+  const afterSend = readBoardFromMemory(BOARD_ID).pins[0];
+  assert.deepEqual(
+    afterSend.versions.filter((v) => v.head === "H2").map((v) => [v.no, v.messageId]),
+    [[1, null]],
+  );
+  assert.equal(afterSend.currentVersionNo, 1);
+  assert.equal(afterSend.liveSends.at(-1)?.versionNo, null);
+
+  const res = await dispatch({ type: "agent/recordOutcome", messageId: "live-1", state: "done" });
+  assert.equal(res.ok, true);
+
+  const pin = readBoardFromMemory(BOARD_ID).pins[0];
+  assert.equal(pin.versionSeq, 2, "must not keep climbing to 4 after a chapter reset");
+  assert.equal(pin.currentVersionNo, 2);
+  assert.equal(pin.versions.filter((v) => v.label === "original" && v.head === "H2").length, 1);
+  assert.deepEqual(
+    pin.versions.filter((v) => v.head === "H2").map((v) => [v.no, v.messageId]),
+    [
+      [1, null],
+      [2, "live-1"],
+    ],
+  );
 });

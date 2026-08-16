@@ -429,7 +429,38 @@ test("a queued run records starting and working on the board, not only while its
 
   assert.match(dialog, /recordableLiveSendState/);
   assert.match(composer, /recordableLiveSendState/);
-  assert.match(overlay, /liveSendNeedsPoll/);
+  assert.match(overlay, /pendingLiveSendIds/);
+  assert.match(overlay, /pendingLiveKey/);
   assert.match(messages, /state: "starting" \| "working" \| "done" \| "failed"/);
-  assert.match(background, /sent\.messageId !== messageId \|\| sent\.state === state/);
+  assert.match(background, /advanceLiveSendState/);
+  assert.match(dialog, /pollTimers/);
+  assert.match(composer, /pollTimers/);
+  assert.match(dialog, /watchingId\.current === messageId/);
+  assert.doesNotMatch(dialog, /pollTimer\.current = window\.setTimeout/);
+});
+
+test("a chat row key press restores that row's numeral", () => {
+  const dialog = source("packages/extension/src/content/SelectionDialog.tsx");
+  assert.match(dialog, /onPress=\{\(\) => pressVersion\(settledKey\)\}/);
+  assert.match(
+    dialog,
+    /void send\("version\/restore", \{ pinId: primary\.id, no \}\)/,
+  );
+});
+
+test("a later send's status GET still refreshes earlier Cursor runs", () => {
+  const service = source("packages/service/src/index.ts");
+  const cursor = source("packages/service/src/cursor.ts");
+  const getLive = service.slice(
+    service.indexOf("const liveMatch"),
+    service.indexOf("Versions. Snapshot"),
+  );
+  assert.match(getLive, /await refreshActiveCursorRuns\(\)/);
+  assert.doesNotMatch(
+    getLive,
+    /if \(found\.state === "done" \|\| found\.state === "failed" \|\| found\.state === "queued"\)/,
+  );
+  assert.match(cursor, /localRunResults/);
+  assert.match(cursor, /run\.wait\(\)/);
+  assert.match(cursor, /Agent\.getRun/);
 });

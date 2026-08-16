@@ -3,6 +3,7 @@ import {
   SCHEMA_VERSION,
   expandProperties,
   originOf,
+  versionInChapter,
   versionKeyFor,
   type Board,
   type Pin,
@@ -16,12 +17,14 @@ import {
   type RequestType,
   type TabArmState,
 } from "../lib/messages";
-import { LEGACY_PRESENCE_KEYS, onScreenPinsKey } from "../lib/presence";
+import { advanceLiveSendState } from "../lib/live-send";
+import { isOnScreenPinsKey, LEGACY_PRESENCE_KEYS, onScreenPinsKey } from "../lib/presence";
 import * as store from "../lib/store";
 import {
   agentMessageStatus,
   getHealth,
   isServiceOnline,
+  liveFieldsFromHealth,
   pushBoard,
   restoreVersion,
   sendAgentMessage,
@@ -437,6 +440,29 @@ async function sweepSilentProvisionals(): Promise<void> {
   if (dropped.length > 0) await notifyBoardChanged(board.id);
 }
 
+/**
+ * Every tab's on-screen record, removed no matter who wrote it.
+ *
+ * Overlays clear their own records, but only a live script can: a tab that
+ * navigated away, or whose script died with an extension reload, leaves its
+ * record behind — and the shelf keeps filling pin icons for pins that are in
+ * front of no one. Only this worker can clean up for the dead.
+ *
+ * `getKeys` where Chrome provides it (130+): `get(null)` materializes every
+ * value in storage, and this store holds screenshot data URLs.
+ */
+async function sweepOnScreenPins(): Promise<void> {
+  const local = chrome.storage.local as typeof chrome.storage.local & {
+    getKeys?: () => Promise<string[]>;
+  };
+  const keys =
+    typeof local.getKeys === "function"
+      ? await local.getKeys()
+      : Object.keys(await local.get(null));
+  const stale = keys.filter(isOnScreenPinsKey);
+  if (stale.length > 0) await local.remove(stale);
+}
+
 async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
   /*
    * The sweep rides the mutation queue and can sit behind an in-flight
@@ -446,6 +472,14 @@ async function setCaptureMode(enabled: boolean): Promise<TabArmState> {
    */
   if (enabled) void sweepSilentProvisionals();
   await store.patchState({ captureMode: enabled });
+  /*
+   * The toggle is a clean break in both directions — nothing stays summoned,
+   * so no tab has anything on screen. Live overlays write their own empty
+   * records when the broadcast lands; the sweep is for the tabs that cannot
+   * hear it. It runs before the broadcast so that anything a live overlay
+   * writes back afterwards wins.
+   */
+  await sweepOnScreenPins().catch(() => {});
   const message: Broadcast = { kind: "capture-mode", enabled };
   // `tabs.sendMessage` below updates page overlays. Extension pages such as the
   // side panel do not belong to a tab, so they need the runtime broadcast too.
@@ -471,6 +505,36 @@ function assertDraftBoard(board: Board): void {
   if (board.status !== "draft") throw new Error("Board changes require a draft board");
 }
 
+/**
+ * The original (key 1) is the chapter baseline, snapshotted when the first
+ * run in that chapter is accepted — not when it lands. Stored now so the
+ * patch is pre-change; the rail stays hidden until a take is minted on
+ * recordOutcome done (Working must not grow a key, or 1 and 2 are the
+ * same tree and restore is a no-op).
+ */
+function withOriginalBaseline(pin: Pin, head: string | null, canMint: boolean): Pin {
+  if (!canMint) return pin;
+  const versions = pin.versions ?? [];
+  const visible = versions.filter((v) => versionInChapter(v, head));
+  if (visible.length > 0) return pin;
+  return {
+    ...pin,
+    versions: [
+      ...versions,
+      {
+        no: 1,
+        messageId: null,
+        label: "original",
+        at: pin.createdAt,
+        screenshotKey: null,
+        head,
+      },
+    ],
+    versionSeq: Math.max(pin.versionSeq ?? 0, 1),
+    currentVersionNo: 1,
+  };
+}
+
 /** Single undo slot for "Clear all" — see the board/clear handler. */
 const CLEAR_STASH_KEY = "clearedBoardStash";
 
@@ -481,13 +545,7 @@ const handlers: Handlers = {
     const health = await getHealth();
     return {
       ...state,
-      serviceOnline: Boolean(health?.ok),
-      versionsOk: Boolean(health?.versions?.ok),
-      projectHead: health?.versions?.head ?? null,
-      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
-      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
-      cursorRuntime: health?.cursor?.runtime ?? null,
-      cursorProjectDir: health?.cursor?.cwd ?? null,
+      ...liveFieldsFromHealth(health),
     };
   },
 
@@ -497,13 +555,7 @@ const handlers: Handlers = {
     const health = await getHealth();
     return {
       ...(await store.getState()),
-      serviceOnline: Boolean(health?.ok),
-      versionsOk: Boolean(health?.versions?.ok),
-      projectHead: health?.versions?.head ?? null,
-      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
-      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
-      cursorRuntime: health?.cursor?.runtime ?? null,
-      cursorProjectDir: health?.cursor?.cwd ?? null,
+      ...liveFieldsFromHealth(health),
       activeTab,
     };
   },
@@ -906,27 +958,32 @@ const handlers: Handlers = {
           const now = new Date().toISOString();
           const sendState = result.state === "queued" ? ("queued" as const) : ("starting" as const);
           const messageId = result.messageId;
+          const mintHead = health.versions?.head ?? null;
+          const canMintOriginal = Boolean(health.versions?.ok);
           return {
             ...ready,
-            pins: ready.pins.map((pin) => ({
-              ...pin,
-              liveSends: [
-                ...(pin.liveSends ?? []),
-                {
-                  /* The row wears the pin's own words for it — its staged
-                     notes — falling back to the board's one instruction. */
-                  text:
-                    pin.annotation.trim().replace(/\s*\n\s*/g, " · ") ||
-                    ready.globalInstruction.trim() ||
-                    "Board submission",
-                  at: now,
-                  messageId,
-                  state: sendState,
-                  versionNo: null,
-                  head: health.versions?.head ?? null,
-                },
-              ],
-            })),
+            pins: ready.pins.map((pin) => {
+              const baselined = withOriginalBaseline(pin, mintHead, canMintOriginal);
+              return {
+                ...baselined,
+                liveSends: [
+                  ...(baselined.liveSends ?? []),
+                  {
+                    /* The row wears the pin's own words for it — its staged
+                       notes — falling back to the board's one instruction. */
+                    text:
+                      pin.annotation.trim().replace(/\s*\n\s*/g, " · ") ||
+                      ready.globalInstruction.trim() ||
+                      "Board submission",
+                    at: now,
+                    messageId,
+                    state: sendState,
+                    versionNo: null,
+                    head: mintHead,
+                  },
+                ],
+              };
+            }),
           };
         }
       } catch (error) {
@@ -1197,28 +1254,30 @@ const handlers: Handlers = {
      * it, the row keeps its words and leaves the box.
      */
     const now = new Date().toISOString();
-    const sendHead = (await getHealth())?.versions?.head ?? null;
+    const health = await getHealth();
+    const sendHead = health?.versions?.head ?? null;
+    const canMintOriginal = Boolean(health?.versions?.ok);
     await store.mutateBoard(board.id, (b) => {
       assertDraftBoard(b);
       return {
         ...b,
-        pins: b.pins.map((pin) =>
-          pinIds.includes(pin.id)
-            ? {
-                ...pin,
-                liveSends: [
-                  // A resend supersedes the entry it retries — the history
-                  // keeps one line per intention, not one per attempt.
-                  ...pin.liveSends.filter(
-                    (sent) => !resendOf || sent.messageId !== resendOf,
-                  ),
-                  { text, at: now, messageId, state: sendState, versionNo: null, head: sendHead },
-                ],
-                provisional: false,
-                updatedAt: now,
-              }
-            : pin,
-        ),
+        pins: b.pins.map((pin) => {
+          if (!pinIds.includes(pin.id)) return pin;
+          const baselined = withOriginalBaseline(pin, sendHead, canMintOriginal);
+          return {
+            ...baselined,
+            liveSends: [
+              // A resend supersedes the entry it retries — the history
+              // keeps one line per intention, not one per attempt.
+              ...(baselined.liveSends ?? []).filter(
+                (sent) => !resendOf || sent.messageId !== resendOf,
+              ),
+              { text, at: now, messageId, state: sendState, versionNo: null, head: sendHead },
+            ],
+            provisional: false,
+            updatedAt: now,
+          };
+        }),
       };
     });
     await notifyBoardChanged(board.id);
@@ -1260,13 +1319,21 @@ const handlers: Handlers = {
         if (!pin.liveSends.some((sent) => sent.messageId === messageId)) return pin;
         let changed = false;
         let liveSends = pin.liveSends.map((sent) => {
-          if (sent.messageId !== messageId || sent.state === state) return sent;
+          if (sent.messageId !== messageId) return sent;
+          const next = advanceLiveSendState(sent.state, state);
+          if (next === sent.state) return sent;
           changed = true;
-          return { ...sent, state };
+          return { ...sent, state: next };
         });
         if (!changed) return pin;
         touched = true;
-        if (state !== "done" || !canMint) return { ...pin, liveSends };
+        const landed = liveSends.some(
+          (sent) => sent.messageId === messageId && sent.state === "done",
+        );
+        /* Takes are minted only on the working→done step. Working/Send must
+           not grow a key: that snapshot is the baseline tree, so restore
+           between 1 and 2 is a no-op and the page never leaves the edit. */
+        if (!landed || !canMint) return { ...pin, liveSends };
 
         /*
          * The run landed — it earns a key. Minted here because this is the
@@ -1275,39 +1342,68 @@ const handlers: Handlers = {
          * number. Idempotent by construction: the state comparison above
          * means a second "done" for the same message never reaches this.
          */
-        let versions = pin.versions ?? [];
-        let seq = pin.versionSeq ?? 0;
-        if (versions.length === 0) {
+        const versions = pin.versions ?? [];
+        const sent = liveSends.find((s) => s.messageId === messageId);
+        /*
+         * Visible keys in this chapter are the source of truth for the next
+         * numeral. Stale-chapter keys stay stored (unrestorable) but must
+         * not occupy the new chapter's 1–5 names, and they must not keep
+         * versionSeq climbing after a reset.
+         */
+        const visible = versions.filter((v) => versionInChapter(v, mintHead));
+        if (visible.length === 0) {
           /*
-           * The original slips in as key 1 the moment the first run lands,
-           * so there is a way back to before anything happened. Its
-           * snapshot is the chapter's baseline, taken by the service before
-           * that first run started.
+           * Fallback when done arrives without a start mint (older tests,
+           * a send that could not snapshot). The happy path already put
+           * original=1 on the pin at agent/send; this must not run then,
+           * or the rail is born in the same frame as the flying take.
            */
-          seq += 1;
-          versions = [
-            ...versions,
+          captures = captures.filter((cap) => cap.pinId !== pin.id);
+          const minted = [
             {
-              no: versionKeyFor(seq),
+              no: 1,
               messageId: null,
               label: "original",
               at: pin.createdAt,
               screenshotKey: null,
               head: mintHead,
             },
+            {
+              no: 2,
+              messageId,
+              label: sent?.text ?? "",
+              at: new Date().toISOString(),
+              screenshotKey: null,
+              head: mintHead,
+            },
           ];
+          liveSends = liveSends.map((s) =>
+            s.messageId === messageId ? { ...s, versionNo: 2 } : s,
+          );
+          return {
+            ...pin,
+            liveSends,
+            versions: [...versions, ...minted],
+            versionSeq: 2,
+            currentVersionNo: 2,
+          };
         }
-        seq += 1;
+
+        const lastNo = visible.some((v) => v.no === pin.currentVersionNo)
+          ? (pin.currentVersionNo as number)
+          : Math.max(...visible.map((v) => v.no));
+        const seq = lastNo + 1;
         const no = versionKeyFor(seq);
         /*
-         * The numeral is taken from whoever wore it before — the ring stays
-         * five keys wide without anything being renumbered. The evicted
-         * version leaves every rail: captures holding it give it up, and a
-         * capture emptied by that has nothing left to show and goes too.
+         * Evict only the current chapter's wearer of this numeral. An older
+         * chapter's key 1 must survive so a later restore lookup can still
+         * tell the two apart.
          */
-        const evicted = versions.find((v) => v.no === no);
+        const evicted = visible.find((v) => v.no === no);
         if (evicted) evictedShots.push({ pinId: pin.id, no });
-        versions = versions.filter((v) => v.no !== no);
+        const nextVersions = versions.filter(
+          (v) => !(v.no === no && versionInChapter(v, mintHead)),
+        );
         captures = captures
           .map((cap) =>
             cap.pinId === pin.id && cap.keys.includes(no)
@@ -1318,25 +1414,23 @@ const handlers: Handlers = {
           .map((cap) =>
             cap.keys.includes(cap.current) ? cap : { ...cap, current: cap.keys[0] },
           );
-        const sent = liveSends.find((s) => s.messageId === messageId);
-        versions = [
-          ...versions,
-          {
-            no,
-            messageId,
-            label: sent?.text ?? "",
-            at: new Date().toISOString(),
-            screenshotKey: null,
-            head: mintHead,
-          },
-        ];
         liveSends = liveSends.map((s) =>
           s.messageId === messageId ? { ...s, versionNo: no } : s,
         );
         return {
           ...pin,
           liveSends,
-          versions,
+          versions: [
+            ...nextVersions,
+            {
+              no,
+              messageId,
+              label: sent?.text ?? "",
+              at: new Date().toISOString(),
+              screenshotKey: null,
+              head: mintHead,
+            },
+          ],
           versionSeq: seq,
           /* The tree is wearing the run's result right now — the new key is lit. */
           currentVersionNo: no,
@@ -1363,11 +1457,24 @@ const handlers: Handlers = {
     const pin = found.pins.find((p) => p.id === pinId);
     if (!pin) throw new Error("Unknown pin");
     const versions = pin.versions ?? [];
-    const target = versions.find((v) => v.no === no);
+    const health = await getHealth();
+    const current = versions.find((v) => v.no === pin.currentVersionNo);
+    /*
+     * Health can time out (overlay then shows keys with versionsOk false).
+     * A visible key must still restore: fall back to the lit key's stored
+     * head, and if health is missing, look up by number alone.
+     */
+    const projectHead = health?.versions?.head ?? current?.head ?? null;
+    const inChapter = (v: (typeof versions)[number]) => versionInChapter(v, projectHead);
+    const target =
+      versions.find((v) => v.no === no && inChapter(v)) ??
+      (health == null ? versions.find((v) => v.no === no) : undefined);
     if (!target) throw new Error(`No version ${no} on this pin`);
     if (pin.currentVersionNo === no) return { board: found, conflicts: [] };
 
-    const from = versions.find((v) => v.no === pin.currentVersionNo);
+    const from =
+      versions.find((v) => v.no === pin.currentVersionNo && inChapter(v)) ??
+      (health == null ? versions.find((v) => v.no === pin.currentVersionNo) : undefined);
     const result = await restoreVersion({
       boardId: found.id,
       messageId: target.messageId ?? "baseline",
@@ -1400,16 +1507,19 @@ const handlers: Handlers = {
       const found = await store.boardForPin(pinId);
       await store.mutateBoard(found.id, (b) => ({
         ...b,
-        pins: b.pins.map((p) =>
-          p.id === pinId
-            ? {
-                ...p,
-                versions: p.versions.map((v) =>
-                  v.no === no ? { ...v, screenshotKey: versionShotKey(pinId, no) } : v,
-                ),
-              }
-            : p,
-        ),
+        pins: b.pins.map((p) => {
+          if (p.id !== pinId) return p;
+          const current = p.versions.find((x) => x.no === p.currentVersionNo);
+          const head = current?.head ?? null;
+          return {
+            ...p,
+            versions: p.versions.map((v) =>
+              v.no === no && versionInChapter(v, head)
+                ? { ...v, screenshotKey: versionShotKey(pinId, no) }
+                : v,
+            ),
+          };
+        }),
       }));
       await notifyBoardChanged(found.id);
       return { ok: true };
@@ -1718,7 +1828,20 @@ chrome.runtime.onInstalled.addListener(() => {
   // Presence used to live in two unscoped keys. Nothing reads them now, and a
   // stale one would linger in local storage forever.
   void chrome.storage.local.remove(LEGACY_PRESENCE_KEYS).catch(() => {});
+  // An install or reload orphans every content script, so every per-tab
+  // record just lost the only writer that could clear it.
+  void sweepOnScreenPins().catch(() => {});
   void reinjectOpenTabs();
+});
+
+/**
+ * A browser restart hands out fresh tab ids. A record from the previous
+ * session now names a tab that no longer exists — or, worse, one that Chrome
+ * reassigned to an unrelated page — and the shelf would fill pins nobody is
+ * looking at. (Optional call: test harnesses stub a partial runtime.)
+ */
+chrome.runtime.onStartup?.addListener(() => {
+  void sweepOnScreenPins().catch(() => {});
 });
 
 /**

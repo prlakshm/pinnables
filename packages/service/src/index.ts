@@ -16,7 +16,7 @@ import {
   cursorRuntime,
   imagesFromScreenshots,
   isAgentBusyError,
-  probeCursor,
+  cursorStatusSnapshot,
   projectDir,
   readStickyAgentId,
   shouldAttachScreenshots,
@@ -25,12 +25,12 @@ import {
   type CursorStatus,
 } from "./cursor.js";
 import {
-  currentHead,
   listVersions,
   readChapterBaseline,
+  refreshVersionsHealth,
   restore as restoreVersion,
   snapshot as snapshotVersion,
-  versionsAvailable,
+  versionsHealthSnapshot,
 } from "./versions.js";
 
 /**
@@ -42,7 +42,7 @@ import {
  *
  * Send path (least friction first):
  *   1. Cursor local agent (default) when CURSOR_API_KEY is set — edits
- *      PINNABLES_PROJECT_DIR / cwd so the running app hot-reloads.
+ *      PINNABLES_PROJECT_DIR / the git repo root so the running app hot-reloads.
  *   2. Cursor Cloud Agents when PINNABLES_CURSOR_RUNTIME=cloud.
  *   3. Local spawn via PINNABLES_AGENT_CMD / `claude` as a fallback.
  */
@@ -393,7 +393,7 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
    * Claude Code CLI in print mode, editing files without prompting.
    */
   const custom = process.env.PINNABLES_AGENT_CMD;
-  const cwd = process.env.PINNABLES_PROJECT_DIR ?? process.cwd();
+  const cwd = projectDir();
   /*
    * Piped rather than ignored so the run can say when it has actually begun.
    * A spawned process is not a working agent — it is a process that has yet to
@@ -717,14 +717,10 @@ const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
 
     if (req.method === "GET" && url.pathname === "/health") {
-      const cursor = cursorConfigured()
-        ? await probeCursor()
-        : {
-            ok: false,
-            detail: "CURSOR_API_KEY not set",
-            runtime: cursorRuntime(),
-            cwd: projectDir(),
-          };
+      /* Served from the last real send or poll — /health itself never calls
+         the Cursor API. The panel keys "set up" off `configured`; `ok` is
+         best-effort connectivity that real traffic keeps honest. */
+      const cursor = cursorStatusSnapshot();
       const stickyAgentId = cursorConfigured() ? await readStickyAgentId() : null;
       const agentUrl =
         cursor.runtime === "cloud"
@@ -734,8 +730,12 @@ const server = createServer((req, res) => {
       /* Versions need a git working tree. Reported so the extension can hide
          the rail rather than offer keys that would not work. The head is the
          chapter: everything stamped with an older one has been absorbed by a
-         commit, and the extension quiets those keys and rows. */
-      const versions = { ...(await versionsAvailable()), head: await currentHead() };
+         commit, and the extension quiets those keys and rows. Served from the
+         last refresh rather than awaited — /health must stay inside the
+         extension's abort budget — with a refresh kicked so a moved HEAD is
+         at most one poll stale. */
+      const versions = versionsHealthSnapshot();
+      void refreshVersionsHealth().catch(() => {});
       return send(res, 200, {
         ok: true,
         home: pinnablesHome(),
@@ -775,14 +775,14 @@ const server = createServer((req, res) => {
     if (req.method === "GET" && liveMatch) {
       let found = await refreshMessageStatus(liveMatch[1]);
       if (!found) return send(res, 404, { error: "Unknown message" });
-      // A status poll is also a chance to notice the active run finished and
-      // start whatever is waiting — do not rely only on the finished message's
-      // own poller (the UI may have moved on). Await so a queued poll can
-      // return "starting" in the same response once the previous run is done.
-      if (found.state === "done" || found.state === "failed" || found.state === "queued") {
-        await refreshActiveCursorRuns();
-        found = liveMessages.get(liveMatch[1]) ?? found;
-      }
+      /*
+       * Always refresh siblings. A later send's poll used to skip this when
+       * it was still working, so the first run could finish (files landed)
+       * and stay Working forever because nothing asked after its own poll
+       * was stolen.
+       */
+      await refreshActiveCursorRuns();
+      found = liveMessages.get(liveMatch[1]) ?? found;
       return send(res, 200, found);
     }
 
@@ -887,8 +887,16 @@ const server = createServer((req, res) => {
   })();
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`pinnables service on http://${HOST}:${PORT}`);
+/*
+ * The first versions refresh happens before the port opens, so no request can
+ * ever see the cache's cold-start placeholder: a git tree answers ok from the
+ * first poll, and a non-git project never flashes a rail it would then take
+ * back. refreshVersionsHealth swallows git failures into its result, so this
+ * cannot reject.
+ */
+void refreshVersionsHealth().finally(() => {
+  server.listen(PORT, HOST, () => {
+    console.log(`pinnables service on http://${HOST}:${PORT}`);
   console.log(`boards → ${pinnablesHome()}`);
   if (cursorConfigured()) {
     const runtime = cursorRuntime();
@@ -900,15 +908,16 @@ server.listen(PORT, HOST, () => {
   } else {
     console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
   }
-  // Keep the queue moving when the extension is not polling a finished run.
-  if (cursorConfigured()) {
-    setInterval(() => {
-      void refreshActiveCursorRuns().catch((err) => {
-        console.error(
-          "queue tick failed:",
-          err instanceof Error ? err.message : String(err),
-        );
-      });
-    }, 2_500);
-  }
+    // Keep the queue moving when the extension is not polling a finished run.
+    if (cursorConfigured()) {
+      setInterval(() => {
+        void refreshActiveCursorRuns().catch((err) => {
+          console.error(
+            "queue tick failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+      }, 2_500);
+    }
+  });
 });

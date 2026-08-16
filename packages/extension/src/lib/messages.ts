@@ -39,8 +39,8 @@ export interface ExtensionState {
   serviceOnline: boolean;
   /**
    * True when the service can snapshot and restore versions — it needs a git
-   * working tree behind the project. Off means the rail never appears; the
-   * feature turns itself off rather than offering keys that would not work.
+   * working tree behind the project. Off gates minting so we do not offer a
+   * lie; an existing rail still shows stored keys, and restore still runs.
    */
   versionsOk: boolean;
   /**
@@ -49,7 +49,12 @@ export interface ExtensionState {
    * their words and stop being a way back. Null when versions are off.
    */
   projectHead: string | null;
-  /** True when the local service can push to Cursor agents. */
+  /** True when CURSOR_API_KEY is set on the local service. */
+  cursorConfigured: boolean;
+  /**
+   * True when a background Cursor probe last succeeded. A missing or stale
+   * probe must not be treated as "key not set" — use `cursorConfigured`.
+   */
   cursorOnline: boolean;
   /**
    * Cloud Agents live at cursor.com/agents. Local agents edit the project

@@ -279,14 +279,14 @@ export function App() {
       // The board is untouched and still on screen, so the press can simply be
       // made again — which is the whole recovery.
       setSubmitError(
-        state?.cursorOnline
+        state?.cursorConfigured
           ? "Couldn’t send to Cursor. Check CURSOR_API_KEY on the local service, then try again."
           : "Couldn’t write the board. Start the local service, then try again.",
       );
       phaseRef.current = "idle";
       setPhase("idle");
     }
-  }, [board, phase, instructionDraft, setInstruction, state?.cursorOnline]);
+  }, [board, phase, instructionDraft, setInstruction, state?.cursorConfigured]);
 
   /**
    * The board clears itself once "Submitted" has been read.
@@ -469,7 +469,7 @@ export function App() {
               sent to your agent until it&apos;s running.
             </div>
           )}
-          {state?.serviceOnline && !state.cursorOnline && (
+          {state?.serviceOnline && !state.cursorConfigured && (
             <div className="pin-banner pin-banner--prose">
               Set <code>CURSOR_API_KEY</code> on the local service for one-click Send.
               Point <code>PINNABLES_PROJECT_DIR</code> at the app repo so edits land live.

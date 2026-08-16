@@ -1,5 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile, readdir, rm } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -30,8 +31,52 @@ const run = promisify(execFile);
  * project (or one chapter) from ever being applied against another.
  */
 
+let cwdForProjectRoot: string | null = null;
+let cachedProjectRoot: string | null = null;
+
+/** Tests only: pretend the service was started from a package subdirectory. */
+export function setProjectRootCwd(cwd: string | null): void {
+  cwdForProjectRoot = cwd;
+  cachedProjectRoot = null;
+}
+
+/** Tests only: forget the resolved root so the next call recomputes it. */
+export function resetProjectRootCache(): void {
+  cachedProjectRoot = null;
+}
+
+function gitToplevel(cwd: string): string | null {
+  try {
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    return top ? realpathSync(top) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Directory snapshots and restores read and write.
+ *
+ * `PINNABLES_PROJECT_DIR` wins. Otherwise this is the git repo root, even
+ * when the service was launched from a package folder (`packages/service`):
+ * `git diff HEAD` paths are repo-root relative, and `git apply` / file
+ * reads must use that same root or they miss the files (or write into the
+ * package directory).
+ */
 export function projectRoot(): string {
-  return process.env.PINNABLES_PROJECT_DIR ?? process.cwd();
+  const fromEnv = process.env.PINNABLES_PROJECT_DIR?.trim();
+  if (fromEnv) return fromEnv;
+  // Cached because every git() call resolves the root, and the resolve is
+  // itself a git spawn — uncached, one restore would fork git dozens of times.
+  if (cachedProjectRoot === null) {
+    const cwd = cwdForProjectRoot ?? process.cwd();
+    cachedProjectRoot = gitToplevel(cwd) ?? cwd;
+  }
+  return cachedProjectRoot;
 }
 
 function versionsDir(): string {
@@ -90,6 +135,57 @@ export async function versionsAvailable(): Promise<{ ok: boolean; detail: string
         : `${projectRoot()} is not a git repository, so versions are unavailable`,
     };
   }
+}
+
+export interface VersionsHealth {
+  ok: boolean;
+  detail: string | null;
+  head: string | null;
+}
+
+/*
+ * /health sits inside the extension's 900ms abort budget and is polled for as
+ * long as the panel is open. Answering it with live git — two spawns per poll —
+ * is both slow and pointless: whether the project is a git tree changes
+ * approximately never, and HEAD only moves on a commit. So health reads a
+ * cached answer synchronously and each poll kicks an async refresh, meaning a
+ * moved HEAD is at most one poll stale.
+ */
+let versionsHealth: VersionsHealth | null = null;
+let versionsHealthRefresh: Promise<VersionsHealth> | null = null;
+
+/** Tests only: return the cache to its cold-start state. */
+export function resetVersionsHealthCache(): void {
+  versionsHealth = null;
+  versionsHealthRefresh = null;
+}
+
+/**
+ * The last-known answer, without touching git.
+ *
+ * An empty cache reports ok:true rather than ok:false — unknown must not look
+ * like "no git", because ok:false is the signal that hides the version rail,
+ * and a cold start would blank every rail for a beat. The window is theory
+ * more than practice: listen() waits for the first refresh, so by the time a
+ * request can arrive the cache holds the real answer either way.
+ */
+export function versionsHealthSnapshot(): VersionsHealth {
+  return versionsHealth ?? { ok: true, detail: null, head: null };
+}
+
+export async function refreshVersionsHealth(): Promise<VersionsHealth> {
+  // Coalesced: overlapping polls share one probe instead of racing git.
+  versionsHealthRefresh ??= (async () => {
+    try {
+      const avail = await versionsAvailable();
+      const head = avail.ok ? await currentHead() : null;
+      versionsHealth = { ok: avail.ok, detail: avail.detail, head };
+      return versionsHealth;
+    } finally {
+      versionsHealthRefresh = null;
+    }
+  })();
+  return versionsHealthRefresh;
 }
 
 export interface VersionMeta {

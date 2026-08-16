@@ -207,7 +207,7 @@ function installBoard(next: Board): void {
   captureVisibleTabCalls = 0;
   materializedBoards = [];
   memory = {
-    state: { captureMode: true, activeBoardId: BOARD_ID, serviceOnline: false, cursorOnline: false },
+    state: { captureMode: true, activeBoardId: BOARD_ID, serviceOnline: false, cursorConfigured: false, cursorOnline: false },
     boardIds: [BOARD_ID],
     [BOARD_KEY]: structuredClone(next),
   };
