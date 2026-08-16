@@ -69,7 +69,7 @@ export interface SelectionDialogProps {
    * offline services — everything shows.
    */
   projectHead?: string | null;
-  /** Whether restore can be honoured. Keys still show; presses no-op when off. */
+  /** Whether restore can be honoured. Keys still show; presses attempt restore even when off. */
   versionsOk?: boolean;
   /** Set when this selection is the target of an on-screen relationship. */
   targetOf: string | null;
@@ -108,7 +108,7 @@ export function SelectionDialog({
   versionBusy = false,
   onVersionBusy,
   projectHead = null,
-  versionsOk = true,
+  versionsOk: _versionsOk = true,
   targetOf,
   relationshipId,
   drawingSummary,
@@ -138,11 +138,15 @@ export function SelectionDialog({
   const [completedFlash, setCompletedFlash] = useState<Set<string>>(new Set());
   /** The tag's exit: it narrows away along the axis the keycap arrives on. */
   const [flashLeaving, setFlashLeaving] = useState<Set<string>>(new Set());
-  /** A row whose Done just cleared — its keycap flies to the rail. */
-  const [justSettled, setJustSettled] = useState<string | null>(null);
+  /** Restore failed — the same alert row that reports a failed send. */
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   /** Last known live-send state, so Done flash starts on the transition. */
   const prevSentStates = useRef<Map<string, LiveSend["state"]>>(new Map());
-  /** One Working → Done → key → fly handoff per messageId. */
+  /** Last known versionNo per message, so a newly minted take can fly. */
+  const prevVersionNos = useRef<Map<string, number | null>>(new Map());
+  /** One fly per take — poll, reconcile, and versionNo-watch share this. */
+  const flownIds = useRef<Set<string>>(new Set());
+  /** One Working → Done flash per messageId. */
   const doneHandoffStarted = useRef<Set<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
   const pollTimer = useRef<number | null>(null);
@@ -223,10 +227,10 @@ export function SelectionDialog({
   }, [selectionKey]);
 
   /*
-   * Working → Done → keycap → fly. The flash starts when the board row
-   * actually becomes done, not when the poll first sees it — otherwise
-   * reconcile can apply the outcome in one shot and the row skips Done
-   * (and the fly, because justSettled never fires).
+   * Working → Done → keycap → fly. Flash when the board row becomes done
+   * (including a first look at a take minted moments ago — the overlay can
+   * skip Working if the outcome lands in one broadcast). Fly is kicked
+   * when versionNo appears, not from the poll.
    */
   const startDoneHandoff = useCallback((messageId: string) => {
     if (doneHandoffStarted.current.has(messageId)) return;
@@ -246,20 +250,62 @@ export function SelectionDialog({
         next.delete(messageId);
         return next;
       });
-      setJustSettled(messageId);
     }, DONE_FLASH_MS);
   }, []);
 
+  const waitForKeysAndFly = useCallback((messageId: string, no: number) => {
+    const started = performance.now();
+    const tryFly = () => {
+      const rowKey = rootRef.current?.querySelector<HTMLElement>(
+        `.pin-key[data-msg="${messageId}"]`,
+      );
+      const root = (rootRef.current?.getRootNode() ?? document) as ShadowRoot | Document;
+      const railKey = root.querySelector<HTMLElement>(
+        `.pin-versions[data-rail="main"] .pin-key[data-no="${no}"]`,
+      );
+      const rowBox = rowKey?.getBoundingClientRect();
+      const rowReady = Boolean(rowKey && rowBox && rowBox.width > 0 && rowBox.height > 0);
+      if (rowReady && railKey && rowKey) {
+        flyKeyToRail(rowKey, no);
+        return;
+      }
+      if (performance.now() - started >= 800) {
+        if (rowKey) flyKeyToRail(rowKey, no);
+        return;
+      }
+      requestAnimationFrame(tryFly);
+    };
+    tryFly();
+  }, []);
+
   useEffect(() => {
-    for (const sent of primary?.liveSends ?? []) {
+    if (!primary) return;
+    for (const sent of primary.liveSends) {
       if (!sent.messageId) continue;
-      const prev = prevSentStates.current.get(sent.messageId);
-      prevSentStates.current.set(sent.messageId, sent.state);
-      if (sent.state === "done" && prev !== undefined && prev !== "done") {
-        startDoneHandoff(sent.messageId);
+      const id = sent.messageId;
+      const prevState = prevSentStates.current.get(id);
+      prevSentStates.current.set(id, sent.state);
+      const hadNo = prevVersionNos.current.has(id);
+      const prevNo = prevVersionNos.current.get(id);
+      prevVersionNos.current.set(id, sent.versionNo);
+
+      const fresh = takeIsFresh(primary, id);
+      if (sent.state === "done" && prevState !== "done") {
+        if (prevState !== undefined || fresh) startDoneHandoff(id);
+      }
+
+      const newlyMinted =
+        sent.versionNo !== null &&
+        !flownIds.current.has(id) &&
+        ((hadNo && prevNo === null) || (!hadNo && fresh));
+      if (newlyMinted && sent.versionNo !== null) {
+        flownIds.current.add(id);
+        const no = sent.versionNo;
+        const delay = doneHandoffStarted.current.has(id) ? DONE_FLASH_MS : 0;
+        window.setTimeout(() => waitForKeysAndFly(id, no), delay);
       }
     }
-  }, [primary?.liveSends, startDoneHandoff]);
+  }, [primary, startDoneHandoff, waitForKeysAndFly]);
 
   const poll = useCallback((messageId: string, key: string) => {
     const startedAt = Date.now();
@@ -507,40 +553,38 @@ export function SelectionDialog({
   }, [draft, stage, keepNow]);
 
   /*
-   * The settled row's keycap flies to the rail — the same key, seen leaving
-   * one place and arriving in the other. The mint has to land on the board
-   * first (versionNo via the outcome broadcast); then two frames let the
-   * row key lay out so the ghost can launch from a real box. No extra hold:
-   * this is the next beat of the same handoff, not a pause after it.
+   * The settled row's keycap flies to the rail when versionNo appears —
+   * see the liveSends watcher above. Poll justSettled is not the trigger.
    */
-  useEffect(() => {
-    if (!justSettled) return;
-    const sent = primary?.liveSends.find((s) => s.messageId === justSettled);
-    if (!sent || sent.versionNo === null) return;
-    const no = sent.versionNo;
-    const messageId = justSettled;
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        const rowKey = rootRef.current?.querySelector<HTMLElement>(
-          `.pin-key[data-msg="${messageId}"]`,
-        );
-        if (rowKey) flyKeyToRail(rowKey, no);
-      });
-    });
-    setJustSettled(null);
-  }, [justSettled, primary?.liveSends]);
 
   /** Press a chat key: same restore the rail runs, same quiet while it runs. */
   const pressVersion = useCallback(
     (no: number) => {
-      if (!versionsOk || versionBusy || primary?.currentVersionNo === no) return;
+      if (!primary || versionBusy || primary.currentVersionNo === no) return;
+      setRestoreError(null);
       onVersionBusy?.(true);
       void send("version/restore", { pinId: primary.id, no })
-        .catch(() => {})
+        .catch((err) => {
+          console.error("[pinnables] restore failed", err);
+          setRestoreError(
+            err instanceof Error && err.message.trim()
+              ? err.message
+              : "Couldn’t restore that version.",
+          );
+        })
         .finally(() => onVersionBusy?.(false));
     },
-    [versionsOk, versionBusy, primary, onVersionBusy],
+    [versionBusy, primary, onVersionBusy],
   );
+
+  useEffect(() => {
+    const onFail = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message;
+      setRestoreError(message?.trim() || "Couldn’t restore that version.");
+    };
+    window.addEventListener("pin:restore-failed", onFail);
+    return () => window.removeEventListener("pin:restore-failed", onFail);
+  }, []);
 
   if (!primary) return null;
 
@@ -609,6 +653,9 @@ export function SelectionDialog({
         return null;
     }
   })();
+
+  const alertText = restoreError ?? statusLine;
+  const alertIsQuiet = !restoreError && phase.kind === "kept";
 
   return (
     <div
@@ -784,7 +831,7 @@ export function SelectionDialog({
                         messageId={sent.messageId}
                         lit={primary.currentVersionNo === settledKey}
                         label={sent.text}
-                        busy={versionBusy || !versionsOk}
+                        busy={versionBusy}
                         onPress={() => pressVersion(settledKey)}
                       />
                     ) : null
@@ -822,14 +869,14 @@ export function SelectionDialog({
           target of {targetOf}
         </div>
       )}
-      {statusLine && (
+      {alertText && (
         <div
-          className={phase.kind === "kept" ? "pin-note__rel" : "pin-note__rel pin-note__alert"}
-          data-state={phase.kind}
-          role={phase.kind === "kept" ? "status" : "alert"}
-          aria-live={phase.kind === "kept" ? "polite" : "assertive"}
+          className={alertIsQuiet ? "pin-note__rel" : "pin-note__rel pin-note__alert"}
+          data-state={restoreError ? "failed" : phase.kind}
+          role={alertIsQuiet ? "status" : "alert"}
+          aria-live={alertIsQuiet ? "polite" : "assertive"}
         >
-          {statusLine}
+          {alertText}
         </div>
       )}
     </div>
@@ -849,6 +896,14 @@ function versionKeyOf(sent: LiveSend, pin: Pin): number | null {
     (v) => v.no === sent.versionNo && v.messageId === sent.messageId,
   );
   return owned ? sent.versionNo : null;
+}
+
+/** A take minted in the last 10s is still the live handoff, even on first look. */
+function takeIsFresh(pin: Pin, messageId: string): boolean {
+  const minted = (pin.versions ?? []).find((v) => v.messageId === messageId);
+  if (!minted) return false;
+  const at = Date.parse(minted.at);
+  return Number.isFinite(at) && Date.now() - at < 10_000;
 }
 
 /**

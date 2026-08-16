@@ -506,8 +506,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [liveConnect, setLiveConnect] = useState<LiveConnect | null>(null);
   /** A version restore in flight — the rail and the chat keys go quiet. */
   const [versionBusy, setVersionBusy] = useState(false);
-  /** Whether minting/restore can be honoured (needs a git tree). The rail
-      still shows stored keys while this is false. */
+  /** Whether minting can be honoured (needs a git tree). The rail
+      still shows stored keys while this is false, and restore still runs. */
   const [versionsOk, setVersionsOk] = useState(false);
   /** Live measurements, fed to the placement module each pass. */
   const [boxSize, setBoxSize] = useState<{ width: number; height: number } | null>(null);
@@ -667,12 +667,11 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     };
   }, []);
 
-  /*
-   * Whether minting/restore can work — the service needs a git tree —
-   * and which chapter is open. Asked when the overlay arms and again on
-   * every selection change. The rail itself does not wait on this: stored
-   * keys show as soon as the element is re-found.
-   */
+  /** Whether minting can work — the service needs a git tree —
+      and which chapter is open. Asked when the overlay arms and again on
+      every selection change. The rail itself does not wait on this: stored
+      keys show as soon as the element is re-found, and a visible key still
+      restores even when this probe timed out. */
   const selectionKey = liveSelected.join(" ");
   useEffect(() => {
     if (!state.enabled) return;

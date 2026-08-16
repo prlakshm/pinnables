@@ -39,8 +39,8 @@ export interface ExtensionState {
   serviceOnline: boolean;
   /**
    * True when the service can snapshot and restore versions — it needs a git
-   * working tree behind the project. Off gates minting and restore so we
-   * do not offer a lie; an existing rail still shows stored keys.
+   * working tree behind the project. Off gates minting so we do not offer a
+   * lie; an existing rail still shows stored keys, and restore still runs.
    */
   versionsOk: boolean;
   /**

@@ -29,6 +29,7 @@ let backgroundListener: BackgroundListener | null = null;
 
 /* The service, faked at the fetch boundary. */
 let healthVersionsOk = true;
+let healthUnreachable = false;
 let restoreCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
 let restoreConflicts: string[] = [];
 
@@ -36,6 +37,9 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   if (url.endsWith("/health")) {
+    if (healthUnreachable) {
+      return new Response("down", { status: 500 });
+    }
     return new Response(
       JSON.stringify({
         ok: true,
@@ -491,6 +495,33 @@ test("restore surfaces the files where the version overwrote a hand edit", async
   assert.equal(res.ok, true);
   if (res.ok) assert.deepEqual(res.data.conflicts, ["src/components/VarietyCard.tsx"]);
   restoreConflicts = [];
+});
+
+test("restore still runs when health is unreachable if the key exists", async () => {
+  healthUnreachable = true;
+  restoreCalls = [];
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 2,
+        currentVersionNo: 2,
+        versions: [
+          { ...ver(1, null, "original"), head: "H1" },
+          { ...ver(2, "m2", "change to green"), head: "H1" },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch<{ board: Board; conflicts: string[] }>({
+    type: "version/restore",
+    pinId: "pin-v",
+    no: 1,
+  });
+  assert.equal(res.ok, true, res.ok ? undefined : res.error);
+  assert.equal(restoreCalls.length, 1);
+  assert.equal(storedBoard().pins[0].currentVersionNo, 1);
+  healthUnreachable = false;
 });
 
 /* --------------------------------------------------------------- captures */

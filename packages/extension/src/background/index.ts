@@ -1417,14 +1417,22 @@ const handlers: Handlers = {
     const versions = pin.versions ?? [];
     const health = await getHealth();
     const current = versions.find((v) => v.no === pin.currentVersionNo);
+    /*
+     * Health can time out (overlay then shows keys with versionsOk false).
+     * A visible key must still restore: fall back to the lit key's stored
+     * head, and if health is missing, look up by number alone.
+     */
     const projectHead = health?.versions?.head ?? current?.head ?? null;
-    const target = versions.find((v) => v.no === no && versionInChapter(v, projectHead));
+    const inChapter = (v: (typeof versions)[number]) => versionInChapter(v, projectHead);
+    const target =
+      versions.find((v) => v.no === no && inChapter(v)) ??
+      (health == null ? versions.find((v) => v.no === no) : undefined);
     if (!target) throw new Error(`No version ${no} on this pin`);
     if (pin.currentVersionNo === no) return { board: found, conflicts: [] };
 
-    const from = versions.find(
-      (v) => v.no === pin.currentVersionNo && versionInChapter(v, projectHead),
-    );
+    const from =
+      versions.find((v) => v.no === pin.currentVersionNo && inChapter(v)) ??
+      (health == null ? versions.find((v) => v.no === pin.currentVersionNo) : undefined);
     const result = await restoreVersion({
       boardId: found.id,
       messageId: target.messageId ?? "baseline",

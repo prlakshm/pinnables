@@ -89,12 +89,13 @@ function boardWith(pins: Pin[], captures: Capture[] = []): Board {
   };
 }
 
-function renderDialog(pin: Pin): string {
+function renderDialog(pin: Pin, versionsOk = true): string {
   return renderToStaticMarkup(
     <SelectionDialog
       pins={[pin]}
       board={boardWith([pin])}
       position={{ x: 100, y: 100, width: 380 }}
+      versionsOk={versionsOk}
       targetOf={null}
       relationshipId={null}
       drawingSummary={null}
@@ -246,6 +247,43 @@ test("a settled take row wears only its own numeral, never the original as well"
   const html = renderDialog(pin);
   assert.match(html, /data-msg="m-new"[^>]*data-no="2"|data-no="2"[^>]*data-msg="m-new"/);
   assert.equal([...html.matchAll(/data-no="/g)].length, 1);
+});
+
+test("a visible chat key is not disabled when versionsOk is false", () => {
+  const pin = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [ver(1, null, "original"), ver(2, "m-new", "rose")],
+    liveSends: [
+      {
+        text: "rose",
+        at: "2026-08-13T00:01:00.000Z",
+        messageId: "m-new",
+        state: "done",
+        versionNo: 2,
+      },
+    ],
+  });
+  const html = renderDialog(pin, false);
+  assert.match(html, /data-msg="m-new"/);
+  assert.doesNotMatch(html, /class="pin-key"[^>]*\sdisabled/);
+});
+
+test("restore is not skipped when versionsOk is false but keys exist", () => {
+  const rail = readFileSync(
+    new URL("../packages/extension/src/content/VersionRail.tsx", import.meta.url),
+    "utf8",
+  );
+  const dialog = readFileSync(
+    new URL("../packages/extension/src/content/SelectionDialog.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(rail, /if \(!versionsOk \|\| busy \|\| pin\.currentVersionNo === no\) return/);
+  assert.doesNotMatch(rail, /if \(!hit \|\| busy \|\| !versionsOk\) return/);
+  assert.doesNotMatch(dialog, /if \(!versionsOk \|\| versionBusy \|\| primary\?\.currentVersionNo === no\) return/);
+  assert.doesNotMatch(dialog, /busy=\{versionBusy \|\| !versionsOk\}/);
+  assert.match(rail, /send\("version\/restore"/);
+  assert.match(dialog, /send\("version\/restore"/);
 });
 
 test("existing versions still render the rail when health has not said versions are ok", () => {

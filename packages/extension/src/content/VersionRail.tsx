@@ -35,12 +35,11 @@ const ENTER_HOLD_SLACK_MS = 200;
     the copy flies over: flash + layout beat + flight, with a little slack. */
 const ENTER_HOLD_MS = DONE_FLASH_MS + ROW_LAYOUT_MS + FLIGHT_MS + ENTER_HOLD_SLACK_MS;
 /**
- * How long `flyKeyToRail` waits for the rail key to mount. The original
- * (key 1) is already on the rail from send; the take's numeral still has
- * to commit. Takeoff is a double rAF after Done — a missed frame must not
- * silently skip the flight.
+ * How long takeoff waits for the row key and the rail key to have layout.
+ * Incoming rail keys start `visibility: hidden` / collapsed; a short retry
+ * popped the numeral instead of flying it.
  */
-const RAIL_KEY_WAIT_MS = 300;
+const RAIL_KEY_WAIT_MS = 800;
 /** Kept for tests. Live flight always translates; distance does not dissolve. */
 export const LOCAL_FLIGHT_MIN_PX = 280;
 /** A press is a switch; movement past this is a carry. */
@@ -185,8 +184,9 @@ function flightHost(fromKey: HTMLElement): ShadowRoot | HTMLElement {
  * ghost is the numeral keycap the rail already shows — never the row's ⌥ —
  * and it lives on the shadow root so React cannot delete it mid-flight.
  *
- * The original is on the rail from send. If the take's destination key is
- * not mounted yet, retry on rAF for a short window rather than skipping.
+ * The original is on the rail from send. Takeoff waits until the row key
+ * has a real box and the destination rail key is mounted, retrying on rAF
+ * rather than skipping.
  */
 export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   const root = fromKey.getRootNode() as ShadowRoot | Document;
@@ -200,10 +200,12 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
 
   const started = performance.now();
   const tryFly = () => {
+    const fromBox = fromKey.getBoundingClientRect();
+    const rowReady = fromKey.isConnected && fromBox.width > 0 && fromBox.height > 0;
     const railKey = root.querySelector<HTMLElement>(
       `.pin-versions[data-rail="main"] .pin-key[data-no="${no}"]`,
     );
-    if (railKey) {
+    if (rowReady && railKey) {
       launchMintFlight(fromKey, railKey, done);
       return;
     }
@@ -214,6 +216,17 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
     requestAnimationFrame(tryFly);
   };
   tryFly();
+}
+
+/**
+ * ⌥+digit: the physical key (`e.code`) is the numeral. On a Mac Option+1
+ * types "¡", so `e.key === "1"` would never restore.
+ */
+export function versionShortcutDigit(e: { code: string; key: string }): number | null {
+  const fromCode = /^Digit([1-9])$/.exec(e.code)?.[1];
+  if (fromCode) return Number(fromCode);
+  if (e.code === "" && /^[1-9]$/.test(e.key)) return Number(e.key);
+  return null;
 }
 
 function launchMintFlight(fromKey: HTMLElement, railKey: HTMLElement, done: () => void): void {
@@ -305,9 +318,8 @@ export interface VersionLayerProps {
       the rail and every capture with it. */
   visible: boolean;
   /**
-   * Whether minting and restore can be honoured (needs a git tree). An
-   * existing rail still shows stored keys when this is false — health
-   * timing out must not hide keys that are already in chrome.storage.
+   * Whether minting can be honoured (needs a git tree). Restore is not
+   * gated on this: a visible key is pressable even when health timed out.
    */
   versionsOk: boolean;
   /**
@@ -357,7 +369,7 @@ export function VersionLayer({
   pin,
   liveRect,
   visible,
-  versionsOk,
+  versionsOk: _versionsOk,
   projectHead = null,
   busy,
   onBusy,
@@ -482,13 +494,23 @@ export function VersionLayer({
 
   const restore = useCallback(
     (no: number) => {
-      if (!versionsOk || busy || pin.currentVersionNo === no) return;
+      if (busy || pin.currentVersionNo === no) return;
       onBusy(true);
       void send("version/restore", { pinId: pin.id, no })
-        .catch(() => {})
+        .catch((err) => {
+          console.error("[pinnables] restore failed", err);
+          const message = err instanceof Error && err.message.trim() ? err.message : "Couldn’t restore that version.";
+          root().dispatchEvent(
+            new CustomEvent("pin:restore-failed", {
+              bubbles: true,
+              composed: true,
+              detail: { message },
+            }),
+          );
+        })
         .finally(() => onBusy(false));
     },
-    [versionsOk, busy, pin.currentVersionNo, pin.id, onBusy],
+    [busy, pin.currentVersionNo, pin.id, onBusy],
   );
 
   /** What a rail shows after this key leaves it, and who answers live. */
@@ -923,13 +945,10 @@ export function VersionLayer({
        * still says which numeral was pressed. Synthetic drivers (tests,
        * automation) send no code at all, so a bare digit key stands in then.
        */
-      const digit =
-        /^Digit([1-9])$/.exec(e.code)?.[1] ??
-        (e.code === "" && /^[1-9]$/.test(e.key) ? e.key : null);
-      if (e.altKey && digit) {
-        const want = Number(digit);
+      const want = versionShortcutDigit(e);
+      if (e.altKey && want !== null) {
         const hit = versions.find((v) => v.no === want);
-        if (!hit || busy || !versionsOk) return;
+        if (!hit || busy) return;
         e.preventDefault();
         e.stopPropagation();
         /*
@@ -958,7 +977,7 @@ export function VersionLayer({
       window.removeEventListener("keyup", up, true);
       window.removeEventListener("blur", blur);
     };
-  }, [showMain, versions, busy, versionsOk, homeOf, restore, captures, saveCaptures]);
+  }, [showMain, versions, busy, homeOf, restore, captures, saveCaptures]);
 
   /* ------------------------------------------------- arrival choreography */
 

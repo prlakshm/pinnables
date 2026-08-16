@@ -8,6 +8,7 @@ import {
   flightMode,
   LOCAL_FLIGHT_MIN_PX,
   seatRail,
+  versionShortcutDigit,
 } from "../packages/extension/src/content/VersionRail";
 import { versionInChapter, versionKeyFor } from "@pinnables/shared";
 
@@ -107,24 +108,45 @@ test("Done flash, flight hold, and ghost parenting match the handoff", () => {
   const dialog = source("../packages/extension/src/content/SelectionDialog.tsx");
   const rail = source("../packages/extension/src/content/VersionRail.tsx");
   assert.match(dialog, /DONE_FLASH_MS = 540/);
-  assert.match(dialog, /requestAnimationFrame\(\(\) => \{/);
   assert.doesNotMatch(dialog, /setTimeout\(\(\) => \{[\s\S]*flyKeyToRail[\s\S]*\}, 220\)/);
-  /* Flash starts when the board row becomes done, not when the poll first sees it. */
   assert.match(dialog, /const startDoneHandoff = useCallback/);
-  assert.match(dialog, /sent\.state === "done" && prev !== undefined && prev !== "done"/);
+  assert.match(dialog, /takeIsFresh/);
   const poll = dialog.slice(dialog.indexOf("const poll = useCallback"), dialog.indexOf("const staging ="));
   assert.doesNotMatch(poll, /setCompletedFlash/);
+  assert.doesNotMatch(poll, /flyKeyToRail/);
   assert.match(rail, /DONE_FLASH_MS = 540/);
   assert.match(rail, /ENTER_HOLD_MS = DONE_FLASH_MS \+ ROW_LAYOUT_MS \+ FLIGHT_MS \+ ENTER_HOLD_SLACK_MS/);
   assert.match(rail, /root instanceof ShadowRoot \? root : document\.body/);
   assert.match(rail, /querySelector\("\.pin-key__mod"\)\?\.remove\(\)/);
 });
 
+test("fly starts when versionNo appears even if the poll never set justSettled", () => {
+  const dialog = source("../packages/extension/src/content/SelectionDialog.tsx");
+  assert.match(dialog, /prevVersionNos/);
+  assert.match(dialog, /flownIds/);
+  assert.match(dialog, /newlyMinted/);
+  assert.match(dialog, /waitForKeysAndFly/);
+  assert.doesNotMatch(dialog, /setJustSettled/);
+  const poll = dialog.slice(dialog.indexOf("const poll = useCallback"), dialog.indexOf("const staging ="));
+  assert.doesNotMatch(poll, /justSettled/);
+  assert.doesNotMatch(poll, /flyKeyToRail/);
+});
+
+test("Option+DigitN restores even when e.key is the Mac Option glyph", () => {
+  assert.equal(versionShortcutDigit({ code: "Digit1", key: "¡" }), 1);
+  assert.equal(versionShortcutDigit({ code: "Digit2", key: "™" }), 2);
+  assert.equal(versionShortcutDigit({ code: "Digit1", key: "1" }), 1);
+  assert.equal(versionShortcutDigit({ code: "", key: "3" }), 3);
+  assert.equal(versionShortcutDigit({ code: "", key: "¡" }), null);
+});
+
 test("flyKeyToRail always translates and waits for the rail key", () => {
   const rail = source("../packages/extension/src/content/VersionRail.tsx");
   const fly = rail.slice(rail.indexOf("export function flyKeyToRail"), rail.indexOf("function launchMintFlight"));
   const launch = rail.slice(rail.indexOf("function launchMintFlight"));
+  assert.match(rail, /RAIL_KEY_WAIT_MS = 800/);
   assert.match(fly, /RAIL_KEY_WAIT_MS/);
+  assert.match(fly, /getBoundingClientRect/);
   assert.match(fly, /requestAnimationFrame\(tryFly\)/);
   assert.doesNotMatch(fly, /flightMode\(/);
   assert.doesNotMatch(launch, /flightMode\(/);
