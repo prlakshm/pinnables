@@ -102,6 +102,7 @@ test("reopening after submission replaces a ready active board with one shared d
       captureMode: false,
       activeBoardId: submitted.id,
       serviceOnline: true,
+      cursorConfigured: false,
       cursorOnline: false,
     } satisfies ExtensionState,
     boardIds: [submitted.id],
