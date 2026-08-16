@@ -235,7 +235,8 @@ export const PinSchema = z.object({
   /**
    * The states this pin's runs have produced, keyed 1..5 — see
    * `PinVersionSchema`. The original slips in as key 1 when the first run
-   * lands, so the numeral order is the order things happened in.
+   * in the chapter starts, so the rail can show during Working and done
+   * only adds the take.
    */
   versions: z.array(PinVersionSchema).default([]),
   /**
@@ -246,8 +247,8 @@ export const PinSchema = z.object({
   versionSeq: z.number().int().default(0),
   /**
    * Which key the working tree is wearing, as far as this pin knows. Null
-   * until the first run lands. This is the lit key on the rail, and the
-   * `fromMessageId` a restore reverses out of.
+   * until the first run in the chapter starts (original = 1). This is the
+   * lit key on the rail, and the `fromMessageId` a restore reverses out of.
    */
   currentVersionNo: z.number().int().nullable().default(null),
   /**

@@ -140,6 +140,10 @@ export function SelectionDialog({
   const [flashLeaving, setFlashLeaving] = useState<Set<string>>(new Set());
   /** A row whose Done just cleared — its keycap flies to the rail. */
   const [justSettled, setJustSettled] = useState<string | null>(null);
+  /** Last known live-send state, so Done flash starts on the transition. */
+  const prevSentStates = useRef<Map<string, LiveSend["state"]>>(new Map());
+  /** One Working → Done → key → fly handoff per messageId. */
+  const doneHandoffStarted = useRef<Set<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
   const pollTimer = useRef<number | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -218,6 +222,45 @@ export function SelectionDialog({
     if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
   }, [selectionKey]);
 
+  /*
+   * Working → Done → keycap → fly. The flash starts when the board row
+   * actually becomes done, not when the poll first sees it — otherwise
+   * reconcile can apply the outcome in one shot and the row skips Done
+   * (and the fly, because justSettled never fires).
+   */
+  const startDoneHandoff = useCallback((messageId: string) => {
+    if (doneHandoffStarted.current.has(messageId)) return;
+    doneHandoffStarted.current.add(messageId);
+    setCompletedFlash((previous) => new Set(previous).add(messageId));
+    window.setTimeout(() => {
+      setFlashLeaving((previous) => new Set(previous).add(messageId));
+    }, DONE_FLASH_MS - 260);
+    window.setTimeout(() => {
+      setCompletedFlash((previous) => {
+        const next = new Set(previous);
+        next.delete(messageId);
+        return next;
+      });
+      setFlashLeaving((previous) => {
+        const next = new Set(previous);
+        next.delete(messageId);
+        return next;
+      });
+      setJustSettled(messageId);
+    }, DONE_FLASH_MS);
+  }, []);
+
+  useEffect(() => {
+    for (const sent of primary?.liveSends ?? []) {
+      if (!sent.messageId) continue;
+      const prev = prevSentStates.current.get(sent.messageId);
+      prevSentStates.current.set(sent.messageId, sent.state);
+      if (sent.state === "done" && prev !== undefined && prev !== "done") {
+        startDoneHandoff(sent.messageId);
+      }
+    }
+  }, [primary?.liveSends, startDoneHandoff]);
+
   const poll = useCallback((messageId: string, key: string) => {
     const startedAt = Date.now();
     const tick = async () => {
@@ -270,31 +313,7 @@ export function SelectionDialog({
         // The outcome belongs to the board, not to this bar — recording it is
         // what resolves the history tag even after this dialog is gone.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
-        if (status.state === "done") {
-          /*
-           * The "Done" tag is the first beat of the handoff: it holds just
-           * long enough to read, then narrows away and the keycap takes the
-           * seat and flies. The row itself stays — a finished line's number
-           * is the way back to its state.
-           */
-          setCompletedFlash((previous) => new Set(previous).add(messageId));
-          window.setTimeout(() => {
-            setFlashLeaving((previous) => new Set(previous).add(messageId));
-          }, DONE_FLASH_MS - 260);
-          window.setTimeout(() => {
-            setCompletedFlash((previous) => {
-              const next = new Set(previous);
-              next.delete(messageId);
-              return next;
-            });
-            setFlashLeaving((previous) => {
-              const next = new Set(previous);
-              next.delete(messageId);
-              return next;
-            });
-            setJustSettled(messageId);
-          }, DONE_FLASH_MS);
-        }
+        // Done flash starts when the board row becomes done (see startDoneHandoff).
       } catch {
         if (selectionKeyRef.current !== key) return;
         setPhase({ kind: "failed", detail: "Lost contact with the local service." });

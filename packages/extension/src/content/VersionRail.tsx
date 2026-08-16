@@ -35,9 +35,10 @@ const ENTER_HOLD_SLACK_MS = 200;
     the copy flies over: flash + layout beat + flight, with a little slack. */
 const ENTER_HOLD_MS = DONE_FLASH_MS + ROW_LAYOUT_MS + FLIGHT_MS + ENTER_HOLD_SLACK_MS;
 /**
- * How long `flyKeyToRail` waits for the rail key to mount. The rail only
- * exists at ≥2 keys, and takeoff is a double rAF after Done — a missed
- * frame must not silently skip the flight.
+ * How long `flyKeyToRail` waits for the rail key to mount. The original
+ * (key 1) is already on the rail from send; the take's numeral still has
+ * to commit. Takeoff is a double rAF after Done — a missed frame must not
+ * silently skip the flight.
  */
 const RAIL_KEY_WAIT_MS = 300;
 /** Kept for tests. Live flight always translates; distance does not dissolve. */
@@ -184,8 +185,8 @@ function flightHost(fromKey: HTMLElement): ShadowRoot | HTMLElement {
  * ghost is the numeral keycap the rail already shows — never the row's ⌥ —
  * and it lives on the shadow root so React cannot delete it mid-flight.
  *
- * The rail only exists at ≥2 keys. If the destination is not mounted yet,
- * retry on rAF for a short window rather than skipping the motion.
+ * The original is on the rail from send. If the take's destination key is
+ * not mounted yet, retry on rAF for a short window rather than skipping.
  */
 export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   const root = fromKey.getRootNode() as ShadowRoot | Document;
@@ -406,7 +407,7 @@ export function VersionLayer({
   const seenVersions = useRef<Set<string>>(new Set());
   const shotTried = useRef<Set<string>>(new Set());
 
-  const showMain = visible && versions.length >= 2 && liveRect !== null;
+  const showMain = visible && versions.length >= 1 && liveRect !== null;
 
   /* ------------------------------------------------------------ helpers */
 
@@ -1037,7 +1038,7 @@ export function VersionLayer({
 
   /* ------------------------------------------------------------- render */
 
-  if (!visible || versions.length < 2) return null;
+  if (!visible || versions.length < 1) return null;
 
   const lit = pin.currentVersionNo;
 

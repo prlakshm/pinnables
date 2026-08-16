@@ -45,6 +45,12 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       { status: 200 },
     );
   }
+  if (url.endsWith("/messages")) {
+    return new Response(
+      JSON.stringify({ messageId: "live-1", transport: "local", url: null, state: "starting" }),
+      { status: 200 },
+    );
+  }
   if (/\/versions\/[^/]+\/restore$/.test(url)) {
     restoreCalls.push({ url, body: JSON.parse(String(init?.body ?? "{}")) });
     return new Response(
@@ -190,6 +196,48 @@ function ver(no: number, messageId: string | null, label = `take ${no}`): PinVer
 }
 
 /* ------------------------------------------------------------------ mint */
+
+test("the first send on a pin with no versions mints original as key 1 immediately", async () => {
+  healthVersionsOk = true;
+  install(boardWith([pinWith({})]));
+
+  const res = await dispatch<{ messageId: string }>({
+    type: "agent/send",
+    text: "change card background to rose",
+    pinIds: ["pin-v"],
+  });
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].messageId, "live-1");
+  assert.equal(pin.liveSends[0].versionNo, null, "the take is not minted until done");
+  assert.equal(pin.versionSeq, 1);
+  assert.equal(pin.currentVersionNo, 1);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId, v.label]),
+    [[1, null, "original"]],
+  );
+});
+
+test("that run's done mints only the take and does not re-mint original", async () => {
+  const res = await dispatch({ type: "agent/recordOutcome", messageId: "live-1", state: "done" });
+  assert.equal(res.ok, true);
+
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.versionSeq, 2);
+  assert.equal(pin.currentVersionNo, 2);
+  assert.equal(pin.versions.filter((v) => v.label === "original").length, 1);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId, v.label]),
+    [
+      [1, null, "original"],
+      [2, "live-1", "change card background to rose"],
+    ],
+  );
+  assert.equal(pin.liveSends[0].state, "done");
+  assert.equal(pin.liveSends[0].versionNo, 2);
+});
 
 test("a run landing done mints the original plus its own key", async () => {
   healthVersionsOk = true;

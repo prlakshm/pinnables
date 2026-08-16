@@ -473,6 +473,34 @@ function assertDraftBoard(board: Board): void {
   if (board.status !== "draft") throw new Error("Board changes require a draft board");
 }
 
+/**
+ * The original (key 1) is the chapter baseline, minted when the first run
+ * in that chapter starts — not when it lands. The rail can then show 1
+ * during Working, and done only adds the take that flies onto it.
+ */
+function withOriginalBaseline(pin: Pin, head: string | null, canMint: boolean): Pin {
+  if (!canMint) return pin;
+  const versions = pin.versions ?? [];
+  const visible = versions.filter((v) => versionInChapter(v, head));
+  if (visible.length > 0) return pin;
+  return {
+    ...pin,
+    versions: [
+      ...versions,
+      {
+        no: 1,
+        messageId: null,
+        label: "original",
+        at: pin.createdAt,
+        screenshotKey: null,
+        head,
+      },
+    ],
+    versionSeq: Math.max(pin.versionSeq ?? 0, 1),
+    currentVersionNo: 1,
+  };
+}
+
 /** Single undo slot for "Clear all" — see the board/clear handler. */
 const CLEAR_STASH_KEY = "clearedBoardStash";
 
@@ -896,27 +924,32 @@ const handlers: Handlers = {
           const now = new Date().toISOString();
           const sendState = result.state === "queued" ? ("queued" as const) : ("starting" as const);
           const messageId = result.messageId;
+          const mintHead = health.versions?.head ?? null;
+          const canMintOriginal = Boolean(health.versions?.ok);
           return {
             ...ready,
-            pins: ready.pins.map((pin) => ({
-              ...pin,
-              liveSends: [
-                ...(pin.liveSends ?? []),
-                {
-                  /* The row wears the pin's own words for it — its staged
-                     notes — falling back to the board's one instruction. */
-                  text:
-                    pin.annotation.trim().replace(/\s*\n\s*/g, " · ") ||
-                    ready.globalInstruction.trim() ||
-                    "Board submission",
-                  at: now,
-                  messageId,
-                  state: sendState,
-                  versionNo: null,
-                  head: health.versions?.head ?? null,
-                },
-              ],
-            })),
+            pins: ready.pins.map((pin) => {
+              const baselined = withOriginalBaseline(pin, mintHead, canMintOriginal);
+              return {
+                ...baselined,
+                liveSends: [
+                  ...(baselined.liveSends ?? []),
+                  {
+                    /* The row wears the pin's own words for it — its staged
+                       notes — falling back to the board's one instruction. */
+                    text:
+                      pin.annotation.trim().replace(/\s*\n\s*/g, " · ") ||
+                      ready.globalInstruction.trim() ||
+                      "Board submission",
+                    at: now,
+                    messageId,
+                    state: sendState,
+                    versionNo: null,
+                    head: mintHead,
+                  },
+                ],
+              };
+            }),
           };
         }
       } catch (error) {
@@ -1187,28 +1220,30 @@ const handlers: Handlers = {
      * it, the row keeps its words and leaves the box.
      */
     const now = new Date().toISOString();
-    const sendHead = (await getHealth())?.versions?.head ?? null;
+    const health = await getHealth();
+    const sendHead = health?.versions?.head ?? null;
+    const canMintOriginal = Boolean(health?.versions?.ok);
     await store.mutateBoard(board.id, (b) => {
       assertDraftBoard(b);
       return {
         ...b,
-        pins: b.pins.map((pin) =>
-          pinIds.includes(pin.id)
-            ? {
-                ...pin,
-                liveSends: [
-                  // A resend supersedes the entry it retries — the history
-                  // keeps one line per intention, not one per attempt.
-                  ...pin.liveSends.filter(
-                    (sent) => !resendOf || sent.messageId !== resendOf,
-                  ),
-                  { text, at: now, messageId, state: sendState, versionNo: null, head: sendHead },
-                ],
-                provisional: false,
-                updatedAt: now,
-              }
-            : pin,
-        ),
+        pins: b.pins.map((pin) => {
+          if (!pinIds.includes(pin.id)) return pin;
+          const baselined = withOriginalBaseline(pin, sendHead, canMintOriginal);
+          return {
+            ...baselined,
+            liveSends: [
+              // A resend supersedes the entry it retries — the history
+              // keeps one line per intention, not one per attempt.
+              ...(baselined.liveSends ?? []).filter(
+                (sent) => !resendOf || sent.messageId !== resendOf,
+              ),
+              { text, at: now, messageId, state: sendState, versionNo: null, head: sendHead },
+            ],
+            provisional: false,
+            updatedAt: now,
+          };
+        }),
       };
     });
     await notifyBoardChanged(board.id);
@@ -1275,6 +1310,12 @@ const handlers: Handlers = {
          */
         const visible = versions.filter((v) => versionInChapter(v, mintHead));
         if (visible.length === 0) {
+          /*
+           * Fallback when done arrives without a start mint (older tests,
+           * a send that could not snapshot). The happy path already put
+           * original=1 on the pin at agent/send; this must not run then,
+           * or the rail is born in the same frame as the flying take.
+           */
           captures = captures.filter((cap) => cap.pinId !== pin.id);
           const minted = [
             {

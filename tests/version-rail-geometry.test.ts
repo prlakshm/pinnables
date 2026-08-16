@@ -109,6 +109,11 @@ test("Done flash, flight hold, and ghost parenting match the handoff", () => {
   assert.match(dialog, /DONE_FLASH_MS = 540/);
   assert.match(dialog, /requestAnimationFrame\(\(\) => \{/);
   assert.doesNotMatch(dialog, /setTimeout\(\(\) => \{[\s\S]*flyKeyToRail[\s\S]*\}, 220\)/);
+  /* Flash starts when the board row becomes done, not when the poll first sees it. */
+  assert.match(dialog, /const startDoneHandoff = useCallback/);
+  assert.match(dialog, /sent\.state === "done" && prev !== undefined && prev !== "done"/);
+  const poll = dialog.slice(dialog.indexOf("const poll = useCallback"), dialog.indexOf("const staging ="));
+  assert.doesNotMatch(poll, /setCompletedFlash/);
   assert.match(rail, /DONE_FLASH_MS = 540/);
   assert.match(rail, /ENTER_HOLD_MS = DONE_FLASH_MS \+ ROW_LAYOUT_MS \+ FLIGHT_MS \+ ENTER_HOLD_SLACK_MS/);
   assert.match(rail, /root instanceof ShadowRoot \? root : document\.body/);

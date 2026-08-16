@@ -191,13 +191,61 @@ test("the rail shows the remainder: keys held by captures leave the main rail", 
   assert.match(html, /pin-versions__mod/);
 });
 
-test("one key is no rail: nothing renders until there are two states", () => {
+test("no versions is no rail", () => {
+  assert.equal(renderLayer(pinWith({})), "");
+});
+
+test("the original key is a rail so the first take has somewhere to land", () => {
   const pin = pinWith({
     versionSeq: 1,
     currentVersionNo: 1,
     versions: [ver(1, null, "original")],
   });
-  assert.equal(renderLayer(pin), "");
+  const html = renderLayer(pin);
+  assert.match(html, /data-rail="main"/);
+  assert.match(html, /data-no="1"/);
+  assert.doesNotMatch(html, /data-no="2"/);
+});
+
+test("a working row wears Working, not the original or a take key", () => {
+  const pin = pinWith({
+    versionSeq: 1,
+    currentVersionNo: 1,
+    versions: [ver(1, null, "original")],
+    liveSends: [
+      {
+        text: "change card background to rose",
+        at: "2026-08-13T00:01:00.000Z",
+        messageId: "m-new",
+        state: "working",
+        versionNo: null,
+      },
+    ],
+  });
+  const html = renderDialog(pin);
+  assert.match(html, /Working/);
+  assert.doesNotMatch(html, /data-msg="m-new"/);
+  assert.doesNotMatch(html, /data-no="2"/);
+});
+
+test("a settled take row wears only its own numeral, never the original as well", () => {
+  const pin = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [ver(1, null, "original"), ver(2, "m-new", "change card background to rose")],
+    liveSends: [
+      {
+        text: "change card background to rose",
+        at: "2026-08-13T00:01:00.000Z",
+        messageId: "m-new",
+        state: "done",
+        versionNo: 2,
+      },
+    ],
+  });
+  const html = renderDialog(pin);
+  assert.match(html, /data-msg="m-new"[^>]*data-no="2"|data-no="2"[^>]*data-msg="m-new"/);
+  assert.equal([...html.matchAll(/data-no="/g)].length, 1);
 });
 
 test("existing versions still render the rail when health has not said versions are ok", () => {
@@ -217,9 +265,9 @@ test("versionsOk no longer hides an existing rail in source", () => {
     new URL("../packages/extension/src/content/VersionRail.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(rail, /const showMain = visible && versions\.length >= 2 && liveRect !== null/);
-  assert.match(rail, /if \(!visible \|\| versions\.length < 2\) return null/);
-  assert.doesNotMatch(rail, /if \(!visible \|\| !versionsOk \|\| versions\.length < 2\) return null/);
+  assert.match(rail, /const showMain = visible && versions\.length >= 1 && liveRect !== null/);
+  assert.match(rail, /if \(!visible \|\| versions\.length < 1\) return null/);
+  assert.doesNotMatch(rail, /if \(!visible \|\| !versionsOk \|\| versions\.length < 1\) return null/);
 });
 
 test("existing versions still render the rail when the chapter head is not known yet", () => {
