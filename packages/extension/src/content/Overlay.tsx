@@ -2591,6 +2591,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       if (event.button !== 0) return;
       const primary = liveSelectedPins[0];
       if (!primary || !chromePlacement) return;
+      /*
+       * Pointerdown's default action starts a text selection, which is right
+       * for the box's inert surface but not for a drag handle. Safe to swallow
+       * unconditionally here: SelectionDialog has already filtered the target
+       * to exclude every interactive child (textarea, button, a, .pin-key,
+       * .pin-kbd), so this can never eat the focus click on the input, a
+       * version key press, or Resend — only the selection-drag on plain text.
+       */
+      event.preventDefault();
       const start = { x: event.clientX, y: event.clientY };
       const origin = { x: chromePlacement.box.x, y: chromePlacement.box.y };
       let moved = false;
