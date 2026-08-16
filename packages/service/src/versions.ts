@@ -101,6 +101,12 @@ export function peekVersionsHealth(): VersionsHealth | null {
   return versionsHealthCache;
 }
 
+/** Drop last-known versions info so tests can exercise the empty-cache path. */
+export function resetVersionsHealthCache(): void {
+  versionsHealthCache = null;
+  versionsHealthInflight = null;
+}
+
 /** Refresh the last-known versions snapshot. Safe to call from a ticker. */
 export async function refreshVersionsHealth(): Promise<VersionsHealth> {
   const avail = await versionsAvailable();
@@ -112,6 +118,9 @@ export async function refreshVersionsHealth(): Promise<VersionsHealth> {
 /**
  * Last-known versions info for /health. Kicks a background refresh and
  * never waits on git — a slow rev-parse must not stall the health budget.
+ *
+ * An empty cache is "not yet known", not "no git". Returning ok:false here
+ * would hide the version rail on the first panel poll of a cold start.
  */
 export function versionsHealthSnapshot(): VersionsHealth {
   if (!versionsHealthInflight) {
@@ -119,7 +128,7 @@ export function versionsHealthSnapshot(): VersionsHealth {
       versionsHealthInflight = null;
     });
   }
-  return versionsHealthCache ?? { ok: false, detail: null, head: null };
+  return versionsHealthCache ?? { ok: true, detail: null, head: null };
 }
 
 export interface VersionMeta {

@@ -8,7 +8,10 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { liveFieldsFromHealth } from "../packages/extension/src/lib/service.ts";
-import { versionsHealthSnapshot } from "../packages/service/src/versions.ts";
+import {
+  resetVersionsHealthCache,
+  versionsHealthSnapshot,
+} from "../packages/service/src/versions.ts";
 
 const mkdtempAsync = promisify(mkdtemp);
 const root = new URL("../", import.meta.url);
@@ -66,6 +69,21 @@ test("setup banner hides on cursorConfigured, not on a failed probe", () => {
   assert.match(bg, /liveFieldsFromHealth\(health\)/);
 });
 
+test("versionsHealthSnapshot does not report ok:false when the cache is empty", () => {
+  resetVersionsHealthCache();
+  const started = Date.now();
+  const snap = versionsHealthSnapshot();
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 50, `snapshot must be sync, took ${elapsed}ms`);
+  assert.notEqual(
+    snap.ok,
+    false,
+    "unknown must not look like no git — that hides the version rail on cold start",
+  );
+  assert.equal(snap.detail, null);
+  assert.equal(snap.head, null);
+});
+
 test("versionsHealthSnapshot returns last-known info without awaiting git", () => {
   const started = Date.now();
   const snap = versionsHealthSnapshot();
@@ -115,6 +133,7 @@ test("GET /health reports configured:true quickly without calling the Cursor API
     const elapsed = Date.now() - started;
     const body = (await res.json()) as {
       ok: boolean;
+      versions: { ok: boolean; detail: string | null; head: string | null };
       cursor: {
         configured: boolean;
         ok: boolean;
@@ -124,6 +143,11 @@ test("GET /health reports configured:true quickly without calling the Cursor API
     };
     assert.equal(res.ok, true);
     assert.equal(body.ok, true);
+    assert.equal(
+      body.versions.ok,
+      true,
+      "listen waits for the first versions refresh, so a git tree must not look unknown",
+    );
     assert.equal(body.cursor.configured, true);
     assert.equal(body.cursor.runtime, "cloud");
     assert.equal(body.cursor.queueLength, 0);

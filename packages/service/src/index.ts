@@ -884,39 +884,50 @@ const server = createServer((req, res) => {
   })();
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`pinnables service on http://${HOST}:${PORT}`);
-  console.log(`boards → ${pinnablesHome()}`);
-  if (cursorConfigured()) {
-    const runtime = cursorRuntime();
-    if (runtime === "local") {
-      console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
+function startListening(): void {
+  server.listen(PORT, HOST, () => {
+    console.log(`pinnables service on http://${HOST}:${PORT}`);
+    console.log(`boards → ${pinnablesHome()}`);
+    if (cursorConfigured()) {
+      const runtime = cursorRuntime();
+      if (runtime === "local") {
+        console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
+      } else {
+        console.log("Cursor Cloud Agents: configured (Send will push to remote)");
+      }
     } else {
-      console.log("Cursor Cloud Agents: configured (Send will push to remote)");
+      console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
     }
-  } else {
-    console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
-  }
-  // Warm caches off the /health path so the first panel poll stays cheap.
-  void refreshVersionsHealth().catch(() => {
-    /* versionsHealthSnapshot already returns last-known / a safe default */
+    if (cursorConfigured()) {
+      // Keep the queue moving when the extension is not polling a finished run.
+      // Cursor probes stay on this ticker — never on GET /health.
+      setInterval(() => {
+        void refreshActiveCursorRuns().catch((err) => {
+          console.error(
+            "queue tick failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+        scheduleCursorProbe();
+        void refreshVersionsHealth().catch(() => {});
+      }, 2_500);
+    } else {
+      setInterval(() => {
+        void refreshVersionsHealth().catch(() => {});
+      }, 2_500);
+    }
   });
-  if (cursorConfigured()) {
-    // Keep the queue moving when the extension is not polling a finished run.
-    // Cursor probes stay on this ticker — never on GET /health.
-    setInterval(() => {
-      void refreshActiveCursorRuns().catch((err) => {
-        console.error(
-          "queue tick failed:",
-          err instanceof Error ? err.message : String(err),
-        );
-      });
-      scheduleCursorProbe();
-      void refreshVersionsHealth().catch(() => {});
-    }, 2_500);
-  } else {
-    setInterval(() => {
-      void refreshVersionsHealth().catch(() => {});
-    }, 2_500);
-  }
-});
+}
+
+// One git check at boot, before we accept connections. /health itself stays
+// sync and never waits on git or a Cursor probe.
+void refreshVersionsHealth()
+  .catch((err) => {
+    console.error(
+      "versions warmup failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  })
+  .then(() => {
+    startListening();
+  });
