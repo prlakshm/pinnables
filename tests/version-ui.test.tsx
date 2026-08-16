@@ -357,7 +357,7 @@ function renderLayerWithHead(pin: Pin, projectHead: string | null): string {
   );
 }
 
-test("stale keys leave the rail; a chapter with under two fresh keys has no rail", () => {
+test("stale keys leave the rail; a chapter with no fresh keys has no rail", () => {
   const mixed = pinWith({
     versionSeq: 4,
     currentVersionNo: 4,
