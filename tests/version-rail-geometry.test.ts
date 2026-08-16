@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { composerScoot, seatRail } from "../packages/extension/src/content/VersionRail";
+import {
+  composerScoot,
+  mintFlightLimit,
+  MINT_FLY_MAX_PX,
+  MINT_FLY_VIEWPORT_FRACTION,
+  seatRail,
+  shouldFlyMintKey,
+} from "../packages/extension/src/content/VersionRail";
 import { versionKeyFor } from "@pinnables/shared";
 
 /**
@@ -77,4 +84,28 @@ test("the composer steps down for a rail on its doorstep, and no further", () =>
 
 test("numerals ring 1..5 and start over", () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 11].map(versionKeyFor), [1, 2, 3, 4, 5, 1, 2, 1]);
+});
+
+test("a nearby mint still flies; a long hop dissolves", () => {
+  const viewport = { width: 1280, height: 800 };
+  /* 30% of 800 is 240, so the cap is the 240px ceiling. */
+  assert.equal(mintFlightLimit(viewport), MINT_FLY_MAX_PX);
+
+  const from = { left: 100, top: 400 };
+  assert.equal(shouldFlyMintKey(from, { left: 220, top: 280 }, viewport), true);
+  assert.equal(shouldFlyMintKey(from, { left: 100 + MINT_FLY_MAX_PX, top: 400 }, viewport), true);
+  assert.equal(shouldFlyMintKey(from, { left: 100 + MINT_FLY_MAX_PX + 1, top: 400 }, viewport), false);
+  /* Diagonal past the cap — the old always-fly path would slide this. */
+  assert.equal(shouldFlyMintKey(from, { left: 500, top: 80 }, viewport), false);
+});
+
+test("a short viewport tightens the flight cap to 30% of its shorter side", () => {
+  const viewport = { width: 400, height: 300 };
+  const cap = mintFlightLimit(viewport);
+  assert.equal(cap, MINT_FLY_VIEWPORT_FRACTION * 300);
+  assert.ok(cap < MINT_FLY_MAX_PX);
+
+  const from = { left: 20, top: 20 };
+  assert.equal(shouldFlyMintKey(from, { left: 20 + cap, top: 20 }, viewport), true);
+  assert.equal(shouldFlyMintKey(from, { left: 20 + cap + 1, top: 20 }, viewport), false);
 });

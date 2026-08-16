@@ -28,9 +28,19 @@ import type { Box } from "./chrome-placement";
 /* Timing, from the mock. */
 const DONE_FLASH_MS = 1200;
 const FLIGHT_MS = 430;
+/** In-place dissolve when the box and rail are too far for a slide. */
+const DISSOLVE_MS = 280;
 /** How long a fresh key stays collapsed while its chat row flashes Done and
     the copy flies over: flash + row-grow beat + flight, with a little slack. */
 const ENTER_HOLD_MS = DONE_FLASH_MS + 220 + FLIGHT_MS + 400;
+/**
+ * Longest Euclidean flight we will still draw. A slide across half the page
+ * reads as a different gesture than "this key moved from the row to the rail."
+ */
+export const MINT_FLY_MAX_PX = 240;
+/** On a short viewport 240px is already a long way; never fly farther than
+    this fraction of the shorter side. */
+export const MINT_FLY_VIEWPORT_FRACTION = 0.3;
 /** A press is a switch; movement past this is a carry. */
 const DRAG_THRESHOLD = 5;
 /** Gap between a card and its seated rail, and inside the composer scoot. */
@@ -127,12 +137,68 @@ export function composerScoot(rail: RailBox, card: RailBox, note: RailBox): numb
 /* ------------------------------------------------------------------ flight */
 
 /**
+ * Whether the mint copy should slide from the chat row to the rail.
+ *
+ * A short hop is the motion that says the two keycaps are the same key.
+ * Past the cap — 240px, or 30% of the shorter viewport side when that is
+ * smaller — a linear flight just looks like a thing sliding across the page.
+ */
+export function mintFlightLimit(viewport: { width: number; height: number }): number {
+  return Math.min(
+    MINT_FLY_MAX_PX,
+    MINT_FLY_VIEWPORT_FRACTION * Math.min(viewport.width, viewport.height),
+  );
+}
+
+export function shouldFlyMintKey(
+  from: { left: number; top: number },
+  to: { left: number; top: number },
+  viewport: { width: number; height: number },
+): boolean {
+  return Math.hypot(to.left - from.left, to.top - from.top) <= mintFlightLimit(viewport);
+}
+
+/** Number-only ghost: the row's ⌥ is chrome, not something that flies. */
+function mintGhost(fromKey: HTMLElement): HTMLElement {
+  const ghost = fromKey.cloneNode(true) as HTMLElement;
+  ghost.removeAttribute("data-no");
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.querySelector(".pin-key__mod")?.remove();
+  return ghost;
+}
+
+function placeMintGhost(
+  ghost: HTMLElement,
+  from: DOMRect,
+  size: { width: number; height: number },
+): { left: number; top: number } {
+  const left = from.left + (from.width - size.width) / 2;
+  const top = from.top + (from.height - size.height) / 2;
+  ghost.style.cssText =
+    "position:fixed;margin:0;z-index:9999;pointer-events:none;" +
+    `left:${left}px;top:${top}px;` +
+    `width:${size.width}px;height:${size.height}px;max-width:none;`;
+  return { left, top };
+}
+
+function landRailKey(railKey: HTMLElement, done: () => void): void {
+  railKey.style.visibility = "";
+  railKey.dataset.landed = "true";
+  window.setTimeout(() => railKey.removeAttribute("data-landed"), 560);
+  done();
+}
+
+/**
  * The key flies out of the chat row and into the rail.
  *
  * Without it the two keycaps just appear in two places a beat apart, and
  * nothing says they are the same key. Exported for SelectionDialog, whose
  * settled row is where the flight begins; the rail key is found by number so
  * neither component needs a ref into the other.
+ *
+ * The ghost is the numeral keycap the rail already shows — never the row's
+ * ⌥. When the hop would be long, the source key dissolves in place instead
+ * of sliding, and the rail still opens its gap and land-pulses.
  */
 export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   const root = fromKey.getRootNode() as ShadowRoot | Document;
@@ -159,52 +225,55 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   railKey.style.transition = "";
 
   const from = fromKey.getBoundingClientRect();
-  const ghost = fromKey.cloneNode(true) as HTMLElement;
-  ghost.removeAttribute("data-no");
-  ghost.setAttribute("aria-hidden", "true");
-  ghost.style.cssText =
-    "position:fixed;margin:0;z-index:9999;pointer-events:none;" +
-    `left:${from.left}px;top:${from.top}px;` +
-    `width:${from.width}px;height:${from.height}px;max-width:none;` +
-    "transition:transform 420ms var(--ease), width 420ms var(--ease);";
-  /*
-   * The two rails write a key differently: a chat row carries its own ⌥
-   * because it stands alone, while the rail has one at its head for all of
-   * them. So the copy sheds its modifier on the way over and arrives in the
-   * form the rail uses — the same key, in the local dialect.
-   */
-  const ghostMod = ghost.querySelector<HTMLElement>(".pin-key__mod");
-  if (ghostMod) {
-    ghostMod.style.cssText =
-      "overflow:hidden;max-width:20px;" +
-      "transition:max-width 300ms var(--ease), margin-right 300ms var(--ease), opacity 200ms ease;";
-  }
-  (railKey.closest(".pin-overlay") ?? fromKey.parentElement ?? document.body).appendChild(ghost);
+  const host = railKey.closest(".pin-overlay") ?? fromKey.parentElement ?? document.body;
+  const ghost = mintGhost(fromKey);
+  const start = placeMintGhost(ghost, from, to);
 
-  /* The gap opens now, over the same time the copy spends travelling. */
+  /* The gap opens now, over the same time the copy spends arriving. */
   railKey.dataset.entering = "false";
+
+  const fly = shouldFlyMintKey(from, to, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
+  if (!fly) {
+    /* Hide the row key for the beat so its ⌥ is not the thing dissolving. */
+    fromKey.style.visibility = "hidden";
+    ghost.style.transition = `transform ${DISSOLVE_MS}ms var(--ease), opacity ${DISSOLVE_MS}ms ease`;
+    host.appendChild(ghost);
+    let kicked = false;
+    const kick = () => {
+      if (kicked) return;
+      kicked = true;
+      ghost.style.transform = "scale(0.55)";
+      ghost.style.opacity = "0";
+    };
+    requestAnimationFrame(kick);
+    window.setTimeout(kick, 24);
+    window.setTimeout(() => {
+      ghost.remove();
+      fromKey.style.visibility = "";
+      landRailKey(railKey, done);
+    }, DISSOLVE_MS);
+    return;
+  }
+
+  ghost.style.transition = "transform 420ms var(--ease)";
+  host.appendChild(ghost);
 
   let kicked = false;
   const kick = () => {
     if (kicked) return;
     kicked = true;
-    ghost.style.transform = `translate(${to.left - from.left}px, ${to.top - from.top}px)`;
-    ghost.style.width = `${to.width}px`;
-    if (ghostMod) {
-      ghostMod.style.maxWidth = "0px";
-      ghostMod.style.marginRight = "0px";
-      ghostMod.style.opacity = "0";
-    }
+    ghost.style.transform = `translate(${to.left - start.left}px, ${to.top - start.top}px)`;
   };
   requestAnimationFrame(kick);
   window.setTimeout(kick, 24);
 
   window.setTimeout(() => {
     ghost.remove();
-    railKey.style.visibility = "";
-    railKey.dataset.landed = "true";
-    window.setTimeout(() => railKey.removeAttribute("data-landed"), 560);
-    done();
+    landRailKey(railKey, done);
   }, FLIGHT_MS);
 }
 
