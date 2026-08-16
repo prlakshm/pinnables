@@ -630,7 +630,6 @@ test("service /boards/:id/push uses Cursor when configured", async () => {
     const health = await fetch(`http://127.0.0.1:${servicePort}/health`).then((r) => r.json());
     assert.equal(health.ok, true);
     assert.equal(health.cursor.configured, true);
-    assert.equal(health.cursor.ok, true);
     assert.equal(health.cursor.runtime, "cloud");
 
     const pushedRes = await fetch(`http://127.0.0.1:${servicePort}/boards/board-push-test/push`, {

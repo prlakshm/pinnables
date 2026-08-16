@@ -92,6 +92,40 @@ export async function versionsAvailable(): Promise<{ ok: boolean; detail: string
   }
 }
 
+export type VersionsHealth = { ok: boolean; detail: string | null; head: string | null };
+
+let versionsHealthCache: VersionsHealth | null = null;
+let versionsHealthInflight: Promise<VersionsHealth> | null = null;
+
+export function resetVersionsHealthCache(): void {
+  versionsHealthCache = null;
+  versionsHealthInflight = null;
+}
+
+/** Refresh the last-known versions snapshot. Safe to call from a ticker. */
+export async function refreshVersionsHealth(): Promise<VersionsHealth> {
+  const avail = await versionsAvailable();
+  const head = await currentHead();
+  versionsHealthCache = { ...avail, head };
+  return versionsHealthCache;
+}
+
+/**
+ * Last-known versions info for /health. Kicks a background refresh and
+ * never waits on git — a slow rev-parse must not stall the health budget.
+ *
+ * An empty cache is "not yet known", not "no git". Returning ok:false here
+ * would hide the version rail on the first panel poll of a cold start.
+ */
+export function versionsHealthSnapshot(): VersionsHealth {
+  if (!versionsHealthInflight) {
+    versionsHealthInflight = refreshVersionsHealth().finally(() => {
+      versionsHealthInflight = null;
+    });
+  }
+  return versionsHealthCache ?? { ok: true, detail: null, head: null };
+}
+
 export interface VersionMeta {
   messageId: string;
   boardId: string;

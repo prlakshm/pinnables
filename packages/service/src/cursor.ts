@@ -509,31 +509,56 @@ export async function statusFromCursor(agentId: string, runId: string): Promise<
   }
 }
 
-/** Probe auth without starting work — used by /health. */
-export async function probeCursor(): Promise<{
+export interface CursorProbeResult {
   ok: boolean;
   detail: string | null;
   runtime: CursorRuntime;
   cwd: string;
-}> {
+}
+
+let cursorProbeCache: CursorProbeResult | null = null;
+let cursorProbeInflight: Promise<CursorProbeResult> | null = null;
+
+export function peekCursorProbe(): CursorProbeResult | null {
+  return cursorProbeCache;
+}
+
+/** Probe auth without starting work. Not for the /health critical path. */
+export async function probeCursor(): Promise<CursorProbeResult> {
   const runtime = cursorRuntime();
   const cwd = projectDir();
   if (!cursorConfigured()) {
-    return { ok: false, detail: "CURSOR_API_KEY not set", runtime, cwd };
+    const result = { ok: false, detail: "CURSOR_API_KEY not set", runtime, cwd };
+    cursorProbeCache = result;
+    return result;
   }
   try {
     if (runtime === "local") {
       await Cursor.models.list({ apiKey: apiKey()! });
-      return { ok: true, detail: null, runtime, cwd };
+      const result = { ok: true, detail: null, runtime, cwd };
+      cursorProbeCache = result;
+      return result;
     }
     await cursorFetch<{ items?: unknown[] }>("/v1/agents?limit=1");
-    return { ok: true, detail: null, runtime, cwd };
+    const result = { ok: true, detail: null, runtime, cwd };
+    cursorProbeCache = result;
+    return result;
   } catch (err) {
-    return {
+    const result = {
       ok: false,
       detail: err instanceof Error ? err.message : String(err),
       runtime,
       cwd,
     };
+    cursorProbeCache = result;
+    return result;
   }
+}
+
+/** Kick a background probe; never wait for the live API. */
+export function scheduleCursorProbe(): void {
+  if (cursorProbeInflight) return;
+  cursorProbeInflight = probeCursor().finally(() => {
+    cursorProbeInflight = null;
+  });
 }

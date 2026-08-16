@@ -388,6 +388,16 @@ test("side-panel tabs and target picks expose their selected state", () => {
   assert.match(pinList, /aria-pressed=\{pickable \? isTarget : undefined\}/);
 });
 
+test("the setup banner keys off cursorConfigured, not a live Cursor probe", () => {
+  const app = source("packages/extension/src/sidepanel/App.tsx");
+  assert.match(
+    app,
+    /state\?\.serviceOnline && !state\.cursorConfigured/,
+    "banner must hide as soon as the key is configured",
+  );
+  assert.doesNotMatch(app, /serviceOnline && !state\.cursorOnline/);
+});
+
 test("hard failures use red while offline and blocked guidance stays amber", () => {
   const app = source("packages/extension/src/sidepanel/App.tsx");
   const css = source("packages/extension/src/ui/ui.css");

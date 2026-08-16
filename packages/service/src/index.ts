@@ -16,21 +16,22 @@ import {
   cursorRuntime,
   imagesFromScreenshots,
   isAgentBusyError,
-  probeCursor,
+  peekCursorProbe,
   projectDir,
   readStickyAgentId,
+  scheduleCursorProbe,
   shouldAttachScreenshots,
   sendToCursor,
   statusFromCursor,
   type CursorStatus,
 } from "./cursor.js";
 import {
-  currentHead,
   listVersions,
   readChapterBaseline,
   restore as restoreVersion,
   snapshot as snapshotVersion,
-  versionsAvailable,
+  versionsHealthSnapshot,
+  refreshVersionsHealth,
 } from "./versions.js";
 
 /**
@@ -717,35 +718,31 @@ const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
 
     if (req.method === "GET" && url.pathname === "/health") {
-      const cursor = cursorConfigured()
-        ? await probeCursor()
-        : {
-            ok: false,
-            detail: "CURSOR_API_KEY not set",
-            runtime: cursorRuntime(),
-            cwd: projectDir(),
-          };
-      const stickyAgentId = cursorConfigured() ? await readStickyAgentId() : null;
+      /*
+       * Cheap on purpose. The extension aborts /health at 900ms, so this
+       * path must not wait on a live Cursor API probe or a slow git call.
+       * `configured` is env-only; `ok` is the last background probe, if any.
+       */
+      const configured = cursorConfigured();
+      const runtime = cursorRuntime();
+      const cwd = projectDir();
+      const probe = peekCursorProbe();
+      const stickyAgentId = configured ? await readStickyAgentId() : null;
       const agentUrl =
-        cursor.runtime === "cloud"
+        runtime === "cloud"
           ? lastAgentUrl ??
             (stickyAgentId ? `https://cursor.com/agents/${stickyAgentId}` : null)
           : null;
-      /* Versions need a git working tree. Reported so the extension can hide
-         the rail rather than offer keys that would not work. The head is the
-         chapter: everything stamped with an older one has been absorbed by a
-         commit, and the extension quiets those keys and rows. */
-      const versions = { ...(await versionsAvailable()), head: await currentHead() };
       return send(res, 200, {
         ok: true,
         home: pinnablesHome(),
-        versions,
+        versions: versionsHealthSnapshot(),
         cursor: {
-          configured: cursorConfigured(),
-          ok: cursor.ok,
-          detail: cursor.detail,
-          runtime: cursor.runtime,
-          cwd: cursor.cwd,
+          configured,
+          ok: probe?.ok ?? false,
+          detail: probe?.detail ?? (configured ? null : "CURSOR_API_KEY not set"),
+          runtime,
+          cwd,
           agentId: stickyAgentId,
           agentUrl,
           queueLength: cursorSendQueue.length,
@@ -887,28 +884,50 @@ const server = createServer((req, res) => {
   })();
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`pinnables service on http://${HOST}:${PORT}`);
-  console.log(`boards → ${pinnablesHome()}`);
-  if (cursorConfigured()) {
-    const runtime = cursorRuntime();
-    if (runtime === "local") {
-      console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
+function startListening(): void {
+  server.listen(PORT, HOST, () => {
+    console.log(`pinnables service on http://${HOST}:${PORT}`);
+    console.log(`boards → ${pinnablesHome()}`);
+    if (cursorConfigured()) {
+      const runtime = cursorRuntime();
+      if (runtime === "local") {
+        console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
+      } else {
+        console.log("Cursor Cloud Agents: configured (Send will push to remote)");
+      }
     } else {
-      console.log("Cursor Cloud Agents: configured (Send will push to remote)");
+      console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
     }
-  } else {
-    console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
-  }
-  // Keep the queue moving when the extension is not polling a finished run.
-  if (cursorConfigured()) {
-    setInterval(() => {
-      void refreshActiveCursorRuns().catch((err) => {
-        console.error(
-          "queue tick failed:",
-          err instanceof Error ? err.message : String(err),
-        );
-      });
-    }, 2_500);
-  }
-});
+    if (cursorConfigured()) {
+      // Keep the queue moving when the extension is not polling a finished run.
+      // Cursor probes stay on this ticker — never on GET /health.
+      setInterval(() => {
+        void refreshActiveCursorRuns().catch((err) => {
+          console.error(
+            "queue tick failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+        scheduleCursorProbe();
+        void refreshVersionsHealth().catch(() => {});
+      }, 2_500);
+    } else {
+      setInterval(() => {
+        void refreshVersionsHealth().catch(() => {});
+      }, 2_500);
+    }
+  });
+}
+
+// One git check at boot, before we accept connections. /health itself stays
+// sync and never waits on git or a Cursor probe.
+void refreshVersionsHealth()
+  .catch((err) => {
+    console.error(
+      "versions warmup failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  })
+  .then(() => {
+    startListening();
+  });
