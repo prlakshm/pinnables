@@ -265,7 +265,16 @@ export function SelectionDialog({
       );
       const rowBox = rowKey?.getBoundingClientRect();
       const rowReady = Boolean(rowKey && rowBox && rowBox.width > 0 && rowBox.height > 0);
-      if (rowReady && railKey && rowKey) {
+      let railReady = false;
+      if (railKey) {
+        const entering = railKey.dataset.entering;
+        railKey.dataset.entering = "false";
+        const to = railKey.getBoundingClientRect();
+        if (entering) railKey.dataset.entering = entering;
+        else delete railKey.dataset.entering;
+        railReady = to.width > 0 && to.height > 0;
+      }
+      if (rowReady && railReady && rowKey) {
         flyKeyToRail(rowKey, no);
         return;
       }

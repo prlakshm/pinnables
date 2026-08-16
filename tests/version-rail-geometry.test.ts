@@ -146,6 +146,7 @@ test("flyKeyToRail always translates and waits for the rail key", () => {
   const launch = rail.slice(rail.indexOf("function launchMintFlight"));
   assert.match(rail, /RAIL_KEY_WAIT_MS = 800/);
   assert.match(fly, /RAIL_KEY_WAIT_MS/);
+  assert.match(fly, /railReady/);
   assert.match(fly, /getBoundingClientRect/);
   assert.match(fly, /requestAnimationFrame\(tryFly\)/);
   assert.doesNotMatch(fly, /flightMode\(/);

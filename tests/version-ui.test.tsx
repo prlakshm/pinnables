@@ -196,16 +196,23 @@ test("no versions is no rail", () => {
   assert.equal(renderLayer(pinWith({})), "");
 });
 
-test("the original key is a rail so the first take has somewhere to land", () => {
-  const pin = pinWith({
+test("only the original is no rail: it appears when the first take lands", () => {
+  const originalOnly = pinWith({
     versionSeq: 1,
     currentVersionNo: 1,
     versions: [ver(1, null, "original")],
   });
-  const html = renderLayer(pin);
+  assert.equal(renderLayer(originalOnly), "");
+
+  const withTake = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [ver(1, null, "original"), ver(2, "m2", "change card background to rose")],
+  });
+  const html = renderLayer(withTake);
   assert.match(html, /data-rail="main"/);
   assert.match(html, /data-no="1"/);
-  assert.doesNotMatch(html, /data-no="2"/);
+  assert.match(html, /data-no="2"/);
 });
 
 test("a working row wears Working, not the original or a take key", () => {
@@ -284,6 +291,8 @@ test("restore is not skipped when versionsOk is false but keys exist", () => {
   assert.doesNotMatch(dialog, /busy=\{versionBusy \|\| !versionsOk\}/);
   assert.match(rail, /send\("version\/restore"/);
   assert.match(dialog, /send\("version\/restore"/);
+  assert.match(rail, /if \(railId === "main"\) restore\(o\.no\)/);
+  assert.match(rail, /versionShortcutDigit\(e\)/);
 });
 
 test("existing versions still render the rail when health has not said versions are ok", () => {
@@ -303,9 +312,10 @@ test("versionsOk no longer hides an existing rail in source", () => {
     new URL("../packages/extension/src/content/VersionRail.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(rail, /const showMain = visible && versions\.length >= 1 && liveRect !== null/);
-  assert.match(rail, /if \(!visible \|\| versions\.length < 1\) return null/);
-  assert.doesNotMatch(rail, /if \(!visible \|\| !versionsOk \|\| versions\.length < 1\) return null/);
+  assert.match(rail, /const hasTake = versions\.some\(\(v\) => v\.messageId !== null\)/);
+  assert.match(rail, /const showMain = visible && hasTake && liveRect !== null/);
+  assert.match(rail, /if \(!visible \|\| !hasTake\) return null/);
+  assert.doesNotMatch(rail, /if \(!visible \|\| !versionsOk \|\| !hasTake\) return null/);
 });
 
 test("existing versions still render the rail when the chapter head is not known yet", () => {

@@ -23,6 +23,7 @@ import {
   type ToolName,
 } from "@cursor/sdk";
 import { pinnablesHome } from "@pinnables/shared/storage";
+import { projectRoot } from "./versions.js";
 
 function apiBase(): string {
   return (process.env.CURSOR_API_BASE ?? "https://api.cursor.com").replace(/\/$/, "");
@@ -93,9 +94,9 @@ export function cursorRuntime(): CursorRuntime {
   return raw === "cloud" ? "cloud" : "local";
 }
 
-/** Repo the local agent edits — the app under annotation, not necessarily this package. */
+/** Repo the local agent edits — the app under annotation, not this package. */
 export function projectDir(): string {
-  return process.env.PINNABLES_PROJECT_DIR?.trim() || process.cwd();
+  return projectRoot();
 }
 
 /**

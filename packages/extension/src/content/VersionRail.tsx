@@ -205,7 +205,21 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
     const railKey = root.querySelector<HTMLElement>(
       `.pin-versions[data-rail="main"] .pin-key[data-no="${no}"]`,
     );
-    if (rowReady && railKey) {
+    /*
+     * Incoming takes are collapsed (`data-entering`) until they land, so
+     * their live box is 0×0. Probe the seated size with entering off —
+     * the rail must already be mounted with key 1 and a slot for this take.
+     */
+    let railReady = false;
+    if (railKey) {
+      const entering = railKey.dataset.entering;
+      railKey.dataset.entering = "false";
+      const to = railKey.getBoundingClientRect();
+      if (entering) railKey.dataset.entering = entering;
+      else delete railKey.dataset.entering;
+      railReady = to.width > 0 && to.height > 0;
+    }
+    if (rowReady && railKey && railReady) {
       launchMintFlight(fromKey, railKey, done);
       return;
     }
@@ -419,7 +433,11 @@ export function VersionLayer({
   const seenVersions = useRef<Set<string>>(new Set());
   const shotTried = useRef<Set<string>>(new Set());
 
-  const showMain = visible && versions.length >= 1 && liveRect !== null;
+  const hasTake = versions.some((v) => v.messageId !== null);
+  /* Original is stored at Send so the baseline is pre-change, but the rail
+     stays hidden until a take exists — key 1 seats when the first option
+     lands, then key 2 flies onto it. */
+  const showMain = visible && hasTake && liveRect !== null;
 
   /* ------------------------------------------------------------ helpers */
 
@@ -1057,7 +1075,7 @@ export function VersionLayer({
 
   /* ------------------------------------------------------------- render */
 
-  if (!visible || versions.length < 1) return null;
+  if (!visible || !hasTake) return null;
 
   const lit = pin.currentVersionNo;
 

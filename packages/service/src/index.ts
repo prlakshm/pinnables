@@ -43,7 +43,7 @@ import {
  *
  * Send path (least friction first):
  *   1. Cursor local agent (default) when CURSOR_API_KEY is set — edits
- *      PINNABLES_PROJECT_DIR / cwd so the running app hot-reloads.
+ *      PINNABLES_PROJECT_DIR / the git repo root so the running app hot-reloads.
  *   2. Cursor Cloud Agents when PINNABLES_CURSOR_RUNTIME=cloud.
  *   3. Local spawn via PINNABLES_AGENT_CMD / `claude` as a fallback.
  */
@@ -394,7 +394,7 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
    * Claude Code CLI in print mode, editing files without prompting.
    */
   const custom = process.env.PINNABLES_AGENT_CMD;
-  const cwd = process.env.PINNABLES_PROJECT_DIR ?? process.cwd();
+  const cwd = projectDir();
   /*
    * Piped rather than ignored so the run can say when it has actually begun.
    * A spawned process is not a working agent — it is a process that has yet to
