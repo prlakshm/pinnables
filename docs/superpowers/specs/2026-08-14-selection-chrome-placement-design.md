@@ -183,7 +183,9 @@ combination:
 2. rail ∩ box = ∅
 3. rail ∩ element = ∅
 4. box and rail inside viewport gutters
-5. rail exists whenever `rail` input is non-null
+5. a returned rail always clears the box; when no candidate can clear it,
+   there is no rail — the keys stay reachable from the chat rows' own
+   keycaps
 
 Invariants 1–3 apply to auto seats. A `moved` piece is the user's own
 arrangement and is exempt from overlap rules; invariant 4 (clamping) always
