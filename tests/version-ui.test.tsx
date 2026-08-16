@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -199,13 +200,41 @@ test("one key is no rail: nothing renders until there are two states", () => {
   assert.equal(renderLayer(pin), "");
 });
 
-test("without a git tree behind the service, the rail never appears", () => {
+test("existing versions still render the rail when health has not said versions are ok", () => {
   const pin = pinWith({
     versionSeq: 2,
     currentVersionNo: 2,
     versions: [ver(1, null, "original"), ver(2, "m2")],
   });
-  assert.equal(renderLayer(pin, [], false), "");
+  const html = renderLayer(pin, [], false);
+  assert.match(html, /data-rail="main"/);
+  assert.match(html, /data-no="1"/);
+  assert.match(html, /data-no="2"/);
+});
+
+test("versionsOk no longer hides an existing rail in source", () => {
+  const rail = readFileSync(
+    new URL("../packages/extension/src/content/VersionRail.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(rail, /const showMain = visible && versions\.length >= 2 && liveRect !== null/);
+  assert.match(rail, /if \(!visible \|\| versions\.length < 2\) return null/);
+  assert.doesNotMatch(rail, /if \(!visible \|\| !versionsOk \|\| versions\.length < 2\) return null/);
+});
+
+test("existing versions still render the rail when the chapter head is not known yet", () => {
+  const pin = pinWith({
+    versionSeq: 2,
+    currentVersionNo: 2,
+    versions: [
+      { ...ver(1, null, "original"), head: "H1" },
+      { ...ver(2, "m2"), head: "H1" },
+    ],
+  });
+  const html = renderLayerWithHead(pin, null);
+  assert.match(html, /data-rail="main"/);
+  assert.match(html, /data-no="1"/);
+  assert.match(html, /data-no="2"/);
 });
 
 /* ------------------------------------------------------------- chapters */

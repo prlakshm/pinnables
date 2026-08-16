@@ -234,6 +234,51 @@ test("a repeated done for the same message never mints twice", async () => {
   assert.deepEqual(storedBoard().pins, before);
 });
 
+test("a second done in the same chapter, with 1 and 2 showing, earns key 3", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 2,
+        currentVersionNo: 2,
+        versions: [ver(1, null, "original"), ver(2, "m1", "change to green")],
+        liveSends: [
+          {
+            text: "change to green",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "msg-1",
+            state: "done",
+            versionNo: 2,
+          },
+          {
+            text: "make it rose",
+            at: "2026-08-13T00:00:02.000Z",
+            messageId: "msg-2",
+            state: "working",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({ type: "agent/recordOutcome", messageId: "msg-2", state: "done" });
+  assert.equal(res.ok, true);
+
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.versionSeq, 3);
+  assert.equal(pin.currentVersionNo, 3);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId]),
+    [
+      [1, null],
+      [2, "m1"],
+      [3, "msg-2"],
+    ],
+  );
+  assert.equal(pin.liveSends[1].versionNo, 3);
+});
+
 test("a failed run records its outcome and earns nothing", async () => {
   install(
     boardWith([

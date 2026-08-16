@@ -3,6 +3,7 @@ import {
   SCHEMA_VERSION,
   expandProperties,
   originOf,
+  versionInChapter,
   versionKeyFor,
   type Board,
   type Pin,
@@ -22,6 +23,7 @@ import {
   agentMessageStatus,
   getHealth,
   isServiceOnline,
+  liveFieldsFromHealth,
   pushBoard,
   restoreVersion,
   sendAgentMessage,
@@ -481,13 +483,7 @@ const handlers: Handlers = {
     const health = await getHealth();
     return {
       ...state,
-      serviceOnline: Boolean(health?.ok),
-      versionsOk: Boolean(health?.versions?.ok),
-      projectHead: health?.versions?.head ?? null,
-      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
-      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
-      cursorRuntime: health?.cursor?.runtime ?? null,
-      cursorProjectDir: health?.cursor?.cwd ?? null,
+      ...liveFieldsFromHealth(health),
     };
   },
 
@@ -497,13 +493,7 @@ const handlers: Handlers = {
     const health = await getHealth();
     return {
       ...(await store.getState()),
-      serviceOnline: Boolean(health?.ok),
-      versionsOk: Boolean(health?.versions?.ok),
-      projectHead: health?.versions?.head ?? null,
-      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
-      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
-      cursorRuntime: health?.cursor?.runtime ?? null,
-      cursorProjectDir: health?.cursor?.cwd ?? null,
+      ...liveFieldsFromHealth(health),
       activeTab,
     };
   },
@@ -1275,39 +1265,62 @@ const handlers: Handlers = {
          * number. Idempotent by construction: the state comparison above
          * means a second "done" for the same message never reaches this.
          */
-        let versions = pin.versions ?? [];
-        let seq = pin.versionSeq ?? 0;
-        if (versions.length === 0) {
-          /*
-           * The original slips in as key 1 the moment the first run lands,
-           * so there is a way back to before anything happened. Its
-           * snapshot is the chapter's baseline, taken by the service before
-           * that first run started.
-           */
-          seq += 1;
-          versions = [
-            ...versions,
+        const versions = pin.versions ?? [];
+        const sent = liveSends.find((s) => s.messageId === messageId);
+        /*
+         * Visible keys in this chapter are the source of truth for the next
+         * numeral. Stale-chapter keys stay stored (unrestorable) but must
+         * not occupy the new chapter's 1–5 names, and they must not keep
+         * versionSeq climbing after a reset.
+         */
+        const visible = versions.filter((v) => versionInChapter(v, mintHead));
+        if (visible.length === 0) {
+          captures = captures.filter((cap) => cap.pinId !== pin.id);
+          const minted = [
             {
-              no: versionKeyFor(seq),
+              no: 1,
               messageId: null,
               label: "original",
               at: pin.createdAt,
               screenshotKey: null,
               head: mintHead,
             },
+            {
+              no: 2,
+              messageId,
+              label: sent?.text ?? "",
+              at: new Date().toISOString(),
+              screenshotKey: null,
+              head: mintHead,
+            },
           ];
+          liveSends = liveSends.map((s) =>
+            s.messageId === messageId ? { ...s, versionNo: 2 } : s,
+          );
+          return {
+            ...pin,
+            liveSends,
+            versions: [...versions, ...minted],
+            versionSeq: 2,
+            currentVersionNo: 2,
+          };
         }
-        seq += 1;
+
+        const lastNo = visible.some((v) => v.no === pin.currentVersionNo)
+          ? (pin.currentVersionNo as number)
+          : Math.max(...visible.map((v) => v.no));
+        const seq = lastNo + 1;
         const no = versionKeyFor(seq);
         /*
-         * The numeral is taken from whoever wore it before — the ring stays
-         * five keys wide without anything being renumbered. The evicted
-         * version leaves every rail: captures holding it give it up, and a
-         * capture emptied by that has nothing left to show and goes too.
+         * Evict only the current chapter's wearer of this numeral. An older
+         * chapter's key 1 must survive so a later restore lookup can still
+         * tell the two apart.
          */
-        const evicted = versions.find((v) => v.no === no);
+        const evicted = visible.find((v) => v.no === no);
         if (evicted) evictedShots.push({ pinId: pin.id, no });
-        versions = versions.filter((v) => v.no !== no);
+        const nextVersions = versions.filter(
+          (v) => !(v.no === no && versionInChapter(v, mintHead)),
+        );
         captures = captures
           .map((cap) =>
             cap.pinId === pin.id && cap.keys.includes(no)
@@ -1318,25 +1331,23 @@ const handlers: Handlers = {
           .map((cap) =>
             cap.keys.includes(cap.current) ? cap : { ...cap, current: cap.keys[0] },
           );
-        const sent = liveSends.find((s) => s.messageId === messageId);
-        versions = [
-          ...versions,
-          {
-            no,
-            messageId,
-            label: sent?.text ?? "",
-            at: new Date().toISOString(),
-            screenshotKey: null,
-            head: mintHead,
-          },
-        ];
         liveSends = liveSends.map((s) =>
           s.messageId === messageId ? { ...s, versionNo: no } : s,
         );
         return {
           ...pin,
           liveSends,
-          versions,
+          versions: [
+            ...nextVersions,
+            {
+              no,
+              messageId,
+              label: sent?.text ?? "",
+              at: new Date().toISOString(),
+              screenshotKey: null,
+              head: mintHead,
+            },
+          ],
           versionSeq: seq,
           /* The tree is wearing the run's result right now — the new key is lit. */
           currentVersionNo: no,
@@ -1363,11 +1374,16 @@ const handlers: Handlers = {
     const pin = found.pins.find((p) => p.id === pinId);
     if (!pin) throw new Error("Unknown pin");
     const versions = pin.versions ?? [];
-    const target = versions.find((v) => v.no === no);
+    const health = await getHealth();
+    const current = versions.find((v) => v.no === pin.currentVersionNo);
+    const projectHead = health?.versions?.head ?? current?.head ?? null;
+    const target = versions.find((v) => v.no === no && versionInChapter(v, projectHead));
     if (!target) throw new Error(`No version ${no} on this pin`);
     if (pin.currentVersionNo === no) return { board: found, conflicts: [] };
 
-    const from = versions.find((v) => v.no === pin.currentVersionNo);
+    const from = versions.find(
+      (v) => v.no === pin.currentVersionNo && versionInChapter(v, projectHead),
+    );
     const result = await restoreVersion({
       boardId: found.id,
       messageId: target.messageId ?? "baseline",
@@ -1400,16 +1416,19 @@ const handlers: Handlers = {
       const found = await store.boardForPin(pinId);
       await store.mutateBoard(found.id, (b) => ({
         ...b,
-        pins: b.pins.map((p) =>
-          p.id === pinId
-            ? {
-                ...p,
-                versions: p.versions.map((v) =>
-                  v.no === no ? { ...v, screenshotKey: versionShotKey(pinId, no) } : v,
-                ),
-              }
-            : p,
-        ),
+        pins: b.pins.map((p) => {
+          if (p.id !== pinId) return p;
+          const current = p.versions.find((x) => x.no === p.currentVersionNo);
+          const head = current?.head ?? null;
+          return {
+            ...p,
+            versions: p.versions.map((v) =>
+              v.no === no && versionInChapter(v, head)
+                ? { ...v, screenshotKey: versionShotKey(pinId, no) }
+                : v,
+            ),
+          };
+        }),
       }));
       await notifyBoardChanged(found.id);
       return { ok: true };

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Board, Capture, Pin, PinVersion } from "@pinnables/shared";
+import { versionInChapter, type Board, type Capture, type Pin, type PinVersion } from "@pinnables/shared";
 import { send } from "../lib/messages";
 import { GripIcon } from "../ui/icons";
 import type { Box } from "./chrome-placement";
@@ -25,12 +25,19 @@ import type { Box } from "./chrome-placement";
  * gesture; React owns what exists, the gesture owns where it is.
  */
 
-/* Timing, from the mock. */
-const DONE_FLASH_MS = 1200;
+/* Timing: Done flash + two frames for the row key to lay out + flight. */
+const DONE_FLASH_MS = 540;
+const ROW_LAYOUT_MS = 32;
 const FLIGHT_MS = 430;
+/** In-place dissolve when the box and rail are too far for a slide. */
+const DISSOLVE_MS = 280;
+const ENTER_HOLD_SLACK_MS = 200;
 /** How long a fresh key stays collapsed while its chat row flashes Done and
-    the copy flies over: flash + row-grow beat + flight, with a little slack. */
-const ENTER_HOLD_MS = DONE_FLASH_MS + 220 + FLIGHT_MS + 400;
+    the copy flies over: flash + layout beat + flight, with a little slack. */
+const ENTER_HOLD_MS = DONE_FLASH_MS + ROW_LAYOUT_MS + FLIGHT_MS + ENTER_HOLD_SLACK_MS;
+/** Slide only when the hop is short. A long flight reads as a thing
+    sliding across the page, not as the same key moving seats. */
+export const LOCAL_FLIGHT_MIN_PX = 280;
 /** A press is a switch; movement past this is a carry. */
 const DRAG_THRESHOLD = 5;
 /** Gap between a card and its seated rail, and inside the composer scoot. */
@@ -127,12 +134,52 @@ export function composerScoot(rail: RailBox, card: RailBox, note: RailBox): numb
 /* ------------------------------------------------------------------ flight */
 
 /**
+ * Nearby hops still slide. A long hop dissolves in place — the same key,
+ * without a numeral skating across half the page.
+ */
+export function flightMode(
+  from: { left: number; top: number },
+  to: { left: number; top: number },
+): "fly" | "local" {
+  return Math.hypot(to.left - from.left, to.top - from.top) >= LOCAL_FLIGHT_MIN_PX
+    ? "local"
+    : "fly";
+}
+
+/** Number-only ghost: the row's ⌥ is chrome, not something that flies. */
+function mintGhost(fromKey: HTMLElement): HTMLElement {
+  const ghost = fromKey.cloneNode(true) as HTMLElement;
+  ghost.removeAttribute("data-no");
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.querySelector(".pin-key__mod")?.remove();
+  return ghost;
+}
+
+function landRailKey(railKey: HTMLElement, done: () => void): void {
+  railKey.style.visibility = "";
+  railKey.dataset.landed = "true";
+  window.setTimeout(() => railKey.removeAttribute("data-landed"), 560);
+  done();
+}
+
+function flightHost(fromKey: HTMLElement): ShadowRoot | HTMLElement {
+  const root = fromKey.getRootNode();
+  return root instanceof ShadowRoot ? root : document.body;
+}
+
+/**
  * The key flies out of the chat row and into the rail.
  *
  * Without it the two keycaps just appear in two places a beat apart, and
  * nothing says they are the same key. Exported for SelectionDialog, whose
  * settled row is where the flight begins; the rail key is found by number so
  * neither component needs a ref into the other.
+ *
+ * The ghost is the numeral keycap the rail already shows — never the row's
+ * ⌥. Parent it on the shadow root: React owns `.pin-overlay` and will
+ * delete a child it did not render mid-flight. When the hop would be long,
+ * the source key dissolves in place instead of sliding, and the rail still
+ * opens its gap and land-pulses.
  */
 export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   const root = fromKey.getRootNode() as ShadowRoot | Document;
@@ -159,30 +206,41 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   railKey.style.transition = "";
 
   const from = fromKey.getBoundingClientRect();
-  const ghost = fromKey.cloneNode(true) as HTMLElement;
-  ghost.removeAttribute("data-no");
-  ghost.setAttribute("aria-hidden", "true");
+  const ghost = mintGhost(fromKey);
   ghost.style.cssText =
     "position:fixed;margin:0;z-index:9999;pointer-events:none;" +
     `left:${from.left}px;top:${from.top}px;` +
-    `width:${from.width}px;height:${from.height}px;max-width:none;` +
-    "transition:transform 420ms var(--ease), width 420ms var(--ease);";
-  /*
-   * The two rails write a key differently: a chat row carries its own ⌥
-   * because it stands alone, while the rail has one at its head for all of
-   * them. So the copy sheds its modifier on the way over and arrives in the
-   * form the rail uses — the same key, in the local dialect.
-   */
-  const ghostMod = ghost.querySelector<HTMLElement>(".pin-key__mod");
-  if (ghostMod) {
-    ghostMod.style.cssText =
-      "overflow:hidden;max-width:20px;" +
-      "transition:max-width 300ms var(--ease), margin-right 300ms var(--ease), opacity 200ms ease;";
-  }
-  (railKey.closest(".pin-overlay") ?? fromKey.parentElement ?? document.body).appendChild(ghost);
+    `width:${from.width}px;height:${from.height}px;max-width:none;`;
 
-  /* The gap opens now, over the same time the copy spends travelling. */
+  /* The gap opens now, over the same time the copy spends arriving. */
   railKey.dataset.entering = "false";
+
+  const host = flightHost(fromKey);
+  const mode = flightMode(from, to);
+
+  if (mode === "local") {
+    fromKey.style.visibility = "hidden";
+    ghost.style.transition = `transform ${DISSOLVE_MS}ms var(--ease), opacity ${DISSOLVE_MS}ms ease`;
+    host.appendChild(ghost);
+    let kicked = false;
+    const kick = () => {
+      if (kicked) return;
+      kicked = true;
+      ghost.style.transform = "scale(0.55)";
+      ghost.style.opacity = "0";
+    };
+    requestAnimationFrame(kick);
+    window.setTimeout(kick, 24);
+    window.setTimeout(() => {
+      ghost.remove();
+      fromKey.style.visibility = "";
+      landRailKey(railKey, done);
+    }, DISSOLVE_MS);
+    return;
+  }
+
+  ghost.style.transition = "transform 420ms var(--ease), width 420ms var(--ease)";
+  host.appendChild(ghost);
 
   let kicked = false;
   const kick = () => {
@@ -190,21 +248,13 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
     kicked = true;
     ghost.style.transform = `translate(${to.left - from.left}px, ${to.top - from.top}px)`;
     ghost.style.width = `${to.width}px`;
-    if (ghostMod) {
-      ghostMod.style.maxWidth = "0px";
-      ghostMod.style.marginRight = "0px";
-      ghostMod.style.opacity = "0";
-    }
   };
   requestAnimationFrame(kick);
   window.setTimeout(kick, 24);
 
   window.setTimeout(() => {
     ghost.remove();
-    railKey.style.visibility = "";
-    railKey.dataset.landed = "true";
-    window.setTimeout(() => railKey.removeAttribute("data-landed"), 560);
-    done();
+    landRailKey(railKey, done);
   }, FLIGHT_MS);
 }
 
@@ -256,12 +306,17 @@ export interface VersionLayerProps {
   /** Whether the selection chrome is up at all — Escape and deselect hide
       the rail and every capture with it. */
   visible: boolean;
+  /**
+   * Whether minting and restore can be honoured (needs a git tree). An
+   * existing rail still shows stored keys when this is false — health
+   * timing out must not hide keys that are already in chrome.storage.
+   */
   versionsOk: boolean;
   /**
    * The open chapter. Keys stamped with an earlier head were absorbed by a
    * commit — their patches describe a tree that no longer exists — so they
-   * leave the rail, the captures, and the chord. Null tolerates old data:
-   * everything stays pressable and the service is the backstop.
+   * leave the rail, the captures, and the chord. Null tolerates old data
+   * and a health probe that has not come back: everything stays visible.
    */
   projectHead?: string | null;
   busy: boolean;
@@ -319,10 +374,7 @@ export function VersionLayer({
    * lookup below starts from this list.
    */
   const versions = useMemo(
-    () =>
-      (pin.versions ?? []).filter(
-        (v) => v.head === null || projectHead === null || v.head === projectHead,
-      ),
+    () => (pin.versions ?? []).filter((v) => versionInChapter(v, projectHead)),
     [pin.versions, projectHead],
   );
   const captures = useMemo(
@@ -357,7 +409,7 @@ export function VersionLayer({
   const seenVersions = useRef<Set<string>>(new Set());
   const shotTried = useRef<Set<string>>(new Set());
 
-  const showMain = visible && versionsOk && versions.length >= 2 && liveRect !== null;
+  const showMain = visible && versions.length >= 2 && liveRect !== null;
 
   /* ------------------------------------------------------------ helpers */
 
@@ -432,13 +484,13 @@ export function VersionLayer({
 
   const restore = useCallback(
     (no: number) => {
-      if (busy || pin.currentVersionNo === no) return;
+      if (!versionsOk || busy || pin.currentVersionNo === no) return;
       onBusy(true);
       void send("version/restore", { pinId: pin.id, no })
         .catch(() => {})
         .finally(() => onBusy(false));
     },
-    [busy, pin.currentVersionNo, pin.id, onBusy],
+    [versionsOk, busy, pin.currentVersionNo, pin.id, onBusy],
   );
 
   /** What a rail shows after this key leaves it, and who answers live. */
@@ -879,7 +931,7 @@ export function VersionLayer({
       if (e.altKey && digit) {
         const want = Number(digit);
         const hit = versions.find((v) => v.no === want);
-        if (!hit || busy) return;
+        if (!hit || busy || !versionsOk) return;
         e.preventDefault();
         e.stopPropagation();
         /*
@@ -908,7 +960,7 @@ export function VersionLayer({
       window.removeEventListener("keyup", up, true);
       window.removeEventListener("blur", blur);
     };
-  }, [showMain, versions, busy, homeOf, restore, captures, saveCaptures]);
+  }, [showMain, versions, busy, versionsOk, homeOf, restore, captures, saveCaptures]);
 
   /* ------------------------------------------------- arrival choreography */
 
@@ -988,7 +1040,7 @@ export function VersionLayer({
 
   /* ------------------------------------------------------------- render */
 
-  if (!visible || !versionsOk || versions.length < 2) return null;
+  if (!visible || versions.length < 2) return null;
 
   const lit = pin.currentVersionNo;
 
@@ -1056,7 +1108,6 @@ export function VersionLayer({
         </div>
       )}
       {visible &&
-        versionsOk &&
         captures.map((cap) => (
           <CaptureCard
             key={cap.id}

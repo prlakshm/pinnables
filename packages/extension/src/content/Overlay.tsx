@@ -506,7 +506,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   const [liveConnect, setLiveConnect] = useState<LiveConnect | null>(null);
   /** A version restore in flight — the rail and the chat keys go quiet. */
   const [versionBusy, setVersionBusy] = useState(false);
-  /** Whether the service can honour version keys (needs a git tree). */
+  /** Whether minting/restore can be honoured (needs a git tree). The rail
+      still shows stored keys while this is false. */
   const [versionsOk, setVersionsOk] = useState(false);
   /** Live measurements, fed to the placement module each pass. */
   const [boxSize, setBoxSize] = useState<{ width: number; height: number } | null>(null);
@@ -667,11 +668,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
   }, []);
 
   /*
-   * Whether version keys can work at all — the service needs a git tree
-   * behind the project — and which chapter is open. Asked when the overlay
-   * arms and again on every selection change: a commit between clicks moves
-   * HEAD, and the next click must show the new chapter, not the one the
-   * page was armed under.
+   * Whether minting/restore can work — the service needs a git tree —
+   * and which chapter is open. Asked when the overlay arms and again on
+   * every selection change. The rail itself does not wait on this: stored
+   * keys show as soon as the element is re-found.
    */
   const selectionKey = liveSelected.join(" ");
   useEffect(() => {
@@ -2903,6 +2903,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           versionBusy={versionBusy}
           onVersionBusy={setVersionBusy}
           projectHead={projectHead}
+          versionsOk={versionsOk}
           targetOf={targetContext?.sourceName ?? null}
           relationshipId={targetContext?.relationshipId ?? null}
           drawingSummary={ownedShapes.length > 0 ? describeDrawings(ownedShapes) : null}

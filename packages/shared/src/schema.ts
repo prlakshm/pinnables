@@ -347,6 +347,19 @@ export function versionKeyFor(seq: number): number {
   return ((seq - 1) % VERSION_RING) + 1;
 }
 
+/**
+ * Whether a stored key still belongs to the open chapter.
+ *
+ * A null stamp (old data) or a null head (health not back yet) must not
+ * hide keys that already exist — only a known, later chapter filters them.
+ */
+export function versionInChapter(
+  version: { head?: string | null },
+  projectHead: string | null,
+): boolean {
+  return version.head == null || projectHead == null || version.head === projectHead;
+}
+
 export type Viewport = z.infer<typeof ViewportSchema>;
 export type PinStatus = z.infer<typeof PinStatusSchema>;
 export type PinKind = z.infer<typeof PinKindSchema>;
