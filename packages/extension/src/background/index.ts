@@ -17,6 +17,7 @@ import {
   type RequestType,
   type TabArmState,
 } from "../lib/messages";
+import { advanceLiveSendState } from "../lib/live-send";
 import { LEGACY_PRESENCE_KEYS, onScreenPinsKey } from "../lib/presence";
 import * as store from "../lib/store";
 import {
@@ -474,9 +475,11 @@ function assertDraftBoard(board: Board): void {
 }
 
 /**
- * The original (key 1) is the chapter baseline, minted when the first run
- * in that chapter starts — not when it lands. The rail can then show 1
- * during Working, and done only adds the take that flies onto it.
+ * The original (key 1) is the chapter baseline, snapshotted when the first
+ * run in that chapter is accepted — not when it lands. Stored now so the
+ * patch is pre-change; the rail stays hidden until a take is minted on
+ * recordOutcome done (Working must not grow a key, or 1 and 2 are the
+ * same tree and restore is a no-op).
  */
 function withOriginalBaseline(pin: Pin, head: string | null, canMint: boolean): Pin {
   if (!canMint) return pin;
@@ -1285,13 +1288,21 @@ const handlers: Handlers = {
         if (!pin.liveSends.some((sent) => sent.messageId === messageId)) return pin;
         let changed = false;
         let liveSends = pin.liveSends.map((sent) => {
-          if (sent.messageId !== messageId || sent.state === state) return sent;
+          if (sent.messageId !== messageId) return sent;
+          const next = advanceLiveSendState(sent.state, state);
+          if (next === sent.state) return sent;
           changed = true;
-          return { ...sent, state };
+          return { ...sent, state: next };
         });
         if (!changed) return pin;
         touched = true;
-        if (state !== "done" || !canMint) return { ...pin, liveSends };
+        const landed = liveSends.some(
+          (sent) => sent.messageId === messageId && sent.state === "done",
+        );
+        /* Takes are minted only on the working→done step. Working/Send must
+           not grow a key: that snapshot is the baseline tree, so restore
+           between 1 and 2 is a no-op and the page never leaves the edit. */
+        if (!landed || !canMint) return { ...pin, liveSends };
 
         /*
          * The run landed — it earns a key. Minted here because this is the

@@ -79,6 +79,8 @@ interface SessionFile {
 const localAgents = new Map<string, SDKAgent>();
 /** Live Run handles for status polling before they settle. */
 const localRuns = new Map<string, Run>();
+/** wait() settlement — the send() handle's status is a snapshot and must not mint Done. */
+const localRunResults = new Map<string, { state: "done" | "failed"; detail: string | null }>();
 
 function apiKey(): string | null {
   const key = process.env.CURSOR_API_KEY?.trim();
@@ -331,10 +333,23 @@ async function sendLocal(req: CursorSendRequest): Promise<CursorSendResult> {
     ...(req.images?.length ? { images: req.images } : {}),
   });
   localRuns.set(run.id, run);
-  // Keep the handle warm; status polling uses getRun / the cached Run.
-  void run.wait().catch(() => {
-    /* statusFromCursor surfaces the failure */
-  });
+  /*
+   * The object returned by send() is a snapshot. Polling its .status as Done
+   * mints a take against the baseline tree (Working, no edits yet) and restore
+   * becomes a no-op. wait() is when the run actually finished and the patch
+   * has the edits; statusFromCursor reads this map first.
+   */
+  void run.wait().then(
+    () => {
+      localRunResults.set(run.id, { state: "done", detail: null });
+    },
+    (err: unknown) => {
+      localRunResults.set(run.id, {
+        state: "failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    },
+  );
   await writeStickyAgentId(agent.agentId, "local", cwd);
   return {
     agentId: agent.agentId,
@@ -490,17 +505,42 @@ export async function statusFromCursor(agentId: string, runId: string): Promise<
     };
   }
 
+  const settled = localRunResults.get(runId);
+  if (settled) {
+    localRuns.delete(runId);
+    return { ...settled, agentId, runId, url: null };
+  }
+
   try {
-    const cached = localRuns.get(runId);
-    const run =
-      cached ??
-      (await Agent.getRun(runId, {
+    /*
+     * Always re-fetch. The send() handle's status is what it was at
+     * agent.send() — treating that as finished mints take 2 while the
+     * composer still says Working, and 1 and 2 are the same tree.
+     */
+    let run: Run | undefined;
+    try {
+      run = await Agent.getRun(runId, {
         runtime: "local",
         cwd: projectDir(),
-      }));
+      });
+      localRuns.set(runId, run);
+    } catch {
+      run = localRuns.get(runId);
+    }
+    if (!run) {
+      return { state: "failed", detail: "Unknown local run", agentId, runId, url: null };
+    }
     const detail = run.error?.message ?? null;
     const mapped = mapLocalRunStatus(run.status, detail);
-    if (mapped.state === "done" || mapped.state === "failed") {
+    /*
+     * Fresh getRun may still say "finished" before wait() has flushed the
+     * edits. Keep reporting working until wait() settles so the snapshot
+     * (and the take key) contain the real patch.
+     */
+    if (mapped.state === "done") {
+      return { state: "working", detail: null, agentId, runId, url: null };
+    }
+    if (mapped.state === "failed") {
       localRuns.delete(runId);
     }
     return { ...mapped, agentId, runId, url: null };

@@ -224,7 +224,126 @@ test("the first send on a pin with no versions mints original as key 1 immediate
   );
 });
 
+test("working never mints a take — only recordOutcome done does", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 1,
+        currentVersionNo: 1,
+        versions: [ver(1, null, "original")],
+        liveSends: [
+          {
+            text: "change card background to rose",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "msg-working",
+            state: "starting",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({
+    type: "agent/recordOutcome",
+    messageId: "msg-working",
+    state: "working",
+  });
+  assert.equal(res.ok, true);
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].state, "working");
+  assert.equal(pin.liveSends[0].versionNo, null, "no take key during Working");
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId]),
+    [[1, null]],
+    "original stays stored and hidden; rail has no take yet",
+  );
+});
+
+test("the first send can still record done after a second send has started", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 1,
+        currentVersionNo: 1,
+        versions: [ver(1, null, "original")],
+        liveSends: [
+          {
+            text: "change card background to green",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "msg-first",
+            state: "working",
+            versionNo: null,
+          },
+          {
+            text: "change card background to rose",
+            at: "2026-08-13T00:00:02.000Z",
+            messageId: "msg-second",
+            state: "starting",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
+  const res = await dispatch({
+    type: "agent/recordOutcome",
+    messageId: "msg-first",
+    state: "done",
+  });
+  assert.equal(res.ok, true);
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].state, "done");
+  assert.equal(pin.liveSends[0].versionNo, 2);
+  assert.equal(pin.liveSends[1].state, "starting", "the later send is untouched");
+  assert.equal(pin.liveSends[1].versionNo, null);
+  assert.deepEqual(
+    pin.versions.map((v) => [v.no, v.messageId]),
+    [
+      [1, null],
+      [2, "msg-first"],
+    ],
+  );
+});
+
+test("a later Working poll cannot un-done a finished run or mint another take", async () => {
+  const before = structuredClone(storedBoard().pins[0]);
+  const res = await dispatch({
+    type: "agent/recordOutcome",
+    messageId: "msg-first",
+    state: "working",
+  });
+  assert.equal(res.ok, true);
+  const pin = storedBoard().pins[0];
+  assert.equal(pin.liveSends[0].state, "done");
+  assert.equal(pin.liveSends[0].versionNo, 2);
+  assert.equal(pin.versions.length, before.versions.length);
+});
+
 test("that run's done mints only the take and does not re-mint original", async () => {
+  healthVersionsOk = true;
+  install(
+    boardWith([
+      pinWith({
+        versionSeq: 1,
+        currentVersionNo: 1,
+        versions: [ver(1, null, "original")],
+        liveSends: [
+          {
+            text: "change card background to rose",
+            at: "2026-08-13T00:00:01.000Z",
+            messageId: "live-1",
+            state: "working",
+            versionNo: null,
+          },
+        ],
+      }),
+    ]),
+  );
+
   const res = await dispatch({ type: "agent/recordOutcome", messageId: "live-1", state: "done" });
   assert.equal(res.ok, true);
 

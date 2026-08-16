@@ -149,7 +149,10 @@ export function SelectionDialog({
   /** One Working → Done flash per messageId. */
   const doneHandoffStarted = useRef<Set<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
-  const pollTimer = useRef<number | null>(null);
+  /** One timer per in-flight message — a later Send must not steal the first's Done. */
+  const pollTimers = useRef<Map<string, number>>(new Map());
+  /** The run the composer phase is describing; older runs still poll silently. */
+  const watchingId = useRef<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const primary = pins[0];
 
@@ -204,11 +207,16 @@ export function SelectionDialog({
     input.current?.focus();
   }, [primary?.id]);
 
+  const clearPolls = useCallback(() => {
+    for (const handle of pollTimers.current.values()) window.clearTimeout(handle);
+    pollTimers.current.clear();
+  }, []);
+
   useEffect(
     () => () => {
-      if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
+      clearPolls();
     },
-    [],
+    [clearPolls],
   );
 
   /*
@@ -223,8 +231,9 @@ export function SelectionDialog({
     setPhase({ kind: "idle" });
     setDraft("");
     setEcho(null);
-    if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
-  }, [selectionKey]);
+    watchingId.current = null;
+    clearPolls();
+  }, [selectionKey, clearPolls]);
 
   /*
    * Working → Done → keycap → fly. Flash when the board row becomes done
@@ -318,8 +327,22 @@ export function SelectionDialog({
 
   const poll = useCallback((messageId: string, key: string) => {
     const startedAt = Date.now();
+    const schedule = () => {
+      const prev = pollTimers.current.get(messageId);
+      if (prev !== undefined) window.clearTimeout(prev);
+      pollTimers.current.set(
+        messageId,
+        window.setTimeout(() => void tick(), STATUS_POLL_MS),
+      );
+    };
+    const stop = () => {
+      const prev = pollTimers.current.get(messageId);
+      if (prev !== undefined) window.clearTimeout(prev);
+      pollTimers.current.delete(messageId);
+    };
     const tick = async () => {
       if (selectionKeyRef.current !== key) return;
+      const watched = watchingId.current === messageId;
       try {
         const status = await send("agent/status", { messageId });
         if (selectionKeyRef.current !== key) return;
@@ -337,44 +360,51 @@ export function SelectionDialog({
             status.state === "starting"
               ? "The agent didn’t start within 5 minutes. Resend to retry."
               : "No result after 10 minutes. The run looks stuck, so resend to retry.";
-          setPhase({ kind: "failed", detail });
+          if (watched) setPhase({ kind: "failed", detail });
           void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          stop();
           return;
         }
         // Queued behind an active Cursor run — keep polling; no starting timeout.
         if (status.state === "queued") {
-          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          schedule();
           return;
         }
         const recorded = recordableLiveSendState(status.state);
         if (status.state === "starting" || status.state === "working") {
           // Record leaving the queue, or the agent starting, onto the board —
           // otherwise the history tag stays "Queued" for the whole run.
-          setPhase(
-            status.state === "working"
-              ? { kind: "working", messageId }
-              : { kind: "starting", messageId },
-          );
+          if (watched) {
+            setPhase(
+              status.state === "working"
+                ? { kind: "working", messageId }
+                : { kind: "starting", messageId },
+            );
+          }
           if (recorded)
             void send("agent/recordOutcome", { messageId, state: recorded }).catch(() => {});
-          pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+          schedule();
           return;
         }
-        setPhase(
-          status.state === "done"
-            ? { kind: "done" }
-            : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
-        );
+        if (watched) {
+          setPhase(
+            status.state === "done"
+              ? { kind: "done" }
+              : { kind: "failed", detail: status.detail ?? "The agent run did not finish." },
+          );
+        }
         // The outcome belongs to the board, not to this bar — recording it is
         // what resolves the history tag even after this dialog is gone.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
+        stop();
         // Done flash starts when the board row becomes done (see startDoneHandoff).
       } catch {
         if (selectionKeyRef.current !== key) return;
-        setPhase({ kind: "failed", detail: "Lost contact with the local service." });
+        if (watched) setPhase({ kind: "failed", detail: "Lost contact with the local service." });
+        stop();
       }
     };
-    pollTimer.current = window.setTimeout(() => void tick(), STATUS_POLL_MS);
+    schedule();
   }, []);
 
   const staging = useRef(false);
@@ -425,6 +455,7 @@ export function SelectionDialog({
           resendOf,
         });
         if (selectionKeyRef.current !== key) return "sent";
+        watchingId.current = messageId;
         setPhase({ kind: "starting", messageId });
         onLiveSent(pins.map((pin) => pin.id));
         // A multi-selection that has now spoken becomes a group the shelf can
