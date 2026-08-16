@@ -1,4 +1,5 @@
 import type { Board } from "@pinnables/shared";
+import type { ExtensionState } from "./messages";
 
 /**
  * Client for the local companion service. The extension cannot write to
@@ -91,6 +92,30 @@ export async function getHealth(): Promise<HealthResult | null> {
   } catch {
     return null;
   }
+}
+
+/** Map a /health payload onto the live fields the panel and worker share. */
+export function liveFieldsFromHealth(health: HealthResult | null): Pick<
+  ExtensionState,
+  | "serviceOnline"
+  | "versionsOk"
+  | "projectHead"
+  | "cursorConfigured"
+  | "cursorOnline"
+  | "cursorAgentUrl"
+  | "cursorRuntime"
+  | "cursorProjectDir"
+> {
+  return {
+    serviceOnline: Boolean(health?.ok),
+    versionsOk: Boolean(health?.versions?.ok),
+    projectHead: health?.versions?.head ?? null,
+    cursorConfigured: Boolean(health?.cursor?.configured),
+    cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
+    cursorAgentUrl: health?.cursor?.agentUrl ?? null,
+    cursorRuntime: health?.cursor?.runtime ?? null,
+    cursorProjectDir: health?.cursor?.cwd ?? null,
+  };
 }
 
 /**

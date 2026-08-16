@@ -25,6 +25,7 @@ const DEFAULT_STATE: ExtensionState = {
   serviceOnline: false,
   versionsOk: false,
   projectHead: null,
+  cursorConfigured: false,
   cursorOnline: false,
   cursorAgentUrl: null,
   cursorRuntime: null,

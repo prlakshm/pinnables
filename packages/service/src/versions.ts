@@ -92,6 +92,36 @@ export async function versionsAvailable(): Promise<{ ok: boolean; detail: string
   }
 }
 
+export type VersionsHealth = { ok: boolean; detail: string | null; head: string | null };
+
+let versionsHealthCache: VersionsHealth | null = null;
+let versionsHealthInflight: Promise<VersionsHealth> | null = null;
+
+export function peekVersionsHealth(): VersionsHealth | null {
+  return versionsHealthCache;
+}
+
+/** Refresh the last-known versions snapshot. Safe to call from a ticker. */
+export async function refreshVersionsHealth(): Promise<VersionsHealth> {
+  const avail = await versionsAvailable();
+  const head = await currentHead();
+  versionsHealthCache = { ...avail, head };
+  return versionsHealthCache;
+}
+
+/**
+ * Last-known versions info for /health. Kicks a background refresh and
+ * never waits on git — a slow rev-parse must not stall the health budget.
+ */
+export function versionsHealthSnapshot(): VersionsHealth {
+  if (!versionsHealthInflight) {
+    versionsHealthInflight = refreshVersionsHealth().finally(() => {
+      versionsHealthInflight = null;
+    });
+  }
+  return versionsHealthCache ?? { ok: false, detail: null, head: null };
+}
+
 export interface VersionMeta {
   messageId: string;
   boardId: string;

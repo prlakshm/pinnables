@@ -22,6 +22,7 @@ import {
   agentMessageStatus,
   getHealth,
   isServiceOnline,
+  liveFieldsFromHealth,
   pushBoard,
   restoreVersion,
   sendAgentMessage,
@@ -481,13 +482,7 @@ const handlers: Handlers = {
     const health = await getHealth();
     return {
       ...state,
-      serviceOnline: Boolean(health?.ok),
-      versionsOk: Boolean(health?.versions?.ok),
-      projectHead: health?.versions?.head ?? null,
-      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
-      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
-      cursorRuntime: health?.cursor?.runtime ?? null,
-      cursorProjectDir: health?.cursor?.cwd ?? null,
+      ...liveFieldsFromHealth(health),
     };
   },
 
@@ -497,13 +492,7 @@ const handlers: Handlers = {
     const health = await getHealth();
     return {
       ...(await store.getState()),
-      serviceOnline: Boolean(health?.ok),
-      versionsOk: Boolean(health?.versions?.ok),
-      projectHead: health?.versions?.head ?? null,
-      cursorOnline: Boolean(health?.cursor?.configured && health.cursor.ok),
-      cursorAgentUrl: health?.cursor?.agentUrl ?? null,
-      cursorRuntime: health?.cursor?.runtime ?? null,
-      cursorProjectDir: health?.cursor?.cwd ?? null,
+      ...liveFieldsFromHealth(health),
       activeTab,
     };
   },
