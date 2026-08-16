@@ -163,10 +163,15 @@ function guaranteedCandidates(orientation: Orientation, boxRect: Box, element: B
   }
   const flushY = boxRect.y + boxRect.height - rail.height;
   return [
+    // box-side, in order: right of box, left of box, above box, below box —
+    // all four keyed off the box's own rect (see the comment above).
     { seat: "box-side", x: boxRect.x + boxRect.width + SLOT_PAD, y: flushY },
     { seat: "box-side", x: boxRect.x - SLOT_PAD - rail.width, y: flushY },
     { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y - SLOT_PAD - rail.height },
     { seat: "box-side", x: boxRect.x + boxRect.width - rail.width, y: boxRect.y + boxRect.height + SLOT_PAD },
+    // element-side, in order: above element, below element, left of element,
+    // right of element — hugging the element's own edges once the box has
+    // decoupled from it (docked, or any far-off manual placement).
     { seat: "element-side", x: boxRect.x + boxRect.width - rail.width, y: element.y - SLOT_PAD - rail.height },
     { seat: "element-side", x: boxRect.x + boxRect.width - rail.width, y: element.y + element.height + SLOT_PAD },
     { seat: "element-side", x: element.x - SLOT_PAD - rail.width, y: element.y },

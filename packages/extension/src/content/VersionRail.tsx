@@ -356,8 +356,6 @@ export function VersionLayer({
   const [enteringNo, setEnteringNo] = useState<number | null>(null);
   const seenVersions = useRef<Set<string>>(new Set());
   const shotTried = useRef<Set<string>>(new Set());
-  /** Main-rail position while dragging, before it is persisted on release. */
-  const [railDragPos, setRailDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const showMain = visible && versionsOk && versions.length >= 2 && liveRect !== null;
 
@@ -728,9 +726,6 @@ export function VersionLayer({
         railEl.style.left = `${d.at.x}px`;
         railEl.style.top = `${d.at.y}px`;
         railEl.dataset.placed = "moved";
-        if (railId === "main") {
-          setRailDragPos(d.at);
-        }
         if (railId === "main" && boxRect && liveRect && d.at) {
           onScoot(
             composerScoot(
@@ -761,13 +756,11 @@ export function VersionLayer({
           /* A merge — position never changes hands, only keys do. */
           if (railId === "main") absorb(to, "main");
           else absorb(railId, to);
-          if (railId === "main") setRailDragPos(null);
           return;
         }
         /* A move. The main rail's seat persists on the pin; a capture's on
            the board. */
         if (railId === "main") {
-          setRailDragPos(null);
           if (d.at && liveRect) {
             void send("pin/update", {
               pinId: pin.id,

@@ -2573,6 +2573,13 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
 
   const boxSeat = chromePlacement?.box.seat ?? null;
   const railSeat = chromePlacement?.rail?.seat ?? null;
+  /**
+   * The scoot actually in effect right now: a live rail drag overrides the
+   * module's resting value while it's in flight. Computed once so the
+   * dialog's margin and the box rect fed to capture rails always agree —
+   * negative included, since an above-orientation drag can lift the box up.
+   */
+  const effectiveScoot = liveScoot !== 0 ? liveScoot : (chromePlacement?.scoot ?? 0);
   useEffect(() => {
     setPreferredSeats((prev) =>
       prev.box === boxSeat && prev.rail === railSeat ? prev : { box: boxSeat, rail: railSeat },
@@ -2890,7 +2897,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           pins={liveSelectedPins}
           board={board}
           position={{ x: chromePlacement.box.x, y: chromePlacement.box.y, width: chromePlacement.box.width }}
-          scoot={liveScoot !== 0 ? liveScoot : chromePlacement.scoot}
+          scoot={effectiveScoot}
           onRootEl={onDialogRootEl}
           onBodyPointerDown={beginBoxDrag}
           versionBusy={versionBusy}
@@ -2930,7 +2937,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             chromePlacement && boxSize
               ? {
                   x: chromePlacement.box.x,
-                  y: chromePlacement.box.y + Math.max(0, chromePlacement.scoot),
+                  // Must describe where the box actually renders (same
+                  // effective scoot as the dialog above), or capture rails
+                  // seat against a phantom rect instead of the real one.
+                  y: chromePlacement.box.y + effectiveScoot,
                   width: chromePlacement.box.width,
                   height: boxSize.height,
                 }
