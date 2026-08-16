@@ -28,15 +28,19 @@ import type { Box } from "./chrome-placement";
 /* Timing: Done flash + two frames for the row key to lay out + flight. */
 const DONE_FLASH_MS = 540;
 const ROW_LAYOUT_MS = 32;
+/** Mock flight: 420ms tween, 430ms until the ghost is swapped for the rail key. */
 const FLIGHT_MS = 430;
-/** In-place dissolve when the box and rail are too far for a slide. */
-const DISSOLVE_MS = 280;
 const ENTER_HOLD_SLACK_MS = 200;
 /** How long a fresh key stays collapsed while its chat row flashes Done and
     the copy flies over: flash + layout beat + flight, with a little slack. */
 const ENTER_HOLD_MS = DONE_FLASH_MS + ROW_LAYOUT_MS + FLIGHT_MS + ENTER_HOLD_SLACK_MS;
-/** Slide only when the hop is short. A long flight reads as a thing
-    sliding across the page, not as the same key moving seats. */
+/**
+ * How long `flyKeyToRail` waits for the rail key to mount. The rail only
+ * exists at ≥2 keys, and takeoff is a double rAF after Done — a missed
+ * frame must not silently skip the flight.
+ */
+const RAIL_KEY_WAIT_MS = 300;
+/** Kept for tests. Live flight always translates; distance does not dissolve. */
 export const LOCAL_FLIGHT_MIN_PX = 280;
 /** A press is a switch; movement past this is a carry. */
 const DRAG_THRESHOLD = 5;
@@ -134,8 +138,8 @@ export function composerScoot(rail: RailBox, card: RailBox, note: RailBox): numb
 /* ------------------------------------------------------------------ flight */
 
 /**
- * Nearby hops still slide. A long hop dissolves in place — the same key,
- * without a numeral skating across half the page.
+ * Distance classifier, kept for tests. `flyKeyToRail` always flies —
+ * the mock's motion is a translate, not a dissolve, at any hop length.
  */
 export function flightMode(
   from: { left: number; top: number },
@@ -175,25 +179,43 @@ function flightHost(fromKey: HTMLElement): ShadowRoot | HTMLElement {
  * settled row is where the flight begins; the rail key is found by number so
  * neither component needs a ref into the other.
  *
- * The ghost is the numeral keycap the rail already shows — never the row's
- * ⌥. Parent it on the shadow root: React owns `.pin-overlay` and will
- * delete a child it did not render mid-flight. When the hop would be long,
- * the source key dissolves in place instead of sliding, and the rail still
- * opens its gap and land-pulses.
+ * Always a translate, like mocks/toggle-redesign.html: 420ms transform +
+ * width, the rail gap opening over the same beat, then a land pulse. The
+ * ghost is the numeral keycap the rail already shows — never the row's ⌥ —
+ * and it lives on the shadow root so React cannot delete it mid-flight.
+ *
+ * The rail only exists at ≥2 keys. If the destination is not mounted yet,
+ * retry on rAF for a short window rather than skipping the motion.
  */
 export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   const root = fromKey.getRootNode() as ShadowRoot | Document;
-  const railKey = root.querySelector<HTMLElement>(
-    `.pin-versions[data-rail="main"] .pin-key[data-no="${no}"]`,
-  );
   const done = () => {
     root.dispatchEvent(new CustomEvent("pin:key-landed", { detail: { no } }));
   };
-  if (!railKey || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
     done();
     return;
   }
 
+  const started = performance.now();
+  const tryFly = () => {
+    const railKey = root.querySelector<HTMLElement>(
+      `.pin-versions[data-rail="main"] .pin-key[data-no="${no}"]`,
+    );
+    if (railKey) {
+      launchMintFlight(fromKey, railKey, done);
+      return;
+    }
+    if (performance.now() - started >= RAIL_KEY_WAIT_MS) {
+      done();
+      return;
+    }
+    requestAnimationFrame(tryFly);
+  };
+  tryFly();
+}
+
+function launchMintFlight(fromKey: HTMLElement, railKey: HTMLElement, done: () => void): void {
   /* Where the key will sit once the rail has made room. Measured with the
      transition off so the answer is the settled position, not a frame of it. */
   railKey.style.transition = "none";
@@ -210,37 +232,12 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   ghost.style.cssText =
     "position:fixed;margin:0;z-index:9999;pointer-events:none;" +
     `left:${from.left}px;top:${from.top}px;` +
-    `width:${from.width}px;height:${from.height}px;max-width:none;`;
+    `width:${from.width}px;height:${from.height}px;max-width:none;` +
+    "transition:transform 420ms var(--ease), width 420ms var(--ease);";
 
-  /* The gap opens now, over the same time the copy spends arriving. */
+  /* The gap opens now, over the same 420ms the copy spends travelling. */
   railKey.dataset.entering = "false";
-
-  const host = flightHost(fromKey);
-  const mode = flightMode(from, to);
-
-  if (mode === "local") {
-    fromKey.style.visibility = "hidden";
-    ghost.style.transition = `transform ${DISSOLVE_MS}ms var(--ease), opacity ${DISSOLVE_MS}ms ease`;
-    host.appendChild(ghost);
-    let kicked = false;
-    const kick = () => {
-      if (kicked) return;
-      kicked = true;
-      ghost.style.transform = "scale(0.55)";
-      ghost.style.opacity = "0";
-    };
-    requestAnimationFrame(kick);
-    window.setTimeout(kick, 24);
-    window.setTimeout(() => {
-      ghost.remove();
-      fromKey.style.visibility = "";
-      landRailKey(railKey, done);
-    }, DISSOLVE_MS);
-    return;
-  }
-
-  ghost.style.transition = "transform 420ms var(--ease), width 420ms var(--ease)";
-  host.appendChild(ghost);
+  flightHost(fromKey).appendChild(ghost);
 
   let kicked = false;
   const kick = () => {

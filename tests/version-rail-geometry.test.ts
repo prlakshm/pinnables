@@ -88,7 +88,7 @@ test("numerals ring 1..5 and start over", () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 11].map(versionKeyFor), [1, 2, 3, 4, 5, 1, 2, 1]);
 });
 
-test("flightMode flies a short hop and stays local for a long one", () => {
+test("flightMode still classifies distance; live flight ignores it and always translates", () => {
   const origin = { left: 0, top: 0 };
   assert.equal(flightMode(origin, { left: 0, top: 0 }), "fly");
   assert.equal(flightMode(origin, { left: 100, top: 0 }), "fly");
@@ -113,4 +113,19 @@ test("Done flash, flight hold, and ghost parenting match the handoff", () => {
   assert.match(rail, /ENTER_HOLD_MS = DONE_FLASH_MS \+ ROW_LAYOUT_MS \+ FLIGHT_MS \+ ENTER_HOLD_SLACK_MS/);
   assert.match(rail, /root instanceof ShadowRoot \? root : document\.body/);
   assert.match(rail, /querySelector\("\.pin-key__mod"\)\?\.remove\(\)/);
+});
+
+test("flyKeyToRail always translates and waits for the rail key", () => {
+  const rail = source("../packages/extension/src/content/VersionRail.tsx");
+  const fly = rail.slice(rail.indexOf("export function flyKeyToRail"), rail.indexOf("function launchMintFlight"));
+  const launch = rail.slice(rail.indexOf("function launchMintFlight"));
+  assert.match(fly, /RAIL_KEY_WAIT_MS/);
+  assert.match(fly, /requestAnimationFrame\(tryFly\)/);
+  assert.doesNotMatch(fly, /flightMode\(/);
+  assert.doesNotMatch(launch, /flightMode\(/);
+  assert.doesNotMatch(launch, /scale\(0\.55\)/);
+  assert.doesNotMatch(launch, /opacity = "0"/);
+  assert.match(launch, /translate\(\$\{to\.left - from\.left\}px, \$\{to\.top - from\.top\}px\)/);
+  assert.match(launch, /transition:transform 420ms var\(--ease\), width 420ms var\(--ease\)/);
+  assert.match(launch, /ghost\.style\.width = `\$\{to\.width\}px`/);
 });
