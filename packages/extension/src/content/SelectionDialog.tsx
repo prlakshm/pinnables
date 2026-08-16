@@ -265,6 +265,10 @@ export function SelectionDialog({
   const waitForKeysAndFly = useCallback((messageId: string, no: number) => {
     const started = performance.now();
     const tryFly = () => {
+      /* A hidden tab paints nothing: end the choreography and let the key
+         appear settled. The rail skips its entering hold when hidden for the
+         same reason, so nothing waits on a landing that will never fly. */
+      if (document.visibilityState !== "visible") return;
       const rowKey = rootRef.current?.querySelector<HTMLElement>(
         `.pin-key[data-msg="${messageId}"]`,
       );

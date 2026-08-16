@@ -151,8 +151,12 @@ export function flightMode(
 }
 
 /** Number-only ghost: the row's ⌥ is chrome, not something that flies. */
+/** Marks a flight's travelling copy so an interrupted one can be found. */
+const MINT_GHOST_CLASS = "pin-mint-ghost";
+
 function mintGhost(fromKey: HTMLElement): HTMLElement {
   const ghost = fromKey.cloneNode(true) as HTMLElement;
+  ghost.classList.add(MINT_GHOST_CLASS);
   ghost.removeAttribute("data-no");
   ghost.setAttribute("aria-hidden", "true");
   ghost.querySelector(".pin-key__mod")?.remove();
@@ -190,16 +194,29 @@ function flightHost(fromKey: HTMLElement): ShadowRoot | HTMLElement {
  */
 export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
   const root = fromKey.getRootNode() as ShadowRoot | Document;
+  let finished = false;
   const done = () => {
+    if (finished) return;
+    finished = true;
     root.dispatchEvent(new CustomEvent("pin:key-landed", { detail: { no } }));
   };
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  /* A hidden document cannot paint a flight, and its rAF loop below would
+     simply freeze until the tab returns — land the key settled instead. */
+  if (
+    matchMedia("(prefers-reduced-motion: reduce)").matches ||
+    document.visibilityState !== "visible"
+  ) {
     done();
     return;
   }
 
+  /* The wait loop rides rAF, which suspends the moment the tab hides. This
+     clock-based deadline is the escape: whatever state the loop froze in,
+     the key still lands. */
+  const deadline = window.setTimeout(done, RAIL_KEY_WAIT_MS + 100);
   const started = performance.now();
   const tryFly = () => {
+    if (finished) return;
     const fromBox = fromKey.getBoundingClientRect();
     const rowReady = fromKey.isConnected && fromBox.width > 0 && fromBox.height > 0;
     const railKey = root.querySelector<HTMLElement>(
@@ -220,10 +237,12 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
       railReady = to.width > 0 && to.height > 0;
     }
     if (rowReady && railKey && railReady) {
+      window.clearTimeout(deadline);
       launchMintFlight(fromKey, railKey, done);
       return;
     }
     if (performance.now() - started >= RAIL_KEY_WAIT_MS) {
+      window.clearTimeout(deadline);
       done();
       return;
     }
@@ -244,6 +263,12 @@ export function versionShortcutDigit(e: { code: string; key: string }): number |
 }
 
 function launchMintFlight(fromKey: HTMLElement, railKey: HTMLElement, done: () => void): void {
+  const host = flightHost(fromKey);
+  /* A flight interrupted mid-tween — tab hidden, timers throttled, document
+     frozen outright — must not leave its copy floating over the page. Any
+     stray from an earlier flight is swept before a new one boards. */
+  for (const stray of host.querySelectorAll(`.${MINT_GHOST_CLASS}`)) stray.remove();
+
   /* Where the key will sit once the rail has made room. Measured with the
      transition off so the answer is the settled position, not a frame of it. */
   railKey.style.transition = "none";
@@ -265,7 +290,7 @@ function launchMintFlight(fromKey: HTMLElement, railKey: HTMLElement, done: () =
 
   /* The gap opens now, over the same 420ms the copy spends travelling. */
   railKey.dataset.entering = "false";
-  flightHost(fromKey).appendChild(ghost);
+  host.appendChild(ghost);
 
   let kicked = false;
   const kick = () => {
@@ -277,10 +302,36 @@ function launchMintFlight(fromKey: HTMLElement, railKey: HTMLElement, done: () =
   requestAnimationFrame(kick);
   window.setTimeout(kick, 24);
 
-  window.setTimeout(() => {
+  /*
+   * Landing is idempotent and reachable three ways: the tween finishing, the
+   * clock saying it must have, or the tab hiding — a hidden tab's timers can
+   * be throttled far past the flight, and a frozen tab's never come at all,
+   * which is how a ghost was once found still hanging in the air minutes
+   * later. The rail key is re-queried at landing time: React may have
+   * replaced the node mid-flight, and the seat that must become visible is
+   * whichever element wears the numeral now.
+   */
+  const no = railKey.dataset.no;
+  let landed = false;
+  const land = () => {
+    if (landed) return;
+    landed = true;
+    document.removeEventListener("visibilitychange", onHide);
     ghost.remove();
-    landRailKey(railKey, done);
-  }, FLIGHT_MS);
+    const seat =
+      (host instanceof ShadowRoot || host instanceof HTMLElement
+        ? host.querySelector<HTMLElement>(
+            `.pin-versions .pin-key[data-no="${no}"]`,
+          )
+        : null) ?? railKey;
+    landRailKey(seat, done);
+  };
+  const onHide = () => {
+    if (document.visibilityState !== "visible") land();
+  };
+  ghost.addEventListener("transitionend", land);
+  window.setTimeout(land, FLIGHT_MS);
+  document.addEventListener("visibilitychange", onHide);
 }
 
 /* ------------------------------------------------------------------- layer */
@@ -431,6 +482,7 @@ export function VersionLayer({
   /** The key still in the air from the chat row; collapsed until it lands. */
   const [enteringNo, setEnteringNo] = useState<number | null>(null);
   const seenVersions = useRef<Set<string>>(new Set());
+  const enterHold = useRef<number | undefined>(undefined);
   const shotTried = useRef<Set<string>>(new Set());
 
   const hasTake = versions.some((v) => v.messageId !== null);
@@ -1013,12 +1065,24 @@ export function VersionLayer({
     if (fresh.length === 0) return;
     const newest = fresh[fresh.length - 1];
     /* Only choreograph a key minted moments ago — a board loaded cold shows
-       its keys settled, not arriving. */
+       its keys settled, not arriving. A hidden tab shows them settled too:
+       it cannot paint the flight, and its throttled timers once stranded a
+       key collapsed for as long as the tab stayed away. */
     if (Date.now() - Date.parse(newest.at) > 10_000) return;
+    if (document.visibilityState !== "visible") return;
     setEnteringNo(newest.no);
-    const timer = window.setTimeout(() => setEnteringNo(null), ENTER_HOLD_MS);
-    return () => window.clearTimeout(timer);
+    /*
+     * The hold ends when the flight lands or when this backstop fires. It
+     * lives in a ref, not an effect cleanup: every board echo re-runs this
+     * effect (the versions array is fresh each write), and a cleanup would
+     * cancel the pending backstop while the early return above declines to
+     * arm a new one — leaving the key collapsed forever.
+     */
+    window.clearTimeout(enterHold.current);
+    enterHold.current = window.setTimeout(() => setEnteringNo(null), ENTER_HOLD_MS);
   }, [versions]);
+
+  useEffect(() => () => window.clearTimeout(enterHold.current), []);
 
   useEffect(() => {
     const node = layerRef.current?.getRootNode();
