@@ -179,7 +179,17 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
       "overflow:hidden;max-width:20px;" +
       "transition:max-width 300ms var(--ease), margin-right 300ms var(--ease), opacity 200ms ease;";
   }
-  (railKey.closest(".pin-overlay") ?? fromKey.parentElement ?? document.body).appendChild(ghost);
+  /*
+   * The ghost hangs off the shadow root itself, not off a rendered element.
+   *
+   * The mock appends to document.body because it owns the page. Here the copy
+   * needs the shadow root's stylesheet to still look like a keycap, so it has
+   * to stay inside the shadow tree — but parenting it to `.pin-overlay` put it
+   * among children React reconciles, and a re-render lands easily inside the
+   * 430ms flight (a rail re-seat, a resize tick). The shadow root has no
+   * rendered owner, so nothing can reconcile it away mid-air.
+   */
+  root.appendChild(ghost);
 
   /* The gap opens now, over the same time the copy spends travelling. */
   railKey.dataset.entering = "false";
