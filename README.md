@@ -17,10 +17,10 @@ agent one plan with the exact style diffs — instead of a list of independent t
 | Board schema, style allowlist, diff computation | **working** |
 | MCP server (4 tools) | **working**, verified against a real MCP client |
 | Local service (materializes boards to disk) | **working** |
-| Chrome extension — capture, board, relationships, handoff | **working**, not yet loaded in Chrome |
-| Draw tool — frozen-frame region marking | **working**, not yet loaded in Chrome |
+| Chrome extension — capture, board, relationships, handoff | **working** — load unpacked `packages/extension/dist` |
+| Draw tool — live-page freehand | **working** — same load |
 | Wordmark | **working** — traced vectors |
-| Dev plugin (build-time source mapping) | not started |
+| Dev plugin (build-time source mapping) | **working** |
 
 ## Run it
 
@@ -77,10 +77,10 @@ you want them in a build.
 ### One-click Send to Cursor (recommended)
 
 1. Create an API key at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations).
-2. Start the local service with that key, pointed at the **app repo** you're annotating:
+2. Start the local service with that key, pointed at the **app repo** you're annotating. Variables the service reads are listed in [`.env.example`](.env.example) — export them or prefix the command; the service does not load a `.env` file.
 
 ```bash
-CURSOR_API_KEY=crsr_… \
+CURSOR_API_KEY= \
 PINNABLES_PROJECT_DIR=/absolute/path/to/your-app \
 npm run dev:service
 ```
@@ -91,31 +91,10 @@ By default Send uses Cursor's **local** agent runtime: it edits files in
 `PINNABLES_PROJECT_DIR` (or the service's cwd) on this machine. A Vite/dev server
 running that repo should hot-reload — no PR branch, no cloud clone.
 
-Live Sends use Composer **fast**, skip screenshot vision, and tell the agent to
-edit the named file only. That is what keeps the loop short.
-
 Follow-up Sends reuse the same local agent session (`~/.pinnables/cursor-session.json`).
-If that agent still has an active run, the next Send is **queued** and starts when
-the run finishes.
-
-Optional:
-
-| Env | Purpose |
-|---|---|
-| `PINNABLES_PROJECT_DIR` | Repo the local agent edits (required when the service isn't started from that repo) |
-| `PINNABLES_CURSOR_MODEL` | Model id (default `composer-2.5`) |
-| `PINNABLES_CURSOR_FAST=0` | Full Composer instead of the fast variant (slower) |
-| `PINNABLES_SEND_IMAGES=1` | Always attach pin screenshots (vision; slower). On by default for cloud, and whenever the pen tool was used |
-| `PINNABLES_CURSOR_AGENT_ID` | Force follow-ups onto a specific agent |
-| `PINNABLES_CURSOR_RUNTIME=cloud` | Use Cloud Agents instead (remote clone; see below) |
-| `PINNABLES_REPO_URL` | GitHub URL for cloud runtime |
-| `PINNABLES_REPO_REF` | Starting branch/SHA for cloud |
-| `PINNABLES_AUTO_CREATE_PR=1` | Cloud only: open a PR when the run finishes |
-| `PINNABLES_CURSOR_FALLBACK_LOCAL=1` | If Cursor API fails, fall back to CLI spawn (`claude`) |
-
-Cloud runtime (`PINNABLES_CURSOR_RUNTIME=cloud`) clones the repo on a Cursor VM.
-Watch those agents at [cursor.com/agents](https://cursor.com/agents). Prefer local
-for live UI feedback on a running app.
+`PINNABLES_CURSOR_RUNTIME=cloud` clones the repo on a Cursor VM instead. Watch those
+agents at [cursor.com/agents](https://cursor.com/agents). Prefer local for live UI
+feedback on a running app.
 
 Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer for you to paste.
 
@@ -211,28 +190,20 @@ markup. That's what makes a precise edit possible.
 **Region pins** answer *which area* — a crowded band, a gap between two things, one frame of an
 animation. The element picker can't express any of those.
 
-Region pins come from the draw tool, and the mechanic is borrowed from
-[Cursor Design Mode](https://cursor.com/blog/design-mode): **the viewport is frozen first, and you
-draw on that frame.** It's a small decision that removes a whole class of problem — a mark anchored
-to a live page drifts the instant anything reflows, and can't mark a moving element at all. Freeze
-first and there is nothing left to re-anchor; the frame *is* the record.
-
-Circle, box, arrow, or freehand; four colours; `⌘Z` to undo, `⌘↵` to commit, `Esc` to discard the
-frame. The marks are cropped to their own bounds plus context, composited into the stored PNG, and
-summarised for the brief:
+Region pins come from the draw tool. Drawing is **on the live page** — pencil, colour, eraser —
+not on a frozen screenshot. Strokes are freehand and anchored to the element they were drawn over,
+so they survive scroll and reflow. They save as you draw: one region pin per route, no commit step.
+`Esc` leaves draw mode and returns to pin.
 
 ```
 ### pin-06 — toolbar crowding  [todo]
 route `/dashboard` · 1440×900
-region · 1 ellipse, 1 arrow drawn over the captured frame · see screenshot
+region · 1 freehand drawn on the page over .toolbar · see screenshot
 > Everything between the filter row and the first card is fighting for the same space.
 ```
 
-Note what a region pin deliberately *doesn't* carry: no selector, no source file, no computed
-styles. Filling those with something plausible would be worse than leaving them empty — the
-screenshot is the specification, and the agent is told to open it. For the same reason region pins
-can't take part in relationships: a style diff needs two elements with captured styles, and a region
-has neither.
+A region pin has no selector, source file, or computed styles — the screenshot is the specification.
+Region pins can't take part in relationships: a style diff needs two elements with captured styles.
 
 ## Brand
 
