@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { composerScoot, seatRail } from "../packages/extension/src/content/VersionRail";
-import { versionKeyFor } from "@pinnables/shared";
+import { readFileSync } from "node:fs";
+
+import {
+  composerScoot,
+  flightMode,
+  LOCAL_FLIGHT_MIN_PX,
+  seatRail,
+} from "../packages/extension/src/content/VersionRail";
+import { versionInChapter, versionKeyFor } from "@pinnables/shared";
+
+const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 /**
  * The rail's seating ring and the composer's scoot, held to the mock's
@@ -77,4 +86,31 @@ test("the composer steps down for a rail on its doorstep, and no further", () =>
 
 test("numerals ring 1..5 and start over", () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 11].map(versionKeyFor), [1, 2, 3, 4, 5, 1, 2, 1]);
+});
+
+test("flightMode flies a short hop and stays local for a long one", () => {
+  const origin = { left: 0, top: 0 };
+  assert.equal(flightMode(origin, { left: 0, top: 0 }), "fly");
+  assert.equal(flightMode(origin, { left: 100, top: 0 }), "fly");
+  assert.equal(flightMode(origin, { left: LOCAL_FLIGHT_MIN_PX, top: 0 }), "local");
+  assert.equal(flightMode(origin, { left: 800, top: 0 }), "local");
+});
+
+test("a null chapter head keeps stored keys visible", () => {
+  assert.equal(versionInChapter({ head: "H1" }, null), true);
+  assert.equal(versionInChapter({ head: null }, "H2"), true);
+  assert.equal(versionInChapter({ head: "H1" }, "H2"), false);
+  assert.equal(versionInChapter({ head: "H2" }, "H2"), true);
+});
+
+test("Done flash, flight hold, and ghost parenting match the handoff", () => {
+  const dialog = source("../packages/extension/src/content/SelectionDialog.tsx");
+  const rail = source("../packages/extension/src/content/VersionRail.tsx");
+  assert.match(dialog, /DONE_FLASH_MS = 540/);
+  assert.match(dialog, /requestAnimationFrame\(\(\) => \{/);
+  assert.doesNotMatch(dialog, /setTimeout\(\(\) => \{[\s\S]*flyKeyToRail[\s\S]*\}, 220\)/);
+  assert.match(rail, /DONE_FLASH_MS = 540/);
+  assert.match(rail, /ENTER_HOLD_MS = DONE_FLASH_MS \+ ROW_LAYOUT_MS \+ FLIGHT_MS \+ ENTER_HOLD_SLACK_MS/);
+  assert.match(rail, /root instanceof ShadowRoot \? root : document\.body/);
+  assert.match(rail, /querySelector\("\.pin-key__mod"\)\?\.remove\(\)/);
 });

@@ -69,6 +69,8 @@ export interface SelectionDialogProps {
    * offline services — everything shows.
    */
   projectHead?: string | null;
+  /** Whether restore can be honoured. Keys still show; presses no-op when off. */
+  versionsOk?: boolean;
   /** Set when this selection is the target of an on-screen relationship. */
   targetOf: string | null;
   /** The relationship the message is about, when there is exactly one. */
@@ -91,12 +93,12 @@ export interface SelectionDialogProps {
 /**
  * How long "Done" holds before handing its seat to the version key.
  *
- * Shorter than the old 4s goodbye flash, because the job changed: the row
- * used to leave the log for good, so the tag was a farewell. Now the row
- * stays and keeps a key, so the tag only has to be readable before it hands
- * over.
+ * One beat of a continuous handoff — Working → Done → keycap → flight —
+ * not a farewell flash. Long enough to read "Done", then the tag collapses
+ * and the key takes off. Leave still starts at DONE_FLASH_MS - 260 so the
+ * 260ms tag collapse stays in sync with ui.css.
  */
-const DONE_FLASH_MS = 1200;
+const DONE_FLASH_MS = 540;
 
 export function SelectionDialog({
   pins,
@@ -106,6 +108,7 @@ export function SelectionDialog({
   versionBusy = false,
   onVersionBusy,
   projectHead = null,
+  versionsOk = true,
   targetOf,
   relationshipId,
   drawingSummary,
@@ -269,10 +272,10 @@ export function SelectionDialog({
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
         if (status.state === "done") {
           /*
-           * The "Done" tag gets its moment, then hands its seat to the
-           * version key: the tag narrows away, the keycap grows in on the
-           * same axis, and the copy flies to the rail. The row itself stays —
-           * a finished line's number is the way back to its state.
+           * The "Done" tag is the first beat of the handoff: it holds just
+           * long enough to read, then narrows away and the keycap takes the
+           * seat and flies. The row itself stays — a finished line's number
+           * is the way back to its state.
            */
           setCompletedFlash((previous) => new Set(previous).add(messageId));
           window.setTimeout(() => {
@@ -486,35 +489,38 @@ export function SelectionDialog({
 
   /*
    * The settled row's keycap flies to the rail — the same key, seen leaving
-   * one place and arriving in the other. Waits for the mint to land on the
-   * board (versionNo appears via the outcome broadcast), then launches from
-   * the row's own element. If the mint never lands there is nothing to fly.
+   * one place and arriving in the other. The mint has to land on the board
+   * first (versionNo via the outcome broadcast); then two frames let the
+   * row key lay out so the ghost can launch from a real box. No extra hold:
+   * this is the next beat of the same handoff, not a pause after it.
    */
   useEffect(() => {
     if (!justSettled) return;
     const sent = primary?.liveSends.find((s) => s.messageId === justSettled);
     if (!sent || sent.versionNo === null) return;
     const no = sent.versionNo;
-    const timer = window.setTimeout(() => {
-      const rowKey = rootRef.current?.querySelector<HTMLElement>(
-        `.pin-key[data-msg="${justSettled}"]`,
-      );
-      if (rowKey) flyKeyToRail(rowKey, no);
-    }, 220);
+    const messageId = justSettled;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const rowKey = rootRef.current?.querySelector<HTMLElement>(
+          `.pin-key[data-msg="${messageId}"]`,
+        );
+        if (rowKey) flyKeyToRail(rowKey, no);
+      });
+    });
     setJustSettled(null);
-    void timer;
   }, [justSettled, primary?.liveSends]);
 
   /** Press a chat key: same restore the rail runs, same quiet while it runs. */
   const pressVersion = useCallback(
     (no: number) => {
-      if (versionBusy || primary?.currentVersionNo === no) return;
+      if (!versionsOk || versionBusy || primary?.currentVersionNo === no) return;
       onVersionBusy?.(true);
       void send("version/restore", { pinId: primary.id, no })
         .catch(() => {})
         .finally(() => onVersionBusy?.(false));
     },
-    [versionBusy, primary, onVersionBusy],
+    [versionsOk, versionBusy, primary, onVersionBusy],
   );
 
   if (!primary) return null;
@@ -759,7 +765,7 @@ export function SelectionDialog({
                         messageId={sent.messageId}
                         lit={primary.currentVersionNo === settledKey}
                         label={sent.text}
-                        busy={versionBusy}
+                        busy={versionBusy || !versionsOk}
                         onPress={() => pressVersion(settledKey)}
                       />
                     ) : null
