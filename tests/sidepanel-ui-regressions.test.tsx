@@ -398,13 +398,26 @@ test("the setup banner keys off cursorConfigured, not a live Cursor probe", () =
   assert.doesNotMatch(app, /serviceOnline && !state\.cursorOnline/);
 });
 
-test("hard failures use red while offline and blocked guidance stays amber", () => {
+test("only genuine breaks are red; guidance is amber and waiting is quiet", () => {
   const app = source("packages/extension/src/sidepanel/App.tsx");
   const css = source("packages/extension/src/ui/ui.css");
 
-  assert.match(app, /captureIssue[\s\S]*className="pin-banner pin-banner--error"/);
-  assert.match(app, /submitError[\s\S]*className="pin-banner pin-banner--error"/);
+  /* Needing site access, or being on a chrome:// tab, is a step to take. It
+     was red, which told people they had broken something they had not. */
+  const capture = app.slice(app.indexOf("{captureIssue && ("), app.indexOf("{!board || !state ?"));
+  assert.match(capture, /className="pin-banner"/);
+  assert.doesNotMatch(capture, /pin-banner--error/);
+
+  /* The send alert no longer hardcodes a weight — severity picks it. */
+  assert.match(app, /submitError[\s\S]*className=\{BANNER_CLASS\[submitError\.severity\]\}/);
+  assert.match(app, /note: "pin-banner pin-banner--note"/);
+  assert.match(app, /warn: "pin-banner"/);
+  assert.match(app, /error: "pin-banner pin-banner--error"/);
+
+  /* All three weights still resolve to the tokens they claim. */
   assert.match(css, /\.pin-banner--error\s*\{[\s\S]*var\(--pin-red-tint\)[\s\S]*var\(--pin-red\)/);
+  assert.match(css, /\.pin-banner\s*\{[\s\S]*var\(--pin-amber-soft\)[\s\S]*var\(--pin-amber\)/);
+  assert.match(css, /\.pin-banner--note\s*\{[\s\S]*var\(--pin-paper-sunk\)[\s\S]*var\(--pin-ink-muted\)/);
 });
 
 test("identity labels keep one fixed plate in both schemes", () => {

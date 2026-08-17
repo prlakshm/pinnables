@@ -74,7 +74,50 @@ you want them in a build.
 
 ## Connect an agent
 
-### One-click Send to Cursor (recommended)
+Pinnables can drive Cursor, Claude Code, or Codex. Which one it uses is decided
+by the command you start the service with, and nothing else changes: the same
+pins, the same Send, the same version rail.
+
+```bash
+npm run dev:service          # Cursor (default)
+npm run dev:service:claude   # Claude Code
+npm run dev:service:codex    # Codex
+```
+
+Pick the model on the same line, whichever agent you chose. This is optional
+everywhere; leave it off and each agent uses its own default.
+
+```bash
+PINNABLES_MODEL=claude-sonnet-5 npm run dev:service:claude
+```
+
+| Env | Purpose |
+|---|---|
+| `PINNABLES_AGENT` | `cursor` (default), `claude`, or `codex`. The npm scripts above set it for you |
+| `PINNABLES_MODEL` | Model id for whichever agent is running. Overrides the agent-specific model variables |
+| `PINNABLES_PROJECT_DIR` | Repo the agent edits (required when the service isn't started from that repo) |
+| `PINNABLES_SEND_IMAGES=1` | Always attach pin screenshots. On by default for Cursor cloud, and for every agent whenever the pen tool was used |
+
+Claude Code and Codex always edit the repo on this machine, so a running dev
+server hot-reloads and the version rail works exactly as it does under Cursor's
+local runtime. Both authenticate through their own CLI, so if `claude` or
+`codex` already works in your terminal, Send works. Follow-ups resume the same
+session (`~/.pinnables/claude-session.json`, `~/.pinnables/codex-session.json`).
+
+| Env | Purpose |
+|---|---|
+| `PINNABLES_CLAUDE_MODEL` | Model for Claude Code (default `claude-opus-5`) |
+| `PINNABLES_CODEX_MODEL` | Model for Codex (default: whatever Codex picks) |
+| `PINNABLES_CLAUDE_SESSION_ID` | Force follow-ups onto a specific Claude session |
+| `PINNABLES_CODEX_THREAD_ID` | Force follow-ups onto a specific Codex thread |
+| `PINNABLES_CLAUDE_PATH` | Path to the `claude` binary, when it isn't on the service's PATH |
+| `PINNABLES_CODEX_PATH` | Path to the `codex` binary, when it isn't on the service's PATH |
+
+The two path variables exist because both SDKs shell out to their CLI and find
+it on `PATH`. A service started from a launcher rather than your shell often has
+a narrower `PATH` than you do, and `~/.local/bin` is the usual casualty.
+
+### One-click Send to Cursor (default)
 
 1. Create an API key at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations).
 2. Start the local service with that key, pointed at the **app repo** you're annotating:
@@ -103,7 +146,7 @@ Optional:
 | Env | Purpose |
 |---|---|
 | `PINNABLES_PROJECT_DIR` | Repo the local agent edits (required when the service isn't started from that repo) |
-| `PINNABLES_CURSOR_MODEL` | Model id (default `composer-2.5`) |
+| `PINNABLES_CURSOR_MODEL` | Model id (default `composer-2.5`). `PINNABLES_MODEL` wins over this |
 | `PINNABLES_CURSOR_FAST=0` | Full Composer instead of the fast variant (slower) |
 | `PINNABLES_SEND_IMAGES=1` | Always attach pin screenshots (vision; slower). On by default for cloud, and whenever the pen tool was used |
 | `PINNABLES_CURSOR_AGENT_ID` | Force follow-ups onto a specific agent |
@@ -111,7 +154,7 @@ Optional:
 | `PINNABLES_REPO_URL` | GitHub URL for cloud runtime |
 | `PINNABLES_REPO_REF` | Starting branch/SHA for cloud |
 | `PINNABLES_AUTO_CREATE_PR=1` | Cloud only: open a PR when the run finishes |
-| `PINNABLES_CURSOR_FALLBACK_LOCAL=1` | If Cursor API fails, fall back to CLI spawn (`claude`) |
+| `PINNABLES_AGENT_FALLBACK_LOCAL=1` | If the agent's API fails, fall back to CLI spawn (`claude`) |
 
 Cloud runtime (`PINNABLES_CURSOR_RUNTIME=cloud`) clones the repo on a Cursor VM.
 Watch those agents at [cursor.com/agents](https://cursor.com/agents). Prefer local
@@ -282,3 +325,7 @@ brand/                 wordmark source + traced vector
 fixtures/              a sample board — 5 pins, 4 routes, 1 relationship
 scripts/               MCP smoke test, wordmark tracer
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

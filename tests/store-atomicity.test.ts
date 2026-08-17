@@ -44,6 +44,9 @@ test("concurrent state patches merge instead of overwriting each other", async (
     cursorAgentUrl: null,
     cursorRuntime: null,
     cursorProjectDir: null,
+    agentLabel: "Cursor",
+    agentSetupHint: null,
+    agentInstallHint: null,
   } satisfies ExtensionState;
   memory = { state: { ...base } };
 

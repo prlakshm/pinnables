@@ -12,18 +12,24 @@ import {
 } from "@pinnables/shared";
 import { boardDir, pinnablesHome, writeBoard } from "@pinnables/shared/storage";
 import {
-  cursorConfigured,
-  cursorRuntime,
+  agentConfigured,
+  agentKind,
+  agentLabel,
+  agentModel,
+  agentRuntime,
+  agentInstallHint,
+  agentSetupHint,
+  agentStatusSnapshot,
+  agentUrlFor,
   imagesFromScreenshots,
   isAgentBusyError,
-  cursorStatusSnapshot,
   projectDir,
   readStickyAgentId,
   shouldAttachScreenshots,
-  sendToCursor,
-  statusFromCursor,
-  type CursorStatus,
-} from "./cursor.js";
+  sendToAgent,
+  statusFromAgent,
+  type AgentStatus,
+} from "./agents/index.js";
 import {
   listVersions,
   readChapterBaseline,
@@ -41,10 +47,15 @@ import {
  * Bound to 127.0.0.1 only. Nothing here should ever be reachable off-machine.
  *
  * Send path (least friction first):
- *   1. Cursor local agent (default) when CURSOR_API_KEY is set — edits
+ *   1. The agent chosen by PINNABLES_AGENT on the command that started this
+ *      service — Cursor (default), Claude Code, or Codex. All three edit
  *      PINNABLES_PROJECT_DIR / the git repo root so the running app hot-reloads.
  *   2. Cursor Cloud Agents when PINNABLES_CURSOR_RUNTIME=cloud.
  *   3. Local spawn via PINNABLES_AGENT_CMD / `claude` as a fallback.
+ *
+ * Which agent is live changes nothing below this line: providers answer the
+ * same questions, so the queue, the status lifecycle, and the version
+ * snapshots are written once and shared.
  */
 
 const PORT = Number(process.env.PINNABLES_PORT ?? 4573);
@@ -118,7 +129,7 @@ interface LiveMessage {
   boardId?: string;
 }
 
-interface QueuedCursorSend {
+interface QueuedAgentSend {
   id: string;
   promptText: string;
   body: LiveMessageBody;
@@ -134,7 +145,7 @@ interface QueuedCursorSend {
  * drain when the active run finishes (status poll + background ticker).
  */
 const liveMessages = new Map<string, LiveMessage>();
-const cursorSendQueue: QueuedCursorSend[] = [];
+const agentSendQueue: QueuedAgentSend[] = [];
 let liveCounter = 0;
 let queueDraining = false;
 /** Last Cloud Agent URL we handed back — shown in /health for the panel. */
@@ -186,13 +197,18 @@ function buildLiveMarkdown(
   return { lines, messagePath };
 }
 
+/** Where a live message's markdown and pin PNGs live. */
+function liveDir(id: string): string {
+  return join(pinnablesHome(), "live", id);
+}
+
 async function writeLiveArtifacts(
   body: LiveMessageBody,
   board: Board,
   pins: Board["pins"],
   id: string,
 ): Promise<{ messagePath: string; promptText: string; dir: string }> {
-  const dir = join(pinnablesHome(), "live", id);
+  const dir = liveDir(id);
   await mkdir(dir, { recursive: true });
   const screenshots = body.screenshots ?? {};
   const extra = drawingRegionPinIds(body, board)
@@ -259,16 +275,22 @@ function imagePinIds(body: LiveMessageBody, board: Board): string[] {
   return ids;
 }
 
-async function startViaCursor(
+async function startViaAgent(
   id: string,
   promptText: string,
   body: LiveMessageBody,
   board: Board,
 ): Promise<void> {
+  /* The same directory writeLiveArtifacts wrote the PNGs into. Providers that
+     read files off disk take the path; Cursor takes the bytes. */
   const images = shouldAttachScreenshots(messageHasDrawings(body, board))
-    ? imagesFromScreenshots(body.screenshots ?? {}, imagePinIds(body, board))
+    ? imagesFromScreenshots(
+        body.screenshots ?? {},
+        imagePinIds(body, board),
+        liveDir(id),
+      )
     : [];
-  const result = await sendToCursor({
+  const result = await sendToAgent({
     text: promptText,
     images,
     name: `Pinnables · ${board.title || board.id}`,
@@ -278,22 +300,26 @@ async function startViaCursor(
      it to snapshot. */
   liveMessages.set(id, {
     ...liveMessages.get(id),
-    // The run exists; whether Cursor has started it is a separate question,
+    // The run exists; whether the agent has started it is a separate question,
     // answered by the first status refresh.
     state: "starting",
     detail: null,
+    /* Always "cursor" on the wire, whichever provider is live: to the
+       extension this has only ever meant "the service is driving an agent
+       itself" as opposed to a local CLI spawn, and renaming it would break
+       every panel built against the old service. */
     transport: "cursor",
     agentId: result.agentId,
     runId: result.runId,
     url: result.url ?? undefined,
   });
   console.log(
-    `live message ${id} → Cursor ${result.runtime} ${result.mode} ${result.agentId} / ${result.runId}` +
+    `live message ${id} → ${agentLabel()} ${result.runtime} ${result.mode} ${result.agentId} / ${result.runId}` +
       (result.cwd ? ` @ ${result.cwd}` : ""),
   );
 }
 
-function activeCursorRun(): LiveMessage | undefined {
+function activeAgentRun(): LiveMessage | undefined {
   for (const msg of liveMessages.values()) {
     if (
       msg.transport === "cursor" &&
@@ -306,8 +332,8 @@ function activeCursorRun(): LiveMessage | undefined {
   return undefined;
 }
 
-function shouldQueueCursorSend(): boolean {
-  return Boolean(activeCursorRun()) || cursorSendQueue.length > 0 || queueDraining;
+function shouldQueueAgentSend(): boolean {
+  return Boolean(activeAgentRun()) || agentSendQueue.length > 0 || queueDraining;
 }
 
 function markQueued(id: string, position: number, hint?: LiveMessage): void {
@@ -323,26 +349,26 @@ function markQueued(id: string, position: number, hint?: LiveMessage): void {
   });
 }
 
-function enqueueCursorSend(item: QueuedCursorSend): void {
-  cursorSendQueue.push(item);
-  markQueued(item.id, cursorSendQueue.length, activeCursorRun());
-  console.log(`live message ${item.id} → queued (#${cursorSendQueue.length})`);
+function enqueueAgentSend(item: QueuedAgentSend): void {
+  agentSendQueue.push(item);
+  markQueued(item.id, agentSendQueue.length, activeAgentRun());
+  console.log(`live message ${item.id} → queued (#${agentSendQueue.length})`);
 }
 
-async function drainCursorQueue(): Promise<void> {
+async function drainAgentQueue(): Promise<void> {
   if (queueDraining) return;
   queueDraining = true;
   try {
-    while (cursorSendQueue.length > 0) {
-      if (activeCursorRun()) break;
-      const next = cursorSendQueue.shift()!;
+    while (agentSendQueue.length > 0) {
+      if (activeAgentRun()) break;
+      const next = agentSendQueue.shift()!;
       try {
-        await startViaCursor(next.id, next.promptText, next.body, next.board);
+        await startViaAgent(next.id, next.promptText, next.body, next.board);
       } catch (err) {
         if (isAgentBusyError(err)) {
           // Race with Cursor — put it back at the front and wait for a tick.
-          cursorSendQueue.unshift(next);
-          markQueued(next.id, 1, activeCursorRun());
+          agentSendQueue.unshift(next);
+          markQueued(next.id, 1, activeAgentRun());
           console.log(`live message ${next.id} → still busy, keeping queued`);
           break;
         }
@@ -365,7 +391,7 @@ async function drainCursorQueue(): Promise<void> {
  * queued send. Driven by status GETs and a background ticker so the queue
  * drains even when nothing is polling a finished message.
  */
-async function refreshActiveCursorRuns(): Promise<void> {
+async function refreshActiveAgentRuns(): Promise<void> {
   const ids = [...liveMessages.entries()]
     .filter(
       ([, msg]) =>
@@ -378,7 +404,7 @@ async function refreshActiveCursorRuns(): Promise<void> {
   for (const id of ids) {
     await refreshMessageStatus(id);
   }
-  await drainCursorQueue();
+  await drainAgentQueue();
 }
 
 function startViaLocalSpawn(id: string, promptText: string, messagePath: string): void {
@@ -512,25 +538,29 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
 
   liveMessages.set(id, { state: "starting", detail: null, boardId: board.id });
 
-  if (cursorConfigured()) {
-    const queuedItem: QueuedCursorSend = { id, promptText, body, board };
-    if (shouldQueueCursorSend()) {
-      enqueueCursorSend(queuedItem);
+  if (agentConfigured()) {
+    const queuedItem: QueuedAgentSend = { id, promptText, body, board };
+    if (shouldQueueAgentSend()) {
+      enqueueAgentSend(queuedItem);
       return id;
     }
     try {
-      await startViaCursor(id, promptText, body, board);
+      await startViaAgent(id, promptText, body, board);
       return id;
     } catch (err) {
       if (isAgentBusyError(err)) {
-        enqueueCursorSend(queuedItem);
+        enqueueAgentSend(queuedItem);
         return id;
       }
       const detail = err instanceof Error ? err.message : String(err);
-      console.error(`Cursor send failed for ${id}, falling back to local:`, detail);
-      // If the user configured Cursor, a silent local fallback is confusing —
-      // only fall back when explicitly allowed.
-      if (process.env.PINNABLES_CURSOR_FALLBACK_LOCAL === "1") {
+      console.error(`${agentLabel()} send failed for ${id}, falling back to local:`, detail);
+      // If the user picked an agent, a silent local fallback is confusing —
+      // only fall back when explicitly allowed. The older Cursor-specific name
+      // still works; it always described this behavior rather than Cursor's.
+      if (
+        process.env.PINNABLES_AGENT_FALLBACK_LOCAL === "1" ||
+        process.env.PINNABLES_CURSOR_FALLBACK_LOCAL === "1"
+      ) {
         startViaLocalSpawn(id, promptText, messagePath);
         return id;
       }
@@ -555,12 +585,17 @@ async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
   if (found.state !== "working" && found.state !== "starting") return found;
 
   try {
-    const status: CursorStatus = await statusFromCursor(found.agentId, found.runId);
+    const status: AgentStatus = await statusFromAgent(found.agentId, found.runId);
     const next: LiveMessage = {
       ...found,
       state: status.state,
       detail: status.detail,
       url: status.url ?? found.url,
+      /* Cursor knows its agent id when the send returns. The local agents only
+         learn theirs once the run starts talking — a session, a thread — so the
+         record adopts whatever the status now knows and stops reporting the
+         placeholder the send had to invent. */
+      agentId: status.agentId ?? found.agentId,
     };
     /*
      * A local-runtime Cursor agent edits this working tree, so its completion
@@ -586,14 +621,14 @@ async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
     liveMessages.set(id, next);
     if (next.url) lastAgentUrl = next.url;
     if (next.state === "done" || next.state === "failed") {
-      void drainCursorQueue();
+      void drainAgentQueue();
     }
     return next;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const next: LiveMessage = { ...found, state: "failed", detail };
     liveMessages.set(id, next);
-    void drainCursorQueue();
+    void drainAgentQueue();
     return next;
   }
 }
@@ -624,7 +659,7 @@ async function pushBoard(body: PushBoardBody): Promise<{
   const dir = await materialize(board, screenshots);
   const pointer = `Load Pinnables board "${board.id}" and implement it.`;
 
-  if (!cursorConfigured()) {
+  if (!agentConfigured()) {
     return { messageId: "", boardDir: dir, pointer, transport: "clipboard" };
   }
 
@@ -653,14 +688,14 @@ async function pushBoard(body: PushBoardBody): Promise<{
    */
   await ensureChapterBaseline(board.id);
   liveMessages.set(id, { state: "starting", detail: null, boardId: board.id });
-  // Same shape as live messages so queue drain can call startViaCursor.
+  // Same shape as live messages so queue drain can call startViaAgent.
   const queueBody: LiveMessageBody = {
     text: promptText,
     board,
     pinIds: board.pins.map((p) => p.id),
     screenshots,
   };
-  const queuedItem: QueuedCursorSend = {
+  const queuedItem: QueuedAgentSend = {
     id,
     promptText,
     body: queueBody,
@@ -690,20 +725,20 @@ async function pushBoard(body: PushBoardBody): Promise<{
     };
   };
 
-  if (shouldQueueCursorSend()) {
-    // startViaCursor expects LiveMessageBody.pinIds for images — already set.
-    // Override send path: queue uses startViaCursor which re-reads screenshots.
-    enqueueCursorSend(queuedItem);
+  if (shouldQueueAgentSend()) {
+    // startViaAgent expects LiveMessageBody.pinIds for images — already set.
+    // Override send path: queue uses startViaAgent which re-reads screenshots.
+    enqueueAgentSend(queuedItem);
     return finishFromLive();
   }
 
   try {
     // Prefer the same path as live messages so queue drain stays uniform.
-    await startViaCursor(id, promptText, queueBody, board);
+    await startViaAgent(id, promptText, queueBody, board);
     return finishFromLive();
   } catch (err) {
     if (isAgentBusyError(err)) {
-      enqueueCursorSend(queuedItem);
+      enqueueAgentSend(queuedItem);
       return finishFromLive();
     }
     throw err;
@@ -718,15 +753,15 @@ const server = createServer((req, res) => {
 
     if (req.method === "GET" && url.pathname === "/health") {
       /* Served from the last real send or poll — /health itself never calls
-         the Cursor API. The panel keys "set up" off `configured`; `ok` is
+         an agent's API. The panel keys "set up" off `configured`; `ok` is
          best-effort connectivity that real traffic keeps honest. */
-      const cursor = cursorStatusSnapshot();
-      const stickyAgentId = cursorConfigured() ? await readStickyAgentId() : null;
+      const health = agentStatusSnapshot();
+      const stickyAgentId = agentConfigured() ? await readStickyAgentId() : null;
+      /* Only Cursor's cloud runtime hosts a page to link to. The local agents
+         put their work in the working tree instead, so there is nothing to
+         open and the panel's link stays hidden. */
       const agentUrl =
-        cursor.runtime === "cloud"
-          ? lastAgentUrl ??
-            (stickyAgentId ? `https://cursor.com/agents/${stickyAgentId}` : null)
-          : null;
+        lastAgentUrl ?? (stickyAgentId ? agentUrlFor(stickyAgentId) : null);
       /* Versions need a git working tree. Reported so the extension can hide
          the rail rather than offer keys that would not work. The head is the
          chapter: everything stamped with an older one has been absorbed by a
@@ -736,19 +771,33 @@ const server = createServer((req, res) => {
          at most one poll stale. */
       const versions = versionsHealthSnapshot();
       void refreshVersionsHealth().catch(() => {});
+      const status = {
+        configured: agentConfigured(),
+        ok: health.ok,
+        detail: health.detail,
+        runtime: health.runtime,
+        cwd: health.cwd,
+        agentId: stickyAgentId,
+        agentUrl,
+        queueLength: agentSendQueue.length,
+      };
       return send(res, 200, {
         ok: true,
         home: pinnablesHome(),
         versions,
-        cursor: {
-          configured: cursorConfigured(),
-          ok: cursor.ok,
-          detail: cursor.detail,
-          runtime: cursor.runtime,
-          cwd: cursor.cwd,
-          agentId: stickyAgentId,
-          agentUrl,
-          queueLength: cursorSendQueue.length,
+        /* `cursor` is the shape every shipped panel reads, so it keeps its
+           name and is filled from whichever provider is live. `agent` is the
+           same status plus who is actually answering, for panels that learn
+           to ask. Dropping the old key would blank the ready state on any
+           extension built before this change. */
+        cursor: status,
+        agent: {
+          ...status,
+          kind: agentKind(),
+          label: agentLabel(),
+          model: agentModel(),
+          setupHint: agentSetupHint(),
+          installHint: agentInstallHint(),
         },
       });
     }
@@ -781,7 +830,7 @@ const server = createServer((req, res) => {
        * and stay Working forever because nothing asked after its own poll
        * was stolen.
        */
-      await refreshActiveCursorRuns();
+      await refreshActiveAgentRuns();
       found = liveMessages.get(liveMatch[1]) ?? found;
       return send(res, 200, found);
     }
@@ -888,6 +937,18 @@ const server = createServer((req, res) => {
 });
 
 /*
+ * Resolve the agent before anything else. A typo in PINNABLES_AGENT that
+ * quietly fell back to Cursor would send every pin to the wrong place with no
+ * hint as to why, so it is fatal here instead.
+ */
+try {
+  agentKind();
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
+
+/*
  * The first versions refresh happens before the port opens, so no request can
  * ever see the cache's cold-start placeholder: a git tree answers ok from the
  * first poll, and a non-git project never flashes a rail it would then take
@@ -897,21 +958,22 @@ const server = createServer((req, res) => {
 void refreshVersionsHealth().finally(() => {
   server.listen(PORT, HOST, () => {
     console.log(`pinnables service on http://${HOST}:${PORT}`);
-  console.log(`boards → ${pinnablesHome()}`);
-  if (cursorConfigured()) {
-    const runtime = cursorRuntime();
-    if (runtime === "local") {
-      console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
+    console.log(`boards → ${pinnablesHome()}`);
+    const model = agentModel();
+    const modelNote = model ? ` on ${model}` : "";
+    if (agentConfigured()) {
+      if (agentRuntime() === "local") {
+        console.log(`${agentLabel()}${modelNote}: edits ${projectDir()}`);
+      } else {
+        console.log(`${agentLabel()}${modelNote}: configured (Send will push to remote)`);
+      }
     } else {
-      console.log("Cursor Cloud Agents: configured (Send will push to remote)");
+      console.log(`${agentLabel()}: set CURSOR_API_KEY to enable one-click Send`);
     }
-  } else {
-    console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
-  }
     // Keep the queue moving when the extension is not polling a finished run.
-    if (cursorConfigured()) {
+    if (agentConfigured()) {
       setInterval(() => {
-        void refreshActiveCursorRuns().catch((err) => {
+        void refreshActiveAgentRuns().catch((err) => {
           console.error(
             "queue tick failed:",
             err instanceof Error ? err.message : String(err),

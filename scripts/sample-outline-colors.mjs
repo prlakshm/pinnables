@@ -10,7 +10,11 @@ import Jimp from "jimp";
  * without that you get two hundred "colours" that are all the same blue.
  */
 
-const SRC = process.argv[2] ?? "/Users/pranavi/Downloads/browser-screenshot.png";
+const SRC = process.argv[2];
+if (!SRC) {
+  console.error("usage: node scripts/sample-outline-colors.mjs <screenshot.png>");
+  process.exit(1);
+}
 
 const image = await Jimp.read(SRC);
 const { width, height } = image.bitmap;

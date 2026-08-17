@@ -65,6 +65,22 @@ export interface ExtensionState {
   cursorRuntime: "local" | "cloud" | null;
   /** Directory the local agent writes into (PINNABLES_PROJECT_DIR / cwd). */
   cursorProjectDir: string | null;
+  /**
+   * The agent the service is driving, named the way the user would name it:
+   * "Cursor", "Claude Code", "Codex". The panel shows this rather than
+   * assuming, so nothing has to be renamed when another agent is added.
+   */
+  agentLabel: string;
+  /**
+   * That agent's own advice when a Send will not go through — a key for one,
+   * a CLI login for another. Null on a service too old to say.
+   */
+  agentSetupHint: string | null;
+  /**
+   * That agent's advice when it cannot be found at all, naming the variable
+   * that points at its binary. Null on a service too old to say.
+   */
+  agentInstallHint: string | null;
 }
 
 /**

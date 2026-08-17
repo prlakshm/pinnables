@@ -11,7 +11,7 @@ import {
   imagesFromScreenshots,
   sendToCursor,
   statusFromCursor,
-} from "../packages/service/src/cursor.ts";
+} from "../packages/service/src/agents/cursor.ts";
 
 const TINY_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -76,7 +76,7 @@ test("cursorConfigured reflects CURSOR_API_KEY", () => {
 });
 
 test("cursorRuntime defaults to local", async () => {
-  const { cursorRuntime, projectDir } = await import("../packages/service/src/cursor.ts");
+  const { cursorRuntime, projectDir } = await import("../packages/service/src/agents/cursor.ts");
   const prevRuntime = process.env.PINNABLES_CURSOR_RUNTIME;
   const prevDir = process.env.PINNABLES_PROJECT_DIR;
   delete process.env.PINNABLES_CURSOR_RUNTIME;
@@ -93,7 +93,7 @@ test("cursorRuntime defaults to local", async () => {
 
 test("local Sends default to fast Composer and skip images", async () => {
   const { modelSelection, sendImagesEnabled, shouldAttachScreenshots } = await import(
-    "../packages/service/src/cursor.ts"
+    "../packages/service/src/agents/cursor.ts"
   );
   const prevFast = process.env.PINNABLES_CURSOR_FAST;
   const prevModel = process.env.PINNABLES_CURSOR_MODEL;
@@ -475,7 +475,7 @@ test("service queues a second send while Cursor reports agent_busy", async () =>
 });
 
 test("isAgentBusyError detects Cursor 409 payloads", async () => {
-  const { isAgentBusyError } = await import("../packages/service/src/cursor.ts");
+  const { isAgentBusyError } = await import("../packages/service/src/agents/cursor.ts");
   assert.equal(
     isAgentBusyError(
       new Error(

@@ -158,7 +158,7 @@ makes `export as structured Markdown` (already P0) and the handoff the same feat
 
 ```markdown
 # Board: Dashboard card consistency
-Project: acme-app  ·  /Users/pranavi/dev/acme-app  ·  5 pins  ·  3 routes
+Project: acme-app  ·  ~/dev/acme-app  ·  5 pins  ·  3 routes
 
 **Global instruction:** Normalize using existing design tokens. No new dependencies.
 

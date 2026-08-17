@@ -450,12 +450,12 @@ test("a chat row key press restores that row's numeral", () => {
 
 test("a later send's status GET still refreshes earlier Cursor runs", () => {
   const service = source("packages/service/src/index.ts");
-  const cursor = source("packages/service/src/cursor.ts");
+  const cursor = source("packages/service/src/agents/cursor.ts");
   const getLive = service.slice(
     service.indexOf("const liveMatch"),
     service.indexOf("Versions. Snapshot"),
   );
-  assert.match(getLive, /await refreshActiveCursorRuns\(\)/);
+  assert.match(getLive, /await refreshActiveAgentRuns\(\)/);
   assert.doesNotMatch(
     getLive,
     /if \(found\.state === "done" \|\| found\.state === "failed" \|\| found\.state === "queued"\)/,

@@ -30,6 +30,9 @@ const DEFAULT_STATE: ExtensionState = {
   cursorAgentUrl: null,
   cursorRuntime: null,
   cursorProjectDir: null,
+  agentLabel: "Cursor",
+  agentSetupHint: null,
+  agentInstallHint: null,
 };
 
 async function get<T>(key: string): Promise<T | undefined> {

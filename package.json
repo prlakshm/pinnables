@@ -1,6 +1,11 @@
 {
   "name": "pinnables",
   "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prlakshm/pinnables.git"
+  },
   "private": true,
   "type": "module",
   "workspaces": [
@@ -12,6 +17,8 @@
     "build": "npm run lint && npm run check-tokens && npm run check-typography && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/vite-plugin && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
     "dev:extension": "npm run dev --workspace @pinnables/extension",
     "dev:service": "npm run start --workspace @pinnables/service",
+    "dev:service:claude": "PINNABLES_AGENT=claude npm run start --workspace @pinnables/service",
+    "dev:service:codex": "PINNABLES_AGENT=codex npm run start --workspace @pinnables/service",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
     "smoke": "tsx scripts/smoke.mts",
     "trace-wordmark": "node scripts/trace-wordmark.mjs",

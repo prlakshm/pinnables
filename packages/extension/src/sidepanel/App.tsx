@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Board } from "@pinnables/shared";
 import { send, type Broadcast, type ExtensionState, type TabArmState } from "../lib/messages";
+import { describeSendFailure, type SendFailureNotice } from "../lib/service";
 // Flat variant: same highlight, no gradient. The header renders at 17px, where
 // radial shading has nothing to resolve into but the highlight still reads.
 import wordmarkUrl from "../ui/wordmark-flat.svg";
@@ -55,6 +56,37 @@ async function waitForAgentStart(messageId: string): Promise<void> {
   }
 }
 
+/**
+ * Which banner weight each severity wears. Amber is the base class, so a
+ * setup instruction needs no modifier at all — the loud ones are the
+ * exceptions, which is the right way round.
+ */
+const BANNER_CLASS: Record<SendFailureNotice["severity"], string> = {
+  note: "pin-banner pin-banner--note",
+  warn: "pin-banner",
+  error: "pin-banner pin-banner--error",
+};
+
+/**
+ * The advice for a service with nothing to say about its agent. Only a
+ * Cursor-only service is that old, so Cursor's own wording is the right guess.
+ */
+const FALLBACK_SETUP_HINT = "Set CURSOR_API_KEY on the local service, then restart it.";
+
+/**
+ * Wrap environment-variable names in <code>.
+ *
+ * The hint arrives as a plain string because the failure alert renders it as
+ * one, and a backtick would show up literally there. The banner is the only
+ * surface that can carry markup, so it adds it here — matching the treatment
+ * this copy had when it was hardcoded.
+ */
+function withVarMarkup(text: string): ReactNode[] {
+  return text
+    .split(/(\b[A-Z][A-Z0-9_]{2,}\b)/g)
+    .map((part, i) => (/^[A-Z][A-Z0-9_]{2,}$/.test(part) ? <code key={i}>{part}</code> : part));
+}
+
 export function App() {
   const started = useRef(false);
   const reloadGeneration = useRef(0);
@@ -64,7 +96,7 @@ export function App() {
   const [state, setState] = useState<ExtensionState | null>(null);
   const [tab, setTab] = useState<Tab>("pins");
   const [phase, setPhase] = useState<Phase>("idle");
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<SendFailureNotice | null>(null);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureIssue, setCaptureIssue] = useState<Exclude<TabArmState, "armed" | "injected"> | null>(null);
   const [instructionDraft, setInstructionDraft] = useState("");
@@ -275,18 +307,36 @@ export function App() {
       if (result.messageId) await waitForAgentStart(result.messageId);
       phaseRef.current = "submitted";
       setPhase("submitted");
-    } catch {
+    } catch (err) {
       // The board is untouched and still on screen, so the press can simply be
-      // made again — which is the whole recovery.
+      // made again — which is the whole recovery. What reaches the panel is our
+      // own sentence for what went wrong; the agent's own wording is written
+      // for whoever is holding the stack trace, so it goes to the console where
+      // that person is, and no further.
+      console.warn("Pinnables send failed:", err);
       setSubmitError(
-        state?.cursorConfigured
-          ? "Couldn’t send to Cursor. Check CURSOR_API_KEY on the local service, then try again."
-          : "Couldn’t write the board. Start the local service, then try again.",
+        describeSendFailure(err, {
+          serviceOnline: Boolean(state?.serviceOnline),
+          configured: Boolean(state?.cursorConfigured),
+          label: state?.agentLabel,
+          hint: state?.agentSetupHint,
+          installHint: state?.agentInstallHint,
+        }),
       );
       phaseRef.current = "idle";
       setPhase("idle");
     }
-  }, [board, phase, instructionDraft, setInstruction, state?.cursorConfigured]);
+  }, [
+    board,
+    phase,
+    instructionDraft,
+    setInstruction,
+    state?.serviceOnline,
+    state?.cursorConfigured,
+    state?.agentLabel,
+    state?.agentSetupHint,
+    state?.agentInstallHint,
+  ]);
 
   /**
    * The board clears itself once "Submitted" has been read.
@@ -423,9 +473,11 @@ export function App() {
         aria-labelledby={tab === "pins" ? "pin-tab-pins" : "pin-tab-relationships"}
       >
         {captureIssue && (
-          <div className="pin-banner pin-banner--error" role="alert">
+          /* Both are instructions, not faults: one needs a permission granted,
+             the other needs a different tab. Neither is anything broken. */
+          <div className="pin-banner" role="alert">
             {captureIssue === "blocked"
-              ? "Pinnables couldn’t access this page. Grant site access, then try Capture again."
+              ? "Pinnables needs access to this page. Grant site access, then try Capture again."
               : "This Chrome page can’t be captured. Switch to an http or https page."}
           </div>
         )}
@@ -471,7 +523,7 @@ export function App() {
           )}
           {state?.serviceOnline && !state.cursorConfigured && (
             <div className="pin-banner pin-banner--prose">
-              Set <code>CURSOR_API_KEY</code> on the local service for one-click Send.
+              {withVarMarkup(state.agentSetupHint ?? FALLBACK_SETUP_HINT)}{" "}
               Point <code>PINNABLES_PROJECT_DIR</code> at the app repo so edits land live.
             </div>
           )}
@@ -489,8 +541,8 @@ export function App() {
           )}
 
           {submitError && (
-            <div className="pin-banner pin-banner--error" role="alert">
-              {submitError}
+            <div className={BANNER_CLASS[submitError.severity]} role="alert">
+              {submitError.message}
             </div>
           )}
 

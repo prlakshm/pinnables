@@ -1,6 +1,12 @@
 {
   "name": "@pinnables/mcp-server",
   "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prlakshm/pinnables.git",
+    "directory": "packages/mcp-server"
+  },
   "type": "module",
   "bin": {
     "pinnables-mcp": "./dist/index.js"
