@@ -4,81 +4,62 @@ import { mkdir } from "node:fs/promises";
 /**
  * Generate the extension's icon set from the app-icon render.
  *
- * The source has a wide transparent margin, which Chrome would render as extra
- * padding on top of its own — the tile would sit small and lost in the toolbar.
- * So autocrop to the artwork first, then resize.
+ * The source floats the tile in a wide transparent margin, which Chrome renders
+ * as padding on top of its own — the icon sits small in the toolbar, ringed by
+ * what reads as white. So the tile is lifted out of that margin and fills the
+ * icon edge to edge, glass rim and rounded corners intact.
  *
- * Cropping the margin is not enough on its own. In the source the pushpin fills
- * only half the tile's width, and the pale glass around it is what a 16px
- * toolbar slot mostly shows — the icon reads as a blue-white smudge. So the
- * artwork is scaled past the canvas and centre-cropped: the tile bleeds off the
- * edges, the pin grows by the same factor, and the identity survives being
- * small. The rounded corners are then cut back in, because the crop squares
- * them off and an app tile with hard corners stops looking like an app tile.
+ * Two details do the work. The crop ignores the faint haze the render leaves
+ * outside the rim: cropping to the last visible pixel keeps ~30px of it, and at
+ * 16px that haze is pure cost. And the tile is a shade taller than it is wide,
+ * so the square comes from trimming the long axis rather than padding the short
+ * one — padding puts the margin straight back, which is what it used to do.
  */
 
 const SRC = "brand/app-icon-source.png";
 const OUT = "packages/extension/public/icons";
 
-/**
- * How far past the canvas the tile is pushed. 1.18 is the most the pin can grow
- * before its needle and head start touching the edges; the wasted margin is
- * already gone by then.
- */
-const BLEED = 1.18;
-
-/** Corner radius as a fraction of the icon's side, matching the source tile. */
-const RADIUS = 0.2;
-
 // 16 and 32 are the toolbar; 48 is the extensions page; 128 is the store listing
 // and the install dialog.
 const SIZES = [16, 32, 48, 128];
 
+/**
+ * The alpha at which the tile counts as having started: above the render's
+ * outer haze, below the antialiased edge of the rim, so the crop is tight
+ * without sawing that edge flat.
+ */
+const EDGE_ALPHA = 60;
+
 await mkdir(OUT, { recursive: true });
 
 const source = await Jimp.read(SRC);
-console.log(`source     ${source.bitmap.width}×${source.bitmap.height}`);
+console.log(`source      ${source.bitmap.width}×${source.bitmap.height}`);
 
-source.autocrop({ tolerance: 0.002, cropOnlyFrames: false });
-console.log(`autocropped ${source.bitmap.width}×${source.bitmap.height}`);
-
-// The artwork's glow isn't symmetric, so the crop comes out slightly taller
-// than it is wide. Pad back to square before scaling — resizing a non-square
-// source into a square icon would squash the tile.
-const side = Math.max(source.bitmap.width, source.bitmap.height);
-source.contain(side, side, Jimp.HORIZONTAL_ALIGN_CENTER | Jimp.VERTICAL_ALIGN_MIDDLE);
-console.log(`squared     ${source.bitmap.width}×${source.bitmap.height}`);
-
-// Grow past the canvas, then take the middle back: the pin gets bigger while
-// the tile's outer band — the part that reads as empty white — goes off-edge.
-const bled = Math.round(side * BLEED);
-source.resize(bled, bled, Jimp.RESIZE_BICUBIC);
-const inset = Math.round((bled - side) / 2);
-source.crop(inset, inset, side, side);
-console.log(`bled ${BLEED}× ${source.bitmap.width}×${source.bitmap.height}`);
-
-/**
- * Round the corners off at the new edge.
- *
- * Done at full resolution rather than per size, so the downscale to 16px does
- * the antialiasing for free; the half-pixel band here only keeps the full-size
- * edge from looking sawn. Distance is the standard rounded-rect one: how far
- * outside the corner arc a pixel sits, negative while still inside.
- */
-const half = side / 2;
-const r = side * RADIUS;
-source.scan(0, 0, side, side, function scanPixel(x, y, idx) {
-  const qx = Math.abs(x + 0.5 - half) - (half - r);
-  const qy = Math.abs(y + 0.5 - half) - (half - r);
-  const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
-  const distance = outside + Math.min(Math.max(qx, qy), 0) - r;
-  const coverage = Math.min(Math.max(0.5 - distance, 0), 1);
-  this.bitmap.data[idx + 3] = Math.round(this.bitmap.data[idx + 3] * coverage);
+let left = source.bitmap.width;
+let top = source.bitmap.height;
+let right = 0;
+let bottom = 0;
+source.scan(0, 0, source.bitmap.width, source.bitmap.height, function findEdges(x, y, idx) {
+  if (this.bitmap.data[idx + 3] < EDGE_ALPHA) return;
+  if (x < left) left = x;
+  if (x > right) right = x;
+  if (y < top) top = y;
+  if (y > bottom) bottom = y;
 });
-console.log(`rounded     r=${RADIUS * 100}% of ${side}px`);
+source.crop(left, top, right - left + 1, bottom - top + 1);
+console.log(`cropped     ${source.bitmap.width}×${source.bitmap.height}`);
+
+const side = Math.min(source.bitmap.width, source.bitmap.height);
+source.crop(
+  Math.round((source.bitmap.width - side) / 2),
+  Math.round((source.bitmap.height - side) / 2),
+  side,
+  side,
+);
+console.log(`squared     ${source.bitmap.width}×${source.bitmap.height}`);
 
 for (const size of SIZES) {
   const icon = source.clone().resize(size, size, Jimp.RESIZE_BICUBIC);
   await icon.writeAsync(`${OUT}/icon-${size}.png`);
-  console.log(`wrote      ${OUT}/icon-${size}.png`);
+  console.log(`wrote       ${OUT}/icon-${size}.png`);
 }
