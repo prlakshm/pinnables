@@ -22,23 +22,48 @@ https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4
 
 ## Install
 
-Needs [Node](https://nodejs.org) 20+ and Chrome.
+You need [Node](https://nodejs.org) 20 or newer and Chrome. Check what you have:
+
+```bash
+node --version
+```
+
+Clone and build:
 
 ```bash
 git clone https://github.com/prlakshm/pinnables.git
 cd pinnables
-npm install && npm run build
+npm install
+npm run build
 ```
 
-At `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick `packages/extension/dist`.
+Load the extension into Chrome:
 
-Then start the service, pointed at the app you want to edit:
+1. Go to `chrome://extensions`
+2. Turn on **Developer mode** (toggle, top right)
+3. Click **Load unpacked**
+4. Select the `packages/extension/dist` folder inside the repo
+
+Start the local service, pointed at the app you want to edit. Use the absolute path to that app, not to Pinnables:
 
 ```bash
-PINNABLES_PROJECT_DIR=/path/to/your-app npm run dev:service
+PINNABLES_PROJECT_DIR=/absolute/path/to/your-app npm run dev:service
 ```
 
-It runs on `127.0.0.1:4573`. Everything stays on your machine except the prompt going to your agent.
+You should see:
+
+```
+pinnables service on http://127.0.0.1:4573
+Cursor on composer-2.5: edits /absolute/path/to/your-app
+```
+
+Check it is up from another terminal:
+
+```bash
+curl http://127.0.0.1:4573/health
+```
+
+Everything stays on your machine. The only thing that leaves is the prompt going to whichever agent you picked.
 
 ## Use it
 
@@ -66,26 +91,44 @@ So `Enter` means "do this" and `⌘↵` means "remember this".
 
 Pick with the command you start the service with. Nothing else changes.
 
+**Cursor** needs an API key from [Cursor → Integrations](https://cursor.com/dashboard/integrations):
+
 ```bash
-npm run dev:service          # Cursor (default)
-npm run dev:service:claude   # Claude Code
-npm run dev:service:codex    # Codex
+CURSOR_API_KEY=your-key-here PINNABLES_PROJECT_DIR=/absolute/path/to/your-app npm run dev:service
 ```
 
-| Agent | What it needs |
-|---|---|
-| **Cursor** | `CURSOR_API_KEY` from [Cursor → Integrations](https://cursor.com/dashboard/integrations) |
-| **Claude Code** | The `claude` CLI, signed in with `claude login` |
-| **Codex** | The `codex` CLI, signed in with `codex login` |
+**Claude Code** needs the `claude` CLI signed in:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login
+PINNABLES_PROJECT_DIR=/absolute/path/to/your-app npm run dev:service:claude
+```
+
+**Codex** needs the `codex` CLI signed in:
+
+```bash
+npm install -g @openai/codex
+codex login
+PINNABLES_PROJECT_DIR=/absolute/path/to/your-app npm run dev:service:codex
+```
 
 If the CLI already works in your terminal, Pinnables works. All three edit files locally, so your dev server hot-reloads either way, and follow-up sends continue the same conversation.
+
+Pick a model on the same line, for any of the three. Optional; leave it off and each agent uses its own default:
+
+```bash
+PINNABLES_MODEL=claude-sonnet-5 PINNABLES_PROJECT_DIR=/absolute/path/to/your-app npm run dev:service:claude
+```
 
 | Variable | What it does |
 |---|---|
 | `PINNABLES_PROJECT_DIR` | The repo to edit. Required unless you start the service from inside it |
-| `PINNABLES_MODEL` | Model for whichever agent is running. Optional |
+| `PINNABLES_MODEL` | Model for whichever agent is running |
 | `PINNABLES_SEND_IMAGES=1` | Always attach screenshots. Automatic when you use the draw tool |
-| `PINNABLES_CLAUDE_PATH` · `PINNABLES_CODEX_PATH` | Where the CLI lives, if it isn't on the service's PATH |
+| `PINNABLES_CLAUDE_PATH` · `PINNABLES_CODEX_PATH` | Full path to the CLI, if it isn't on the service's PATH |
+
+If a send fails saying the agent isn't installed, that last pair is usually why. Find the path with `which claude` or `which codex` and pass it in.
 
 ## Help pins find the right file
 
