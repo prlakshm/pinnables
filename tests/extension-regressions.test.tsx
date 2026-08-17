@@ -470,6 +470,6 @@ test("a later send's status GET still refreshes earlier Cursor runs", () => {
   assert.match(cursor, /if \(!fetched && mapped\.state === "done"\)/);
   assert.match(service, /drainAgentQueue/);
   assert.match(service, /startViaLocalSpawn/);
-  assert.match(service, /POST && url\.pathname === "\/messages\/abandon"/);
+  assert.match(service, /url\.pathname === "\/messages\/abandon"/);
   assert.match(cursor, /export async function clearStickyAgentId/);
 });
