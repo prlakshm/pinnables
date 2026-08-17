@@ -307,7 +307,10 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
 
       {statusLine && (
         <div
-          className="pin-note__rel pin-note__alert"
+          className="pin-note__alert"
+          /* Same three weights as the shelf and the single-pin box: a break is
+             red, having no agent connected is a step not taken, so amber. */
+          data-weight={phase.kind === "failed" ? "error" : "warn"}
           data-state={phase.kind}
           role="alert"
           aria-live="assertive"

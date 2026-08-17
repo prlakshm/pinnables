@@ -703,7 +703,20 @@ export function SelectionDialog({
   })();
 
   const alertText = restoreError ?? statusLine;
-  const alertIsQuiet = !restoreError && phase.kind === "kept";
+  /*
+   * The same three weights the shelf uses, for the same reason: forgetting a
+   * step must not wear the colour of a crash. A restore that would not run and
+   * a send that broke are red; having no agent connected is a step not taken,
+   * so amber; a bare save is nothing wrong at all, so it stays quiet.
+   */
+  const alertWeight: "note" | "warn" | "error" = restoreError
+    ? "error"
+    : phase.kind === "failed"
+      ? "error"
+      : phase.kind === "kept"
+        ? "note"
+        : "warn";
+  const alertIsQuiet = alertWeight === "note";
 
   return (
     <div
@@ -919,7 +932,8 @@ export function SelectionDialog({
       )}
       {alertText && (
         <div
-          className={alertIsQuiet ? "pin-note__rel" : "pin-note__rel pin-note__alert"}
+          className="pin-note__alert"
+          data-weight={alertWeight}
           data-state={restoreError ? "failed" : phase.kind}
           role={alertIsQuiet ? "status" : "alert"}
           aria-live={alertIsQuiet ? "polite" : "assertive"}

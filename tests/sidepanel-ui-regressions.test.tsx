@@ -589,3 +589,30 @@ test("an empty Relationships tab shows relationship guidance, not the Pins empty
   assert.match(body, /:\s*tab === "pins" \?\s*\(\s*pinCount === 0/);
   assert.match(body, /:\s*\(\s*<Relationships/);
 });
+
+/*
+ * The annotation box used to paint every alert amber, including a genuine
+ * failure. It now carries the same three weights as the shelf, drawn from the
+ * same tokens, so one system reads across both surfaces.
+ */
+test("annotation-box alerts use the shelf's three weights and tokens", () => {
+  const dialog = source("packages/extension/src/content/SelectionDialog.tsx");
+  const composer = source("packages/extension/src/content/Composer.tsx");
+  const css = source("packages/extension/src/ui/ui.css");
+
+  /* A break is red; no agent connected is a step not taken, so amber; a bare
+     save is nothing wrong, so quiet. */
+  assert.match(dialog, /restoreError\s*\?\s*"error"/);
+  assert.match(dialog, /phase\.kind === "failed"\s*\?\s*"error"/);
+  assert.match(dialog, /phase\.kind === "kept"\s*\?\s*"note"/);
+  assert.match(composer, /data-weight=\{phase\.kind === "failed" \? "error" : "warn"\}/);
+
+  /* Same tokens as the shelf banners, or the two surfaces drift apart. */
+  assert.match(css, /\.pin-note__alert\[data-weight="warn"\][\s\S]{0,120}--pin-amber-soft[\s\S]{0,60}--pin-amber\)/);
+  assert.match(css, /\.pin-note__alert\[data-weight="note"\][\s\S]{0,120}--pin-paper-sunk[\s\S]{0,60}--pin-ink-muted/);
+  assert.match(css, /\.pin-note__alert\[data-weight="error"\][\s\S]{0,180}--pin-red-tint[\s\S]{0,120}--pin-red\)/);
+
+  /* The base class must not hardcode a colour any more. */
+  const base = css.slice(css.indexOf(".pin-note__alert {"), css.indexOf('.pin-note__alert[data-weight="warn"]'));
+  assert.doesNotMatch(base, /--pin-amber/, "the base class must be weight-agnostic");
+});

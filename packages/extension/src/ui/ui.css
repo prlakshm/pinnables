@@ -873,9 +873,6 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   z-index: 3;
   pointer-events: auto;
 }
-.pin-note__rel[data-state] {
-  color: var(--pin-ink-muted);
-}
 /*
  * The chord hint: two destinations, emphasis on what Enter does right now.
  * It occupies the same quiet-line slot the pill has always used.
@@ -1037,9 +1034,6 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 }
 .pin-note__tag--action:hover {
   background: var(--pin-ink-lift);
-}
-.pin-note__rel[data-state="failed"] {
-  color: var(--pin-ink);
 }
 /*
  * The processing ellipsis: three dots lifting in turn, a slow wave rather
@@ -1534,12 +1528,23 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
   margin: 0 11px 8px;
   padding: 8px 10px;
   border-radius: var(--pin-radius-sm);
-  /* The same dress the shelf's alerts wear — one amber, both surfaces. */
   border: 1px solid var(--pin-rule);
-  background: var(--pin-amber-soft);
-  color: var(--pin-amber);
   line-height: 1.5;
 }
+.pin-note__alert[data-weight="warn"] {
+  background: var(--pin-amber-soft);
+  color: var(--pin-amber);
+}
+.pin-note__alert[data-weight="note"] {
+  background: var(--pin-paper-sunk);
+  color: var(--pin-ink-muted);
+}
+.pin-note__alert[data-weight="error"] {
+  background: var(--pin-red-tint);
+  border-color: color-mix(in srgb, var(--pin-red) 30%, var(--pin-rule));
+  color: var(--pin-red);
+}
+
 
 /* ---------------------------------------------------------------- draw mode */
 
