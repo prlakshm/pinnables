@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "test": "tsx --tsconfig packages/extension/tsconfig.json --test tests/*.test.ts tests/*.test.tsx",
-    "build": "npm run check-tokens && npm run check-typography && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/vite-plugin && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
+    "lint": "eslint packages/extension/src",
+    "build": "npm run lint && npm run check-tokens && npm run check-typography && npm run build --workspace @pinnables/shared && npm run build --workspace @pinnables/vite-plugin && npm run build --workspace @pinnables/mcp-server && npm run build --workspace @pinnables/service && npm run build --workspace @pinnables/extension",
     "dev:extension": "npm run dev --workspace @pinnables/extension",
     "dev:service": "npm run start --workspace @pinnables/service",
     "dev:mcp": "npm run dev --workspace @pinnables/mcp-server",
@@ -23,9 +24,12 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jimp": "^0.14.0",
     "potrace": "^2.1.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "jimp": "^0.14.0"
+    "typescript-eslint": "^8.67.0"
   }
 }
