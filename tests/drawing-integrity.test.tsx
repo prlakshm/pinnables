@@ -131,9 +131,11 @@ test("pen shortcuts leave editable page controls alone", async () => {
   assert.equal(drawing.isEditableKeyboardTarget(editable as unknown as EventTarget), true);
   assert.equal(drawing.isEditableKeyboardTarget(ordinary as unknown as EventTarget), false);
 
-  const drawLayer = source("packages/extension/src/content/DrawLayer.tsx");
-  assert.match(drawLayer, /if \(isEditableKeyboardTarget\(event\.target\)\) return/);
-  assert.match(drawLayer, /event\.metaKey \|\| event\.ctrlKey \|\| event\.altKey/);
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  assert.match(overlay, /isEditableKeyboardTarget\(event\.target, event\)/);
+  assert.match(overlay, /key === "v"/);
+  assert.match(overlay, /key === "p"/);
+  assert.match(overlay, /setDrawTool\("erase"\)/);
 });
 
 test("drawing screenshots retain ink while hiding extension chrome and masking secrets", () => {

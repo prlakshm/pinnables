@@ -29,6 +29,7 @@ import {
   refindElement,
   routeForLocation,
 } from "../lib/capture";
+import { isEditableKeyboardTarget } from "../lib/keyboard";
 import { pendingLiveSendIds, recordableLiveSendState } from "../lib/live-send";
 import { ExtensionReloadedError, send, type Broadcast, type Contract } from "../lib/messages";
 import { onScreenPinsKey, overlayFocusKey } from "../lib/presence";
@@ -1892,6 +1893,33 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     if (!state.enabled) return;
 
     const onKey = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.isComposing
+      ) {
+        const key = event.key.toLowerCase();
+        if (
+          (key === "v" || key === "p" || key === "d" || key === "b" || key === "e") &&
+          !isEditableKeyboardTarget(event.target, event)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (key === "v") setMode("browse");
+          else if (key === "p") setMode("pin");
+          else if (key === "d" || key === "b") {
+            setMode("draw");
+            setDrawTool("draw");
+          } else if (key === "e") {
+            setMode("draw");
+            setDrawTool("erase");
+          }
+          return;
+        }
+      }
+
       if (event.key !== "Escape") return;
       // Draw mode owns Escape while it is up — it has a frozen frame to discard.
       if (mode === "draw") return;

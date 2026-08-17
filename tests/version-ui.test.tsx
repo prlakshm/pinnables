@@ -292,7 +292,7 @@ test("restore is not skipped when versionsOk is false but keys exist", () => {
   assert.match(rail, /send\("version\/restore"/);
   assert.match(dialog, /send\("version\/restore"/);
   assert.match(rail, /if \(railId === "main"\) restore\(o\.no\)/);
-  assert.match(rail, /versionShortcutDigit\(e\)/);
+  assert.match(rail, /versionJumpDigit\(e\)/);
 });
 
 test("existing versions still render the rail when health has not said versions are ok", () => {
