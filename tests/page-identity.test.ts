@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  inferRootAlias,
+  isHashRouterHash,
+  isHashRouterUrl,
   isLocalUrl,
   isPinOnPage,
   originOf,
   pinLabel,
+  routesMatch,
   shortenUrl,
   sourceLabel,
 } from "../packages/shared/src/index.js";
@@ -174,4 +178,152 @@ test("an icon-only capture is named by what it could say, never left as element"
     "pins captured before the ladder existed keep using their text",
   );
   assert.equal(pinLabel(pinAt({ name: "Hero banner", elementLabel: "div · 10×10" })), "Hero banner");
+});
+
+test("only a hash-router fragment is a hash route, not an in-page anchor", () => {
+  assert.equal(isHashRouterHash("#/catalogue"), true);
+  assert.equal(isHashRouterHash("#!/vault"), true);
+  assert.equal(isHashRouterHash("#/"), true);
+  assert.equal(isHashRouterHash(""), false);
+  assert.equal(isHashRouterHash("#section-2"), false);
+  assert.equal(isHashRouterUrl("http://localhost:5185/#/catalogue"), true);
+  assert.equal(isHashRouterUrl("http://localhost:5185/#!/vault"), true);
+  assert.equal(isHashRouterUrl("http://localhost:5185/"), false);
+  assert.equal(isHashRouterUrl("http://localhost:5185/docs?mode=edit#section-2"), false);
+});
+
+test("routes match exactly, or as the bare-root alias pair, never as a wildcard", () => {
+  assert.equal(routesMatch("/catalogue", "/catalogue", null), true);
+  assert.equal(routesMatch("/", "/catalogue", "/catalogue"), true);
+  assert.equal(routesMatch("/catalogue", "/", "/catalogue"), true);
+  assert.equal(routesMatch("/", "/vault", "/catalogue"), false);
+  assert.equal(routesMatch("/catalogue", "/vault", "/catalogue"), false);
+  assert.equal(routesMatch("/", "/dashboard", null), false);
+});
+
+/**
+ * A real path is a different page. `/dashboard` on a portfolio is not the
+ * garden, and it is not the homepage — even on the same machine.
+ */
+test("a path-routed local app does not invent a root alias", () => {
+  const dashboard = pinAt({
+    url: "http://localhost:5173/dashboard",
+    route: "/dashboard",
+  });
+  const here = { origin: "http://localhost:5173", route: "/" };
+  assert.equal(inferRootAlias(here, "", [dashboard], () => true), null);
+  assert.equal(isPinOnPage(dashboard, here), false);
+  assert.equal(isPinOnPage(dashboard, here, null), false);
+});
+
+test("two local origins never share a page, alias or not", () => {
+  const garden = pinAt({
+    url: "http://localhost:5181/#/catalogue",
+    route: "/catalogue",
+  });
+  const portfolio = { origin: "http://localhost:5173", route: "/dashboard" };
+  assert.equal(isPinOnPage(garden, portfolio, "/catalogue"), false);
+  assert.equal(inferRootAlias(portfolio, "", [garden], () => true), null);
+});
+
+test("any local hash-routed app can alias, not only the film set", () => {
+  const work = pinAt({
+    url: "http://127.0.0.1:3000/#/work",
+    route: "/work",
+  });
+  const here = { origin: "http://127.0.0.1:3000", route: "/" };
+  assert.equal(inferRootAlias(here, "", [work], () => true), "/work");
+});
+
+test("a site you do not own does not invent a root alias", () => {
+  const pricing = pinAt({
+    url: "https://vercel.com/pricing",
+    route: "/pricing",
+  });
+  const here = { origin: "https://vercel.com", route: "/" };
+  assert.equal(inferRootAlias(here, "", [pricing], () => true), null);
+});
+
+/**
+ * The film set serves catalogue at both `/` and `#/catalogue`. A pin captured
+ * at the hash, present in this document, names the alias. A vault pin stays
+ * on another page.
+ */
+test("bare root aliases to the one hash route whose pins are present", () => {
+  const catalogue = pinAt({});
+  const vault = pinAt({
+    id: "pin-vault",
+    url: "http://localhost:5185/#/vault",
+    route: "/vault",
+  });
+  const here = { origin: "http://localhost:5185", route: "/" };
+  const present = (pin: { route: string }) => pin.route === "/catalogue";
+
+  assert.equal(inferRootAlias(here, "", [catalogue, vault], present), "/catalogue");
+  assert.equal(isPinOnPage(catalogue, here, "/catalogue"), true);
+  assert.equal(isPinOnPage(vault, here, "/catalogue"), false);
+});
+
+test("a tie between two present hash routes stays strict", () => {
+  const catalogue = pinAt({});
+  const vault = pinAt({
+    id: "pin-vault",
+    url: "http://localhost:5185/#/vault",
+    route: "/vault",
+  });
+  const here = { origin: "http://localhost:5185", route: "/" };
+  assert.equal(inferRootAlias(here, "", [catalogue, vault], () => true), null);
+});
+
+/**
+ * The other direction: standing on `#/catalogue`, a pin captured at bare `/`
+ * is on this page when it answers here and no other hash route's pins do.
+ */
+test("a named hash route aliases back to a bare-root capture", () => {
+  const root = pinAt({
+    url: "http://localhost:5185/",
+    route: "/",
+  });
+  const here = { origin: "http://localhost:5185", route: "/catalogue" };
+  assert.equal(inferRootAlias(here, "#/catalogue", [root], () => true), "/catalogue");
+  assert.equal(isPinOnPage(root, here, "/catalogue"), true);
+});
+
+test("a named hash route does not alias when another hash route is also present", () => {
+  const root = pinAt({
+    url: "http://localhost:5185/",
+    route: "/",
+  });
+  const vault = pinAt({
+    id: "pin-vault",
+    url: "http://localhost:5185/#/vault",
+    route: "/vault",
+  });
+  const here = { origin: "http://localhost:5185", route: "/catalogue" };
+  assert.equal(inferRootAlias(here, "#/catalogue", [root, vault], () => true), null);
+});
+
+test("hash slash-root is a named route, not the bare-root alias case", () => {
+  const catalogue = pinAt({});
+  const here = { origin: "http://localhost:5185", route: "/" };
+  assert.equal(inferRootAlias(here, "#/", [catalogue], () => true), null);
+});
+
+test("a foreign origin still fails when a root alias is in play", () => {
+  const foreign = pinAt({ url: "https://vercel.com/", route: "/" });
+  assert.equal(
+    isPinOnPage(foreign, { origin: "http://localhost:5185", route: "/catalogue" }, "/catalogue"),
+    false,
+  );
+});
+
+test("only element pins vote, and the alias is never slash itself", () => {
+  const region = pinAt({
+    id: "pin-region",
+    kind: "region",
+    url: "http://localhost:5185/#/catalogue",
+    route: "/catalogue",
+  });
+  const here = { origin: "http://localhost:5185", route: "/" };
+  assert.equal(inferRootAlias(here, "", [region], () => true), null);
 });

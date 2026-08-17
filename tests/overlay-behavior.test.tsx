@@ -395,6 +395,11 @@ test("a focus snapshot on another route waits instead of consuming the stored se
     "skip",
   );
   assert.equal(overlay.overlayFocusRestoreDecision(null, here), "skip");
+  assert.equal(
+    overlay.overlayFocusRestoreDecision(snapshot, here, "/catalogue"),
+    "apply",
+    "bare / and #/catalogue are the same page once the root alias is known",
+  );
 });
 
 test("a missed live measure keeps the last box so HMR does not dismiss the bar", async () => {
@@ -488,13 +493,13 @@ test("board refreshes prune ids and hiding a pin removes it from active flows", 
   assert.match(overlay, /onScreenPinsKey\(tabId\)/);
   assert.doesNotMatch(overlay, /storage\.local\.set\(\{ onScreenPins/);
   assert.match(overlay, /applyOverlayFocusSnapshot/);
-  assert.match(overlay, /overlayFocusRestoreDecision\(snapshot, here\) === "wait"/);
+  assert.match(overlay, /overlayFocusRestoreDecision\(snapshot, here, rootAlias\) === "wait"/);
   assert.match(overlay, /shouldPersistOverlayFocus\(snapshot, focusDismissed\.current\)/);
   // Only pins on THIS page hold a rect — an off-route selection leaves with its
   // element instead of ghosting a stale label onto a page that reuses the same
   // component.
   assert.match(overlay, /holdLiveRects\(previous, hereSelected, nextLive\)/);
-  assert.match(overlay, /if \(!pin \|\| pin\.kind !== "element" \|\| !pinIsHereNow\(pin\)\) continue;\n\s*hereSelected\.push/);
+  assert.match(overlay, /if \(!pin \|\| pin\.kind !== "element" \|\| !pinIsHereNow\(pin, rootAlias\)\) continue;\n\s*hereSelected\.push/);
   assert.match(overlay, /lastDomMutationAt\.current < 500/);
 
   const dismiss = overlay.slice(
@@ -841,4 +846,13 @@ test("the go-to chip needs the element genuinely absent, not just a route mismat
     /!onThisPage\(pin\) && !refindElement\(pin\)/,
     "a route mismatch alone must not offer to travel to a component that is on screen",
   );
+});
+
+test("the overlay infers a root alias and writes the effective route", () => {
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  assert.match(overlay, /inferRootAlias\(here, location\.hash, board\?\.pins/);
+  assert.match(overlay, /refindElement\(pin\)\?\.confidence \?\? 0\) >= 0\.8/);
+  assert.match(overlay, /alias && measured\.route === "\/"/);
+  assert.match(overlay, /route: effectiveRoute/);
+  assert.match(overlay, /route: rootAlias \?\? here\.route/);
 });

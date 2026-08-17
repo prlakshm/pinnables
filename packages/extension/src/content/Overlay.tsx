@@ -13,9 +13,11 @@ import {
   applicabilityGuard,
   describeDrawings,
   expandProperties,
+  inferRootAlias,
   isLocalUrl,
   isPinOnPage,
   pinLabel,
+  routesMatch,
   sourceLabel,
   type Board,
   type DrawShape,
@@ -242,16 +244,17 @@ export function overlayFocusLocation(): { origin: string; route: string } {
  * before React has the new route, and seating a card against a stale one puts
  * it on the wrong page.
  */
-export function pinIsHereNow(pin: Pin): boolean {
-  return isPinOnPage(pin, overlayFocusLocation());
+export function pinIsHereNow(pin: Pin, rootAlias?: string | null): boolean {
+  return isPinOnPage(pin, overlayFocusLocation(), rootAlias);
 }
 
 export function applyOverlayFocusSnapshot(
   snapshot: OverlayFocusSnapshot | null | undefined,
   pins: readonly Pin[],
   here: { origin: string; route: string },
+  rootAlias?: string | null,
 ): OverlayFocusSnapshot | null {
-  if (!snapshot || overlayFocusRestoreDecision(snapshot, here) !== "apply") return null;
+  if (!snapshot || overlayFocusRestoreDecision(snapshot, here, rootAlias) !== "apply") return null;
   const next: OverlayFocusSnapshot = {
     origin: snapshot.origin,
     route: snapshot.route,
@@ -278,10 +281,11 @@ export type OverlayFocusRestoreDecision = "apply" | "wait" | "skip";
 export function overlayFocusRestoreDecision(
   snapshot: OverlayFocusSnapshot | null | undefined,
   here: { origin: string; route: string },
+  rootAlias?: string | null,
 ): OverlayFocusRestoreDecision {
   if (!snapshot) return "skip";
   if (snapshot.origin !== here.origin) return "skip";
-  if (snapshot.route !== here.route) return "wait";
+  if (!routesMatch(snapshot.route, here.route, rootAlias)) return "wait";
   return "apply";
 }
 
@@ -576,10 +580,27 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    * and so does every other site's homepage. See `isPinOnPage`.
    */
   const here = useMemo(() => ({ origin: location.origin, route }), [route]);
+  /**
+   * When a local hash-routed app serves its default view at both `/` and
+   * `#/thing`, the URL identity splits. Vote among hash-route pins that
+   * uniquely refind here; `/` never becomes a wildcard. See `inferRootAlias`.
+   */
+  const rootAlias = useMemo(
+    () =>
+      inferRootAlias(here, location.hash, board?.pins ?? [], (pin) => {
+        if (pin.kind !== "element") return false;
+        return (refindElement(pin)?.confidence ?? 0) >= 0.8;
+      }),
+    [here, board, domRevision],
+  );
+  const effectiveRoute = rootAlias ?? route;
+  const rootAliasRef = useRef(rootAlias);
+  rootAliasRef.current = rootAlias;
   /** Against the rendered route. For callbacks that run ahead of it, see `pinIsHereNow`. */
   const onThisPage = useCallback(
-    (pin: Pin | undefined) => (pin === undefined ? false : isPinOnPage(pin, here)),
-    [here],
+    (pin: Pin | undefined) =>
+      pin === undefined ? false : isPinOnPage(pin, here, rootAlias),
+    [here, rootAlias],
   );
   /** Which tab this is, from the background — Chrome never tells the page. */
   const [tabId, setTabId] = useState<number | null>(null);
@@ -882,7 +903,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
    */
   const seatCardAtElement = useCallback(
     (pin: Pin): boolean => {
-      if (pin.kind !== "element" || !pinIsHereNow(pin)) return false;
+      if (pin.kind !== "element" || !pinIsHereNow(pin, rootAliasRef.current)) return false;
       const found = refindElement(pin);
       if (!found) return false;
       const rect = found.element.getBoundingClientRect();
@@ -917,15 +938,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     route: string;
     shapes: DrawShape[];
   } | null>(null);
-  const visibleShapes = workingShapes?.route === route ? workingShapes.shapes : shapes;
+  const visibleShapes = workingShapes?.route === effectiveRoute ? workingShapes.shapes : shapes;
   const placed = usePlacedShapes(visibleShapes);
   const drawingSave = useRef<DrawingSaveCoordinator | null>(null);
   visibleShapesRef.current = visibleShapes;
 
   useEffect(() => {
-    if (workingShapes?.route !== route) return;
+    if (workingShapes?.route !== effectiveRoute) return;
     if (JSON.stringify(workingShapes.shapes) === JSON.stringify(shapes)) setWorkingShapes(null);
-  }, [route, shapes, workingShapes]);
+  }, [effectiveRoute, shapes, workingShapes]);
 
   /**
    * Marks save as they are drawn — there is no commit step, because a route's
@@ -983,7 +1004,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         await send("drawing/save", {
           shapes: next,
           url: location.href,
-          route,
+          route: effectiveRoute,
           viewport: { width: window.innerWidth, height: window.innerHeight },
           shotRect,
         });
@@ -1007,7 +1028,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         snapshotRoot?.removeAttribute("data-drawing-snapshot");
       }
     },
-    [route, api, guard],
+    [route, effectiveRoute, api, guard],
   );
 
   useEffect(() => {
@@ -1035,10 +1056,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
             known.has(shape.id) || shape.ownerPinId ? shape : { ...shape, ownerPinId: owner },
           )
         : next;
-      setWorkingShapes({ route, shapes: tagged });
+      setWorkingShapes({ route: effectiveRoute, shapes: tagged });
       drawingSave.current?.update(tagged);
     },
-    [route],
+    [effectiveRoute],
   );
 
   const exitCapture = useCallback(async () => {
@@ -1266,7 +1287,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       const hereSelected: string[] = [];
       for (const pinId of liveSelected) {
         const pin = board?.pins.find((candidate) => candidate.id === pinId);
-        if (!pin || pin.kind !== "element" || !pinIsHereNow(pin)) continue;
+        if (!pin || pin.kind !== "element" || !pinIsHereNow(pin, rootAlias)) continue;
         hereSelected.push(pinId);
         const found = refindElement(pin);
         if (!found) continue;
@@ -1287,7 +1308,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [positions, board, selected.length, focusCards, liveSelected, domRevision, route]);
+  }, [positions, board, selected.length, focusCards, liveSelected, domRevision, route, rootAlias]);
 
   const onAnchorDown = useCallback((pinId: string, edge: AnchorEdge, event: React.PointerEvent) => {
     setConnecting({
@@ -1460,6 +1481,11 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           element.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           measured = measureElement(element);
+        }
+
+        const alias = rootAliasRef.current;
+        if (alias && measured.route === "/") {
+          measured = { ...measured, route: alias };
         }
 
         unmask = maskSensitive();
@@ -2273,8 +2299,8 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       if (cancelled || focusReady.current) return;
       const snapshot = bag[key] as OverlayFocusSnapshot | undefined;
       const here = overlayFocusLocation();
-      if (overlayFocusRestoreDecision(snapshot, here) === "wait") return;
-      const restored = applyOverlayFocusSnapshot(snapshot, board.pins, here);
+      if (overlayFocusRestoreDecision(snapshot, here, rootAlias) === "wait") return;
+      const restored = applyOverlayFocusSnapshot(snapshot, board.pins, here, rootAlias);
       if (restored) {
         focusDismissed.current = false;
         setLiveSelected(restored.liveSelected);
@@ -2286,7 +2312,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     return () => {
       cancelled = true;
     };
-  }, [state.enabled, board, route, liveSelected.length, focusCards.length, selected.length]);
+  }, [state.enabled, board, route, rootAlias, liveSelected.length, focusCards.length, selected.length]);
 
   /**
    * Turning capture off is a clean break.
@@ -2334,7 +2360,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     const here = overlayFocusLocation();
     const snapshot: OverlayFocusSnapshot = {
       origin: here.origin,
-      route: here.route,
+      route: rootAlias ?? here.route,
       liveSelected,
       focusCards,
       selected,
@@ -2348,7 +2374,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       [presenceKey]: onScreenPins,
       [overlayFocusKey(here.origin)]: snapshot,
     });
-  }, [state.enabled, liveSelected, focusCards, selected, tabId]);
+  }, [state.enabled, liveSelected, focusCards, selected, tabId, rootAlias]);
 
   /* ------------------------------------------------------------ live dialog */
 
