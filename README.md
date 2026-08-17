@@ -117,7 +117,39 @@ Cloud runtime (`PINNABLES_CURSOR_RUNTIME=cloud`) clones the repo on a Cursor VM.
 Watch those agents at [cursor.com/agents](https://cursor.com/agents). Prefer local
 for live UI feedback on a running app.
 
-Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer for you to paste.
+Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer for you to paste — unless you hook Claude or Codex below.
+
+### Send to Claude Code or Codex
+
+The same one-at-a-time queue, snapshot-on-done, and lost-run → Resend behavior applies to every backend. Set `PINNABLES_AGENT` (or the matching API key) and restart the service:
+
+```bash
+# Claude Code CLI (`claude -p --permission-mode acceptEdits`)
+PINNABLES_AGENT=claude \
+ANTHROPIC_API_KEY=sk-ant-… \
+PINNABLES_PROJECT_DIR=/absolute/path/to/your-app \
+npm run dev:service
+```
+
+```bash
+# Codex CLI (`codex exec --sandbox workspace-write`)
+PINNABLES_AGENT=codex \
+CODEX_API_KEY=… \
+PINNABLES_PROJECT_DIR=/absolute/path/to/your-app \
+npm run dev:service
+```
+
+`OPENAI_API_KEY` is accepted in place of `CODEX_API_KEY`. `PINNABLES_AGENT=claude|codex|cursor` always wins over key auto-detect. `PINNABLES_AGENT_CMD` always wins over both and is run through the shell with `PINNABLES_PROMPT` and `PINNABLES_MESSAGE` set.
+
+| Env | Purpose |
+|---|---|
+| `PINNABLES_AGENT=claude` | Force Claude Code CLI even if `CURSOR_API_KEY` is set |
+| `PINNABLES_AGENT=codex` | Force Codex CLI |
+| `ANTHROPIC_API_KEY` | Auth for `claude` |
+| `CODEX_API_KEY` / `OPENAI_API_KEY` | Auth for `codex` (auto-selects Codex when no Cursor key is set) |
+| `PINNABLES_AGENT_CMD` | Custom CLI; wins over every other agent setting |
+
+Only one run is in flight at a time across Cursor, Claude, and Codex. Further Sends queue until it finishes. If the local service restarts mid-queue, those tags become **Resend** instead of staying Queued forever.
 
 ### MCP (pull / status write-back)
 
@@ -165,8 +197,8 @@ Three constraints this encodes, each learned the hard way in [PDR-REVIEW.md](PDR
 - **The content script is two-tier.** A listener stub satisfies the 200 ms budget; the picker loads
   on activation, so "no background capture when inactive" is literally true.
 - **MCP is pull-only for context; Send can push.** The clipboard pointer remains the zero-config
-  fallback. With `CURSOR_API_KEY`, the local service pushes the board through Cursor's Cloud Agents
-  API so pressing Send starts an agent without paste.
+  fallback. With `CURSOR_API_KEY` (or `PINNABLES_AGENT=claude|codex` and the matching API key),
+  pressing Send starts that agent without paste. One in-flight run at a time; extras queue.
 
 ## Tools
 

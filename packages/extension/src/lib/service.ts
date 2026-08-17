@@ -58,6 +58,10 @@ export interface HealthResult {
     agentUrl?: string | null;
     queueLength?: number;
   };
+  agent?: {
+    backend?: "cursor" | "claude" | "codex" | "custom";
+    queueLength?: number;
+  };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -178,6 +182,10 @@ export async function sendAgentMessage(payload: {
 
 export async function agentMessageStatus(messageId: string): Promise<AgentMessageStatus> {
   return request<AgentMessageStatus>(`/messages/${encodeURIComponent(messageId)}`);
+}
+
+export async function abandonInFlight(): Promise<{ ok: boolean; abandoned: number }> {
+  return request<{ ok: boolean; abandoned: number }>("/messages/abandon", { method: "POST" });
 }
 
 /**

@@ -228,6 +228,15 @@ export interface Contract {
   };
 
   /**
+   * Fail every in-flight send and drop the sticky Cursor agent so the next
+   * Send (Cursor, Claude, or Codex) is not queued behind a hung run.
+   */
+  "agent/abandonInFlight": {
+    req: Record<string, never>;
+    res: { abandoned: number };
+  };
+
+  /**
    * Press a version key: put the working tree back into the state that key
    * names. The worker calls the local service (reverse the current patch,
    * apply the target's) and records `currentVersionNo` on the pin, so the

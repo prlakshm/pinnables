@@ -118,6 +118,8 @@ test("GET /health reports configured:true quickly without calling the Cursor API
         CURSOR_API_KEY: "test-key-already-set",
         CURSOR_API_BASE: `http://127.0.0.1:${cursorAddr.port}`,
         PINNABLES_CURSOR_RUNTIME: "cloud",
+        PINNABLES_AGENT: "",
+        PINNABLES_AGENT_CMD: "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -139,6 +141,7 @@ test("GET /health reports configured:true quickly without calling the Cursor API
         runtime: string;
         queueLength: number;
       };
+      agent: { backend: string; queueLength: number };
     };
     assert.equal(res.ok, true);
     assert.equal(body.ok, true);
@@ -150,6 +153,8 @@ test("GET /health reports configured:true quickly without calling the Cursor API
     assert.equal(body.cursor.configured, true);
     assert.equal(body.cursor.runtime, "cloud");
     assert.equal(body.cursor.queueLength, 0);
+    assert.equal(body.agent.backend, "cursor");
+    assert.equal(body.agent.queueLength, 0);
     assert.ok(
       elapsed < 900,
       `/health must stay under the extension abort budget, took ${elapsed}ms`,
@@ -175,6 +180,10 @@ test("GET /health reports configured:false when CURSOR_API_KEY is missing", asyn
         PINNABLES_HOME: home,
         PINNABLES_PORT: String(servicePort),
         CURSOR_API_KEY: "",
+        CODEX_API_KEY: "",
+        OPENAI_API_KEY: "",
+        PINNABLES_AGENT: "",
+        PINNABLES_AGENT_CMD: "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -186,10 +195,14 @@ test("GET /health reports configured:false when CURSOR_API_KEY is missing", asyn
   try {
     const body = (await fetch(`http://127.0.0.1:${servicePort}/health`).then((r) =>
       r.json(),
-    )) as { cursor: { configured: boolean; ok: boolean; detail: string | null } };
+    )) as {
+      cursor: { configured: boolean; ok: boolean; detail: string | null };
+      agent: { backend: string };
+    };
     assert.equal(body.cursor.configured, false);
     assert.equal(body.cursor.ok, false);
     assert.match(body.cursor.detail ?? "", /CURSOR_API_KEY/);
+    assert.equal(body.agent.backend, "claude");
   } finally {
     child.kill("SIGTERM");
     if (prevKey === undefined) delete process.env.CURSOR_API_KEY;

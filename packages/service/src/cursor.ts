@@ -11,7 +11,7 @@
  * ~/.pinnables/cursor-session.json.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Agent,
@@ -202,6 +202,23 @@ export async function writeStickyAgentId(
     updatedAt: new Date().toISOString(),
   };
   await writeFile(sessionPath(), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+/** Drop in-process handles so the next Send can create a fresh agent. */
+export function dropLocalAgentHandles(): void {
+  localAgents.clear();
+  localRuns.clear();
+  localRunResults.clear();
+}
+
+/** Forget the sticky Cursor agent — a hung follow-up must not queue forever. */
+export async function clearStickyAgentId(): Promise<void> {
+  dropLocalAgentHandles();
+  try {
+    await rm(sessionPath(), { force: true });
+  } catch {
+    /* no session file */
+  }
 }
 
 /** Strip data-URL prefix; Cursor wants raw base64 in `data`. */
@@ -513,34 +530,33 @@ export async function statusFromCursor(agentId: string, runId: string): Promise<
 
   try {
     /*
-     * Always re-fetch. The send() handle's status is what it was at
-     * agent.send() — treating that as finished mints take 2 while the
-     * composer still says Working, and 1 and 2 are the same tree.
+     * Prefer a live getRun. The send() handle's status is a snapshot from
+     * agent.send() — treating that as finished mints a take against the
+     * baseline tree. A fresh getRun that says finished is the real end and
+     * must not stay Working, or every later Send (Cursor, Claude, or Codex)
+     * queues forever behind it.
      */
-    let run: Run | undefined;
+    let fetched: Run | undefined;
     try {
-      run = await Agent.getRun(runId, {
+      fetched = await Agent.getRun(runId, {
         runtime: "local",
         cwd: projectDir(),
       });
-      localRuns.set(runId, run);
+      localRuns.set(runId, fetched);
     } catch {
-      run = localRuns.get(runId);
+      fetched = undefined;
     }
+    const run = fetched ?? localRuns.get(runId);
     if (!run) {
       return { state: "failed", detail: "Unknown local run", agentId, runId, url: null };
     }
     const detail = run.error?.message ?? null;
     const mapped = mapLocalRunStatus(run.status, detail);
-    /*
-     * Fresh getRun may still say "finished" before wait() has flushed the
-     * edits. Keep reporting working until wait() settles so the snapshot
-     * (and the take key) contain the real patch.
-     */
-    if (mapped.state === "done") {
+    if (!fetched && mapped.state === "done") {
       return { state: "working", detail: null, agentId, runId, url: null };
     }
-    if (mapped.state === "failed") {
+    if (mapped.state === "done" || mapped.state === "failed") {
+      localRunResults.set(runId, { state: mapped.state, detail: mapped.detail });
       localRuns.delete(runId);
     }
     return { ...mapped, agentId, runId, url: null };

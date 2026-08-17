@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -12,8 +12,10 @@ import {
 } from "@pinnables/shared";
 import { boardDir, pinnablesHome, writeBoard } from "@pinnables/shared/storage";
 import {
+  clearStickyAgentId,
   cursorConfigured,
   cursorRuntime,
+  dropLocalAgentHandles,
   imagesFromScreenshots,
   isAgentBusyError,
   peekCursorProbe,
@@ -25,6 +27,7 @@ import {
   statusFromCursor,
   type CursorStatus,
 } from "./cursor.js";
+import { agentBackend, localSpawnEnv, localSpawnSpec, usesCursorSend } from "./agents.js";
 import {
   listVersions,
   readChapterBaseline,
@@ -42,10 +45,13 @@ import {
  * Bound to 127.0.0.1 only. Nothing here should ever be reachable off-machine.
  *
  * Send path (least friction first):
- *   1. Cursor local agent (default) when CURSOR_API_KEY is set — edits
- *      PINNABLES_PROJECT_DIR / the git repo root so the running app hot-reloads.
- *   2. Cursor Cloud Agents when PINNABLES_CURSOR_RUNTIME=cloud.
- *   3. Local spawn via PINNABLES_AGENT_CMD / `claude` as a fallback.
+ *   1. Cursor when CURSOR_API_KEY is set and PINNABLES_AGENT is unset/cursor.
+ *   2. Claude Code (`claude -p`) when PINNABLES_AGENT=claude or ANTHROPIC_API_KEY
+ *      is the only key around.
+ *   3. Codex (`codex exec`) when PINNABLES_AGENT=codex or CODEX_API_KEY /
+ *      OPENAI_API_KEY is set.
+ *   4. PINNABLES_AGENT_CMD for any other CLI. One in-flight run at a time
+ *      across all of these — further Sends queue until it finishes.
  */
 
 const PORT = Number(process.env.PINNABLES_PORT ?? 4573);
@@ -119,11 +125,13 @@ interface LiveMessage {
   boardId?: string;
 }
 
-interface QueuedCursorSend {
+interface QueuedAgentSend {
   id: string;
   promptText: string;
   body: LiveMessageBody;
   board: Board;
+  messagePath: string;
+  via: "cursor" | "local";
 }
 
 /**
@@ -131,11 +139,13 @@ interface QueuedCursorSend {
  * configured; otherwise we spawn a local CLI. Status is polled from this map —
  * for Cursor runs we refresh from the API on each status GET.
  *
- * Cursor allows one active run per agent. Further Sends enqueue here and
- * drain when the active run finishes (status poll + background ticker).
+ * Cursor allows one active run per agent; Claude/Codex CLIs are the same
+ * story — one process at a time. Further Sends enqueue here and drain when
+ * the active run finishes (status poll, process exit, background ticker).
  */
 const liveMessages = new Map<string, LiveMessage>();
-const cursorSendQueue: QueuedCursorSend[] = [];
+const agentSendQueue: QueuedAgentSend[] = [];
+const localChildren = new Map<string, ChildProcess>();
 let liveCounter = 0;
 let queueDraining = false;
 /** Last Cloud Agent URL we handed back — shown in /health for the panel. */
@@ -294,65 +304,76 @@ async function startViaCursor(
   );
 }
 
-function activeCursorRun(): LiveMessage | undefined {
+function activeAgentRun(): LiveMessage | undefined {
   for (const msg of liveMessages.values()) {
-    if (
-      msg.transport === "cursor" &&
-      (msg.state === "starting" || msg.state === "working") &&
-      msg.runId
-    ) {
-      return msg;
-    }
+    if (msg.state === "starting" || msg.state === "working") return msg;
   }
   return undefined;
 }
 
-function shouldQueueCursorSend(): boolean {
-  return Boolean(activeCursorRun()) || cursorSendQueue.length > 0 || queueDraining;
+function shouldQueueAgentSend(): boolean {
+  return Boolean(activeAgentRun()) || agentSendQueue.length > 0 || queueDraining;
 }
 
 function markQueued(id: string, position: number, hint?: LiveMessage): void {
   liveMessages.set(id, {
+    ...liveMessages.get(id),
     state: "queued",
     detail:
       position <= 1
-        ? "Queued — waiting for the current Cursor run to finish"
+        ? "Queued — waiting for the current agent run to finish"
         : `Queued — ${position} sends ahead`,
-    transport: "cursor",
+    transport: hint?.transport ?? (usesCursorSend() ? "cursor" : "local"),
     agentId: hint?.agentId,
     url: hint?.url ?? lastAgentUrl ?? undefined,
   });
 }
 
-function enqueueCursorSend(item: QueuedCursorSend): void {
-  cursorSendQueue.push(item);
-  markQueued(item.id, cursorSendQueue.length, activeCursorRun());
-  console.log(`live message ${item.id} → queued (#${cursorSendQueue.length})`);
+function enqueueAgentSend(item: QueuedAgentSend): void {
+  agentSendQueue.push(item);
+  markQueued(item.id, agentSendQueue.length, activeAgentRun());
+  console.log(`live message ${item.id} → queued (#${agentSendQueue.length})`);
 }
 
-async function drainCursorQueue(): Promise<void> {
+async function startViaCursorAllowingFresh(id: string, promptText: string, body: LiveMessageBody, board: Board): Promise<void> {
+  try {
+    await startViaCursor(id, promptText, body, board);
+  } catch (err) {
+    if (!isAgentBusyError(err) || activeAgentRun()) throw err;
+    /* Sticky agent is busy on Cursor's side but we have no local run — a hung
+       follow-up. Drop it and create a new agent so Claude/Codex/Cursor Sends
+       are not queued forever. */
+    await clearStickyAgentId();
+    await startViaCursor(id, promptText, body, board);
+  }
+}
+
+async function drainAgentQueue(): Promise<void> {
   if (queueDraining) return;
   queueDraining = true;
   try {
-    while (cursorSendQueue.length > 0) {
-      if (activeCursorRun()) break;
-      const next = cursorSendQueue.shift()!;
+    while (agentSendQueue.length > 0) {
+      if (activeAgentRun()) break;
+      const next = agentSendQueue.shift()!;
       try {
-        await startViaCursor(next.id, next.promptText, next.body, next.board);
+        if (next.via === "cursor") {
+          await startViaCursorAllowingFresh(next.id, next.promptText, next.body, next.board);
+        } else {
+          startViaLocalSpawn(next.id, next.promptText, next.messagePath);
+        }
       } catch (err) {
         if (isAgentBusyError(err)) {
-          // Race with Cursor — put it back at the front and wait for a tick.
-          cursorSendQueue.unshift(next);
-          markQueued(next.id, 1, activeCursorRun());
+          agentSendQueue.unshift(next);
+          markQueued(next.id, 1, activeAgentRun());
           console.log(`live message ${next.id} → still busy, keeping queued`);
           break;
         }
         const detail = err instanceof Error ? err.message : String(err);
         console.error(`queued send ${next.id} failed:`, detail);
         liveMessages.set(next.id, {
+          ...liveMessages.get(next.id),
           state: "failed",
           detail,
-          transport: "cursor",
         });
       }
     }
@@ -362,11 +383,12 @@ async function drainCursorQueue(): Promise<void> {
 }
 
 /**
- * Refresh every in-flight Cursor run from the API, then try to start the next
- * queued send. Driven by status GETs and a background ticker so the queue
- * drains even when nothing is polling a finished message.
+ * Refresh every in-flight Cursor run from the API, then start the next
+ * queued send (Cursor, Claude, or Codex). Driven by status GETs, process
+ * exit, and a background ticker so the queue drains even when nothing is
+ * polling a finished message.
  */
-async function refreshActiveCursorRuns(): Promise<void> {
+async function refreshActiveRuns(): Promise<void> {
   const ids = [...liveMessages.entries()]
     .filter(
       ([, msg]) =>
@@ -379,7 +401,28 @@ async function refreshActiveCursorRuns(): Promise<void> {
   for (const id of ids) {
     await refreshMessageStatus(id);
   }
-  await drainCursorQueue();
+  await drainAgentQueue();
+}
+
+function abandonInFlight(detail: string): number {
+  let n = 0;
+  for (const child of localChildren.values()) {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+  localChildren.clear();
+  agentSendQueue.length = 0;
+  for (const [id, msg] of liveMessages) {
+    if (msg.state === "queued" || msg.state === "starting" || msg.state === "working") {
+      liveMessages.set(id, { ...msg, state: "failed", detail });
+      n += 1;
+    }
+  }
+  dropLocalAgentHandles();
+  return n;
 }
 
 function startViaLocalSpawn(id: string, promptText: string, messagePath: string): void {
@@ -388,13 +431,8 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
     `The file carries the pinned component's selector, source file, captured styles ` +
     `and a screenshot path. Make the change in this project's source.`;
 
-  /*
-   * PINNABLES_AGENT_CMD overrides the whole invocation (run through a shell,
-   * with $PINNABLES_PROMPT and $PINNABLES_MESSAGE set). The default is the
-   * Claude Code CLI in print mode, editing files without prompting.
-   */
-  const custom = process.env.PINNABLES_AGENT_CMD;
   const cwd = projectDir();
+  const spec = localSpawnSpec(localPrompt, messagePath);
   /*
    * Piped rather than ignored so the run can say when it has actually begun.
    * A spawned process is not a working agent — it is a process that has yet to
@@ -404,22 +442,20 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
    * its existence is information here.
    */
   const stdio: ["ignore", "pipe", "pipe"] = ["ignore", "pipe", "pipe"];
-  const child = custom
-    ? spawn(custom, {
+  const child = spec.shell
+    ? spawn(spec.command, {
         cwd,
         shell: true,
         stdio,
-        env: {
-          ...process.env,
-          PINNABLES_PROMPT: localPrompt,
-          PINNABLES_MESSAGE: messagePath,
-        },
+        env: localSpawnEnv(localPrompt, messagePath),
       })
-    : spawn("claude", ["-p", localPrompt, "--permission-mode", "acceptEdits"], {
+    : spawn(spec.command, spec.args, {
         cwd,
         stdio,
+        env: localSpawnEnv(localPrompt, messagePath),
       });
 
+  localChildren.set(id, child);
   /* Spread, never replace: the record carries boardId from startLiveMessage,
      and completion needs it to snapshot. Replacing wholesale here silently
      dropped it, and every local run finished without its version. */
@@ -432,16 +468,25 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
   child.stdout?.on("data", markWorking);
   child.stderr?.on("data", markWorking);
   child.on("error", (err) => {
+    localChildren.delete(id);
+    const missing = (err as NodeJS.ErrnoException).code === "ENOENT";
     liveMessages.set(id, {
       ...liveMessages.get(id),
       state: "failed",
-      detail: `Could not start the agent: ${err.message}`,
+      detail: missing
+        ? `Could not start ${spec.command}. Install it or set PINNABLES_AGENT_CMD.`
+        : `Could not start the agent: ${err.message}`,
       transport: "local",
     });
+    void drainAgentQueue();
   });
   child.on("exit", (code) => {
+    localChildren.delete(id);
     const found = liveMessages.get(id);
-    if (found?.state === "failed") return;
+    if (found?.state === "failed") {
+      void drainAgentQueue();
+      return;
+    }
     if (code !== 0) {
       liveMessages.set(id, {
         ...found,
@@ -449,6 +494,7 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
         detail: `Agent exited with code ${code ?? "unknown"}`,
         transport: "local",
       });
+      void drainAgentQueue();
       return;
     }
     /*
@@ -469,9 +515,10 @@ function startViaLocalSpawn(id: string, promptText: string, messagePath: string)
         }
       }
       liveMessages.set(id, { ...found, state: "done", detail: null, transport: "local" });
+      await drainAgentQueue();
     })();
   });
-  console.log(`live message ${id} → local spawn ${messagePath}`);
+  console.log(`live message ${id} → ${spec.label} spawn ${messagePath}`);
   void promptText;
 }
 
@@ -513,25 +560,32 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
 
   liveMessages.set(id, { state: "starting", detail: null, boardId: board.id });
 
-  if (cursorConfigured()) {
-    const queuedItem: QueuedCursorSend = { id, promptText, body, board };
-    if (shouldQueueCursorSend()) {
-      enqueueCursorSend(queuedItem);
+  const queuedItem: QueuedAgentSend = {
+    id,
+    promptText,
+    body,
+    board,
+    messagePath,
+    via: usesCursorSend() ? "cursor" : "local",
+  };
+
+  if (usesCursorSend()) {
+    if (shouldQueueAgentSend()) {
+      enqueueAgentSend(queuedItem);
       return id;
     }
     try {
-      await startViaCursor(id, promptText, body, board);
+      await startViaCursorAllowingFresh(id, promptText, body, board);
       return id;
     } catch (err) {
       if (isAgentBusyError(err)) {
-        enqueueCursorSend(queuedItem);
+        enqueueAgentSend(queuedItem);
         return id;
       }
       const detail = err instanceof Error ? err.message : String(err);
       console.error(`Cursor send failed for ${id}, falling back to local:`, detail);
-      // If the user configured Cursor, a silent local fallback is confusing —
-      // only fall back when explicitly allowed.
       if (process.env.PINNABLES_CURSOR_FALLBACK_LOCAL === "1") {
+        queuedItem.via = "local";
         startViaLocalSpawn(id, promptText, messagePath);
         return id;
       }
@@ -544,6 +598,16 @@ async function startLiveMessage(body: LiveMessageBody): Promise<string> {
     }
   }
 
+  if (agentBackend() === "cursor") {
+    const detail = "CURSOR_API_KEY is not set";
+    liveMessages.set(id, { state: "failed", detail, transport: "cursor" });
+    throw new Error(detail);
+  }
+
+  if (shouldQueueAgentSend()) {
+    enqueueAgentSend(queuedItem);
+    return id;
+  }
   startViaLocalSpawn(id, promptText, messagePath);
   return id;
 }
@@ -587,14 +651,14 @@ async function refreshMessageStatus(id: string): Promise<LiveMessage | null> {
     liveMessages.set(id, next);
     if (next.url) lastAgentUrl = next.url;
     if (next.state === "done" || next.state === "failed") {
-      void drainCursorQueue();
+      void drainAgentQueue();
     }
     return next;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const next: LiveMessage = { ...found, state: "failed", detail };
     liveMessages.set(id, next);
-    void drainCursorQueue();
+    void drainAgentQueue();
     return next;
   }
 }
@@ -661,11 +725,13 @@ async function pushBoard(body: PushBoardBody): Promise<{
     pinIds: board.pins.map((p) => p.id),
     screenshots,
   };
-  const queuedItem: QueuedCursorSend = {
+  const queuedItem: QueuedAgentSend = {
     id,
     promptText,
     body: queueBody,
     board,
+    messagePath: join(dir, "brief.md"),
+    via: "cursor",
   };
 
   const finishFromLive = (): {
@@ -691,20 +757,17 @@ async function pushBoard(body: PushBoardBody): Promise<{
     };
   };
 
-  if (shouldQueueCursorSend()) {
-    // startViaCursor expects LiveMessageBody.pinIds for images — already set.
-    // Override send path: queue uses startViaCursor which re-reads screenshots.
-    enqueueCursorSend(queuedItem);
+  if (shouldQueueAgentSend()) {
+    enqueueAgentSend(queuedItem);
     return finishFromLive();
   }
 
   try {
-    // Prefer the same path as live messages so queue drain stays uniform.
-    await startViaCursor(id, promptText, queueBody, board);
+    await startViaCursorAllowingFresh(id, promptText, queueBody, board);
     return finishFromLive();
   } catch (err) {
     if (isAgentBusyError(err)) {
-      enqueueCursorSend(queuedItem);
+      enqueueAgentSend(queuedItem);
       return finishFromLive();
     }
     throw err;
@@ -745,9 +808,20 @@ const server = createServer((req, res) => {
           cwd,
           agentId: stickyAgentId,
           agentUrl,
-          queueLength: cursorSendQueue.length,
+          queueLength: agentSendQueue.length,
+        },
+        agent: {
+          backend: agentBackend(),
+          queueLength: agentSendQueue.length,
         },
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/messages/abandon") {
+      const n = abandonInFlight("Cleared — the previous run was stuck. Resend to retry.");
+      await clearStickyAgentId();
+      console.log(`abandoned ${n} in-flight sends`);
+      return send(res, 200, { ok: true, abandoned: n });
     }
 
     if (req.method === "POST" && url.pathname === "/messages") {
@@ -778,7 +852,7 @@ const server = createServer((req, res) => {
        * and stay Working forever because nothing asked after its own poll
        * was stolen.
        */
-      await refreshActiveCursorRuns();
+      await refreshActiveRuns();
       found = liveMessages.get(liveMatch[1]) ?? found;
       return send(res, 200, found);
     }
@@ -888,34 +962,34 @@ function startListening(): void {
   server.listen(PORT, HOST, () => {
     console.log(`pinnables service on http://${HOST}:${PORT}`);
     console.log(`boards → ${pinnablesHome()}`);
-    if (cursorConfigured()) {
+    const backend = agentBackend();
+    if (backend === "cursor" && cursorConfigured()) {
       const runtime = cursorRuntime();
       if (runtime === "local") {
         console.log(`Cursor local agent: edits ${projectDir()} (fast, no screenshot vision)`);
       } else {
         console.log("Cursor Cloud Agents: configured (Send will push to remote)");
       }
+    } else if (backend === "codex") {
+      console.log(`Codex: Send runs \`codex exec\` in ${projectDir()}`);
+    } else if (backend === "custom") {
+      console.log(`Agent: PINNABLES_AGENT_CMD in ${projectDir()}`);
     } else {
-      console.log("Cursor: set CURSOR_API_KEY to enable one-click Send");
+      console.log(`Claude Code: Send runs \`claude -p\` in ${projectDir()}`);
     }
-    if (cursorConfigured()) {
-      // Keep the queue moving when the extension is not polling a finished run.
-      // Cursor probes stay on this ticker — never on GET /health.
-      setInterval(() => {
-        void refreshActiveCursorRuns().catch((err) => {
-          console.error(
-            "queue tick failed:",
-            err instanceof Error ? err.message : String(err),
-          );
-        });
-        scheduleCursorProbe();
-        void refreshVersionsHealth().catch(() => {});
-      }, 2_500);
-    } else {
-      setInterval(() => {
-        void refreshVersionsHealth().catch(() => {});
-      }, 2_500);
-    }
+    // Keep the queue moving for Cursor, Claude, and Codex even when the
+    // extension is not polling a finished run. Cursor probes stay on this
+    // ticker — never on GET /health.
+    setInterval(() => {
+      void refreshActiveRuns().catch((err) => {
+        console.error(
+          "queue tick failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+      if (cursorConfigured()) scheduleCursorProbe();
+      void refreshVersionsHealth().catch(() => {});
+    }, 2_500);
   });
 }
 

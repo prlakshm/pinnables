@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   advanceLiveSendState,
+  isLostLiveSendError,
   liveSendNeedsPoll,
   pendingLiveSendIds,
   recordableLiveSendState,
@@ -30,6 +31,16 @@ test("a run only moves forward, and can fail from any non-terminal state", () =>
   assert.equal(advanceLiveSendState("working", "starting"), "working");
   assert.equal(advanceLiveSendState("starting", "failed"), "failed");
   assert.equal(advanceLiveSendState("working", "working"), "working");
+});
+
+test("a service 404 or unknown message is a lost run, not a network blip", () => {
+  assert.equal(
+    isLostLiveSendError(new Error('Local service 404: {"error":"Unknown message"}')),
+    true,
+  );
+  assert.equal(isLostLiveSendError(new Error("Unknown message")), true);
+  assert.equal(isLostLiveSendError(new Error("Lost contact with the local service.")), false);
+  assert.equal(isLostLiveSendError(new Error("Local service 500: boom")), false);
 });
 
 test("in-flight ids stay listed when a later send starts", () => {

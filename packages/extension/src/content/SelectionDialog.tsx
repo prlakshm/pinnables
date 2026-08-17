@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pinLabel, type Board, type LiveSend, type Pin } from "@pinnables/shared";
-import { recordableLiveSendState } from "../lib/live-send";
+import { isLostLiveSendError, recordableLiveSendState } from "../lib/live-send";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
@@ -365,7 +365,7 @@ export function SelectionDialog({
           stop();
           return;
         }
-        // Queued behind an active Cursor run — keep polling; no starting timeout.
+        // Queued behind the current agent run (Cursor, Claude, or Codex).
         if (status.state === "queued") {
           schedule();
           return;
@@ -398,8 +398,16 @@ export function SelectionDialog({
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
         stop();
         // Done flash starts when the board row becomes done (see startDoneHandoff).
-      } catch {
+      } catch (err) {
         if (selectionKeyRef.current !== key) return;
+        if (isLostLiveSendError(err)) {
+          void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          if (watched) {
+            setPhase({ kind: "failed", detail: "The previous run was lost. Resend to retry." });
+          }
+          stop();
+          return;
+        }
         if (watched) setPhase({ kind: "failed", detail: "Lost contact with the local service." });
         stop();
       }

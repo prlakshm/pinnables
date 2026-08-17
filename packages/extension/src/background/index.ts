@@ -17,10 +17,11 @@ import {
   type RequestType,
   type TabArmState,
 } from "../lib/messages";
-import { advanceLiveSendState } from "../lib/live-send";
+import { advanceLiveSendState, liveSendNeedsPoll } from "../lib/live-send";
 import { LEGACY_PRESENCE_KEYS, onScreenPinsKey } from "../lib/presence";
 import * as store from "../lib/store";
 import {
+  abandonInFlight,
   agentMessageStatus,
   getHealth,
   isServiceOnline,
@@ -1255,6 +1256,35 @@ const handlers: Handlers = {
 
   async "agent/status"({ messageId }) {
     return agentMessageStatus(messageId);
+  },
+
+  async "agent/abandonInFlight"() {
+    let abandoned = 0;
+    try {
+      abandoned = (await abandonInFlight()).abandoned;
+    } catch {
+      /* Service down or older than this endpoint — still fail the board tags. */
+    }
+    const boards = await store.listBoards();
+    for (const found of boards) {
+      let touched = false;
+      const board = await store.mutateBoard(found.id, (b) => {
+        const pins = b.pins.map((pin) => {
+          let changed = false;
+          const liveSends = (pin.liveSends ?? []).map((sent) => {
+            if (!liveSendNeedsPoll(sent.state)) return sent;
+            changed = true;
+            return { ...sent, state: "failed" as const };
+          });
+          if (!changed) return pin;
+          touched = true;
+          return { ...pin, liveSends, updatedAt: new Date().toISOString() };
+        });
+        return { ...b, pins };
+      });
+      if (touched) await notifyBoardChanged(board.id);
+    }
+    return { abandoned };
   },
 
   async "agent/recordOutcome"({ messageId, state }) {

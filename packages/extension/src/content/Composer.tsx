@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hasModifier, submitHintLabel } from "../lib/platform";
-import { recordableLiveSendState } from "../lib/live-send";
+import { isLostLiveSendError, recordableLiveSendState } from "../lib/live-send";
 import { send } from "../lib/messages";
 import { ArrowUpRightIcon, LinkIcon } from "../ui/icons";
 import { WorkingDots } from "../ui/WorkingDots";
@@ -153,7 +153,7 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
           stop();
           return;
         }
-        // Queued behind an active Cursor run — keep polling; no starting timeout.
+        // Queued behind the current agent run (Cursor, Claude, or Codex).
         if (status.state === "queued") {
           schedule();
           return;
@@ -182,7 +182,15 @@ export function Composer({ count, onCommit, onRelate, autoFocus, agentPinIds, pl
         // Resolve the message's board-side tag whichever bar was watching.
         void send("agent/recordOutcome", { messageId, state: status.state }).catch(() => {});
         stop();
-      } catch {
+      } catch (err) {
+        if (isLostLiveSendError(err)) {
+          void send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          if (alive.current && watched) {
+            setPhase({ kind: "failed", detail: "The previous run was lost. Resend to retry." });
+          }
+          stop();
+          return;
+        }
         if (alive.current && watched) {
           setPhase({ kind: "failed", detail: "Lost contact with the local service." });
         }

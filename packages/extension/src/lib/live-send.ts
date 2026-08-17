@@ -28,6 +28,12 @@ export function liveSendNeedsPoll(state: LiveSendState): boolean {
   return state === "queued" || state === "starting" || state === "working";
 }
 
+/** Service forgot the run (restart, crash) — the tag must become Resend, not Queued forever. */
+export function isLostLiveSendError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /Local service 404|Unknown message/i.test(message);
+}
+
 /**
  * A run only moves forward. Done and failed are terminal: a later Working
  * poll (stale Cursor status, a follow-up steal) must not bounce the tag or

@@ -29,7 +29,7 @@ import {
   refindElement,
   routeForLocation,
 } from "../lib/capture";
-import { pendingLiveSendIds, recordableLiveSendState } from "../lib/live-send";
+import { isLostLiveSendError, pendingLiveSendIds, recordableLiveSendState } from "../lib/live-send";
 import { ExtensionReloadedError, send, type Broadcast, type Contract } from "../lib/messages";
 import { onScreenPinsKey, overlayFocusKey } from "../lib/presence";
 import { CloseIcon } from "../ui/icons";
@@ -773,8 +773,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           if (recorded) {
             await send("agent/recordOutcome", { messageId, state: recorded });
           }
-        } catch {
-          /* The next tick retries; a blip must not fail the rest. */
+        } catch (err) {
+          if (isLostLiveSendError(err)) {
+            await send("agent/recordOutcome", { messageId, state: "failed" }).catch(() => {});
+          }
         }
       }
       if (!cancelled) timer = window.setTimeout(() => void tick(), 2_500);

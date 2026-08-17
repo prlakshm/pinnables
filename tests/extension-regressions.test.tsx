@@ -437,6 +437,10 @@ test("a queued run records starting and working on the board, not only while its
   assert.match(composer, /pollTimers/);
   assert.match(dialog, /watchingId\.current === messageId/);
   assert.doesNotMatch(dialog, /pollTimer\.current = window\.setTimeout/);
+  assert.match(overlay, /isLostLiveSendError/);
+  assert.match(dialog, /isLostLiveSendError/);
+  assert.match(composer, /isLostLiveSendError/);
+  assert.match(background, /agent\/abandonInFlight/);
 });
 
 test("a chat row key press restores that row's numeral", () => {
@@ -455,7 +459,7 @@ test("a later send's status GET still refreshes earlier Cursor runs", () => {
     service.indexOf("const liveMatch"),
     service.indexOf("Versions. Snapshot"),
   );
-  assert.match(getLive, /await refreshActiveCursorRuns\(\)/);
+  assert.match(getLive, /await refreshActiveRuns\(\)/);
   assert.doesNotMatch(
     getLive,
     /if \(found\.state === "done" \|\| found\.state === "failed" \|\| found\.state === "queued"\)/,
@@ -463,4 +467,9 @@ test("a later send's status GET still refreshes earlier Cursor runs", () => {
   assert.match(cursor, /localRunResults/);
   assert.match(cursor, /run\.wait\(\)/);
   assert.match(cursor, /Agent\.getRun/);
+  assert.match(cursor, /if \(!fetched && mapped\.state === "done"\)/);
+  assert.match(service, /drainAgentQueue/);
+  assert.match(service, /startViaLocalSpawn/);
+  assert.match(service, /POST && url\.pathname === "\/messages\/abandon"/);
+  assert.match(cursor, /export async function clearStickyAgentId/);
 });
