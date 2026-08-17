@@ -305,14 +305,13 @@ async function startViaCursor(
 }
 
 function activeAgentRun(): LiveMessage | undefined {
-  for (const [id, msg] of liveMessages) {
+  for (const msg of liveMessages.values()) {
     if (msg.state !== "starting" && msg.state !== "working") continue;
     /* The record is created as starting before Send decides to run or
        queue. Only a started Cursor run (has runId) or a local Claude/Codex
        spawn counts as in-flight — otherwise the first Send queues itself. */
     if (msg.transport === "cursor" && msg.runId) return msg;
     if (msg.transport === "local") return msg;
-    void id;
   }
   return undefined;
 }
