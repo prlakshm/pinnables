@@ -493,19 +493,30 @@ export function VersionLayer({
 
   /* ------------------------------------------------------------ helpers */
 
-  const root = () =>
-    (layerRef.current?.getRootNode() ?? document) as ShadowRoot | Document;
+  /* All three read only a ref, so they are stable for the component's life.
+     Memoized so the drag callbacks below can depend on them honestly instead
+     of closing over a new function every render. */
+  const root = useCallback(
+    () => (layerRef.current?.getRootNode() ?? document) as ShadowRoot | Document,
+    [],
+  );
 
-  const overlayEl = () => layerRef.current?.closest(".pin-overlay") ?? document.body;
+  const overlayEl = useCallback(
+    () => layerRef.current?.closest(".pin-overlay") ?? document.body,
+    [],
+  );
 
-  const railUnder = (ev: PointerEvent): HTMLElement | null => {
-    const el = root().elementFromPoint?.(ev.clientX, ev.clientY) ?? null;
-    return (el?.closest(".pin-versions") as HTMLElement | null) ?? null;
-  };
+  const railUnder = useCallback(
+    (ev: PointerEvent): HTMLElement | null => {
+      const el = root().elementFromPoint?.(ev.clientX, ev.clientY) ?? null;
+      return (el?.closest(".pin-versions") as HTMLElement | null) ?? null;
+    },
+    [root],
+  );
 
   const clearSlots = useCallback(() => {
     root().querySelectorAll?.(".pin-key--slot").forEach((n) => n.remove());
-  }, []);
+  }, [root]);
 
   /*
    * Opened in the seat the key would actually take, found by number, so the
@@ -551,7 +562,7 @@ export function VersionLayer({
       .forEach((k) => {
         (k as HTMLElement).dataset.dragging = "false";
       });
-  }, [clearSlots]);
+  }, [clearSlots, root]);
 
   /* ------------------------------------------------------------- actions */
 
@@ -580,7 +591,7 @@ export function VersionLayer({
         })
         .finally(() => onBusy(false));
     },
-    [busy, pin.currentVersionNo, pin.id, onBusy],
+    [busy, pin.currentVersionNo, pin.id, onBusy, root],
   );
 
   /** What a rail shows after this key leaves it, and who answers live. */
@@ -803,7 +814,7 @@ export function VersionLayer({
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", cancel);
     },
-    [busy, mainKeys, captures, restore, saveCaptures, moveKey, layDown, openSlots, clearSlots, sweepGhosts],
+    [busy, mainKeys, captures, restore, saveCaptures, moveKey, layDown, openSlots, clearSlots, sweepGhosts, railUnder, overlayEl],
   );
 
   /*
@@ -921,7 +932,7 @@ export function VersionLayer({
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", cancelled);
     },
-    [busy, mainKeys, versions, captures, absorb, saveCaptures, openSlots, clearSlots, pin.id, liveRect, boxRect, onScoot],
+    [busy, mainKeys, versions, captures, absorb, saveCaptures, openSlots, clearSlots, pin.id, liveRect, boxRect, onScoot, railUnder, root],
   );
 
   /* The card only ever moves the capture. Dropping one next to another can
@@ -998,7 +1009,7 @@ export function VersionLayer({
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", up);
     },
-    [captures, saveCaptures],
+    [captures, saveCaptures, root],
   );
 
   /* ------------------------------------------------------------ keyboard */

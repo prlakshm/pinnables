@@ -247,7 +247,11 @@ test("child-list changes rebind live targets without observing preview style att
     /observe\(document\.documentElement,\s*\{\s*childList:\s*true,\s*subtree:\s*true\s*\}\)/s,
   );
   assert.doesNotMatch(observerBlock, /attributes:\s*true/);
-  assert.match(overlay, /\[board, route, previews, domRevision, capturing\]/);
+  assert.match(
+    overlay,
+    /\[board, route, previews, domRevision, capturing, onThisPage\]/,
+    "onThisPage is a useCallback on `here`, so the effect must re-run when the page changes",
+  );
 });
 
 test("Go to source can render its temporary highlight while capture mode is off", () => {
@@ -589,7 +593,7 @@ test("capture suspends relationship previews before it measures or photographs a
     overlay.indexOf("/* ---------------------------------------------------------- multi-select */"),
   );
   assert.match(previewEffect, /if \(!board \|\| capturing\) return/);
-  assert.match(previewEffect, /\[board, route, previews, domRevision, capturing\]/);
+  assert.match(previewEffect, /\[board, route, previews, domRevision, capturing, onThisPage\]/);
 
   const captureBlock = overlay.slice(
     overlay.indexOf("const capture = useCallback"),

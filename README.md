@@ -1,60 +1,156 @@
 # Pinnables
 
-Pinning cross-page annotations for AI coding agents.
+**Point at things in your running app and tell your coding agent what to change.**
 
-Pin components across your product's routes, describe how they should relate, and hand your coding
-agent one plan with the exact style diffs — instead of a list of independent tickets.
+Pinnables is a Chrome extension that lets you click a component on your own site, describe the change in plain words, and have Cursor, Claude Code, or Codex make it. The edit lands in your real source files, so your dev server hot-reloads and you see it happen.
 
-- [PDR.md](PDR.md) — product requirements
-- [PDR-REVIEW.md](PDR-REVIEW.md) — critique of the spec, and why the decisions are what they are
-- [HANDOFF-DESIGN.md](HANDOFF-DESIGN.md) — how the board reaches the agent
-- [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) — architecture, user flows, build sequence
+The part that makes it different: you can pin components **across different pages** and describe how they relate. "These three cards should match" is one instruction, not three tickets.
 
-## Status
+---
 
-| Piece | State |
+## See it work
+
+**The whole loop — pin, describe, watch it change**
+
+https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4
+
+**Relating components across pages**
+
+https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4
+
+**Version keys — flip between what the agent tried**
+
+https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4
+
+---
+
+## Install
+
+You need [Node](https://nodejs.org) 20 or newer and Chrome.
+
+```bash
+git clone https://github.com/prlakshm/pinnables.git
+cd pinnables
+npm install
+npm run build
+```
+
+Load the extension:
+
+1. Open `chrome://extensions`
+2. Turn on **Developer mode** (top right)
+3. Click **Load unpacked** and pick `packages/extension/dist`
+
+Start the local service, pointed at the app you want to edit:
+
+```bash
+PINNABLES_PROJECT_DIR=/path/to/your-app npm run dev:service
+```
+
+This runs on `127.0.0.1:4573` and never talks to anything off your machine except the agent you choose. Without it, the extension still captures pins, they just can't reach your files.
+
+---
+
+## Use it
+
+Open your app in Chrome, click the **Pinnables** icon in the toolbar, and the side panel opens.
+
+### 1. Turn on capture
+
+Press **Capture** in the panel. Now hovering your app highlights components instead of clicking through to them.
+
+The toolbar that appears has three modes:
+
+| Mode | What it does |
 |---|---|
-| Board schema, style allowlist, diff computation | **working** |
-| MCP server (4 tools) | **working**, verified against a real MCP client |
-| Local service (materializes boards to disk) | **working** |
-| Chrome extension — capture, board, relationships, handoff | **working**, not yet loaded in Chrome |
-| Draw tool — frozen-frame region marking | **working**, not yet loaded in Chrome |
-| Wordmark | **working** — traced vectors |
-| Dev plugin (build-time source mapping) | not started |
+| **Browse the page** | Normal clicking, so you can navigate to another route |
+| **Pin an element** | Click a component to select it |
+| **Draw on a pin** | Sketch directly on the page when words aren't enough |
 
-## Run it
+### 2. Pin something and describe it
+
+Click a component. A box opens with a text field.
+
+| You type | You press | What happens |
+|---|---|---|
+| A change | **Enter** | Sent to your agent now |
+| A change | **⌘↵** | Saved to the board for later |
+| Nothing | **⌘↵** | Keeps the pin itself, so you can come back to it |
+
+So `Enter` means "do this", and `⌘↵` means "remember this".
+
+### 3. Pin across pages
+
+Switch to **Browse the page**, navigate anywhere in your app, then pin again. Your earlier pins are still on the board.
+
+**Shift-click** several pins to select them together, then write one message for all of them. That's how you say "make these match" once instead of three times.
+
+### 4. Send it
+
+Press **Send to agent**. The panel holds on *Sending…* until the agent actually starts, then your files change underneath the running app.
+
+If another send is still running, the next one queues and goes automatically when the first finishes.
+
+### 5. Undo, or compare
+
+Every finished send is saved as a version. Press **⌥1**, **⌥2** and so on to flip between what the agent tried, or go back to how it was before. Versions reset when you commit, since at that point you've decided.
+
+---
+
+## Connect an agent
+
+Pinnables drives **Cursor**, **Claude Code**, or **Codex**. You pick with the command you start the service with, and nothing else changes: same pins, same Send, same version keys.
 
 ```bash
-npm install && npm run build
+npm run dev:service          # Cursor (default)
+npm run dev:service:claude   # Claude Code
+npm run dev:service:codex    # Codex
 ```
 
-Three processes, depending on what you're doing:
+### Setting each one up
+
+| Agent | What it needs |
+|---|---|
+| **Cursor** | An API key from [Cursor → Integrations](https://cursor.com/dashboard/integrations), set as `CURSOR_API_KEY` |
+| **Claude Code** | The `claude` CLI, signed in with `claude login` |
+| **Codex** | The `codex` CLI, signed in with `codex login` |
+
+For Claude Code and Codex, if the CLI already works in your terminal, Pinnables works. All three edit files on your machine, so your dev server hot-reloads either way.
+
+A full example:
 
 ```bash
-npm run dev:extension
-```
-
-Then load `packages/extension/dist` at `chrome://extensions` with developer mode on. Click the
-Pinnables toolbar icon on a `localhost` page to open the side panel and arm capture mode.
-
-```bash
+CURSOR_API_KEY=your-key-here \
+PINNABLES_PROJECT_DIR=/path/to/your-app \
 npm run dev:service
 ```
 
-The companion service on `127.0.0.1:4573`. Without it the extension still works — pins live in
-`chrome.storage` — but boards can't be written to disk for an agent to read.
+### Picking a model
+
+Optional, and it works for whichever agent you chose. Leave it off and each agent uses its own default.
 
 ```bash
-npm run smoke
+PINNABLES_MODEL=claude-sonnet-5 npm run dev:service:claude
 ```
 
-Drives the MCP server over a real stdio session against the fixture board.
+### All the settings
 
-## Source mapping
+| Variable | What it does |
+|---|---|
+| `PINNABLES_PROJECT_DIR` | The repo the agent edits. Required unless you start the service from inside it |
+| `PINNABLES_AGENT` | `cursor`, `claude`, or `codex`. The scripts above set this for you |
+| `PINNABLES_MODEL` | Model for whichever agent is running |
+| `PINNABLES_SEND_IMAGES=1` | Always attach screenshots. On automatically whenever you used the draw tool |
+| `PINNABLES_CLAUDE_PATH` · `PINNABLES_CODEX_PATH` | Where the CLI lives, if it isn't on the service's PATH |
+| `PINNABLES_CURSOR_RUNTIME=cloud` | Run Cursor's Cloud Agents instead of editing locally |
 
-Add the Vite plugin to the app you're reviewing. This is the primary path, not a nicety: the
-extension's fallback reads `_debugSource` off the React fiber, and React 19 removed it — so without
-the plugin a pin can name its component but not say where it lives.
+Follow-up sends continue the same conversation with the agent, so "make it a bit darker" works after "make it blue".
+
+---
+
+## Make pins find the right file
+
+Add the Vite plugin to the app you're editing. Without it a pin knows *which component* you clicked but not *which file* it lives in, so the agent has to guess.
 
 ```js
 // vite.config.js
@@ -63,108 +159,15 @@ import { pinnables } from "@pinnables/vite-plugin";
 export default { plugins: [pinnables(), react()] };
 ```
 
-Every DOM element gains `data-pin-source="src/components/Card.tsx:42"` and
-`data-pin-component="Card"`, which is what turns a pin into a file an agent can open. Components are
-skipped — `data-*` on `<Card />` is a prop that may never reach the DOM — and attributes are
-inserted after the tag name, so line numbers stay exactly where they were.
+Every element gains `data-pin-source="src/components/Card.tsx:42"`. Dev only by default, since it publishes your file layout to anyone with an inspector. Pass `{ includeProduction: true }` if you want it in a build.
 
-Dev only unless you ask otherwise: the attributes publish your source tree to anyone with an
-inspector, which is fine on localhost and odd in production. Pass `{ includeProduction: true }` if
-you want them in a build.
+---
 
-## Connect an agent
+## Let your agent read boards directly (MCP)
 
-Pinnables can drive Cursor, Claude Code, or Codex. Which one it uses is decided
-by the command you start the service with, and nothing else changes: the same
-pins, the same Send, the same version rail.
+Optional. This lets the agent pull a board itself and mark pins done, instead of only receiving them.
 
-```bash
-npm run dev:service          # Cursor (default)
-npm run dev:service:claude   # Claude Code
-npm run dev:service:codex    # Codex
-```
-
-Pick the model on the same line, whichever agent you chose. This is optional
-everywhere; leave it off and each agent uses its own default.
-
-```bash
-PINNABLES_MODEL=claude-sonnet-5 npm run dev:service:claude
-```
-
-| Env | Purpose |
-|---|---|
-| `PINNABLES_AGENT` | `cursor` (default), `claude`, or `codex`. The npm scripts above set it for you |
-| `PINNABLES_MODEL` | Model id for whichever agent is running. Overrides the agent-specific model variables |
-| `PINNABLES_PROJECT_DIR` | Repo the agent edits (required when the service isn't started from that repo) |
-| `PINNABLES_SEND_IMAGES=1` | Always attach pin screenshots. On by default for Cursor cloud, and for every agent whenever the pen tool was used |
-
-Claude Code and Codex always edit the repo on this machine, so a running dev
-server hot-reloads and the version rail works exactly as it does under Cursor's
-local runtime. Both authenticate through their own CLI, so if `claude` or
-`codex` already works in your terminal, Send works. Follow-ups resume the same
-session (`~/.pinnables/claude-session.json`, `~/.pinnables/codex-session.json`).
-
-| Env | Purpose |
-|---|---|
-| `PINNABLES_CLAUDE_MODEL` | Model for Claude Code (default `claude-opus-5`) |
-| `PINNABLES_CODEX_MODEL` | Model for Codex (default: whatever Codex picks) |
-| `PINNABLES_CLAUDE_SESSION_ID` | Force follow-ups onto a specific Claude session |
-| `PINNABLES_CODEX_THREAD_ID` | Force follow-ups onto a specific Codex thread |
-| `PINNABLES_CLAUDE_PATH` | Path to the `claude` binary, when it isn't on the service's PATH |
-| `PINNABLES_CODEX_PATH` | Path to the `codex` binary, when it isn't on the service's PATH |
-
-The two path variables exist because both SDKs shell out to their CLI and find
-it on `PATH`. A service started from a launcher rather than your shell often has
-a narrower `PATH` than you do, and `~/.local/bin` is the usual casualty.
-
-### One-click Send to Cursor (default)
-
-1. Create an API key at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations).
-2. Start the local service with that key, pointed at the **app repo** you're annotating:
-
-```bash
-CURSOR_API_KEY=crsr_… \
-PINNABLES_PROJECT_DIR=/absolute/path/to/your-app \
-npm run dev:service
-```
-
-3. In the extension, pin + annotate, then press **Send to agent**.
-
-By default Send uses Cursor's **local** agent runtime: it edits files in
-`PINNABLES_PROJECT_DIR` (or the service's cwd) on this machine. A Vite/dev server
-running that repo should hot-reload — no PR branch, no cloud clone.
-
-Live Sends use Composer **fast**, skip screenshot vision, and tell the agent to
-edit the named file only. That is what keeps the loop short.
-
-Follow-up Sends reuse the same local agent session (`~/.pinnables/cursor-session.json`).
-If that agent still has an active run, the next Send is **queued** and starts when
-the run finishes.
-
-Optional:
-
-| Env | Purpose |
-|---|---|
-| `PINNABLES_PROJECT_DIR` | Repo the local agent edits (required when the service isn't started from that repo) |
-| `PINNABLES_CURSOR_MODEL` | Model id (default `composer-2.5`). `PINNABLES_MODEL` wins over this |
-| `PINNABLES_CURSOR_FAST=0` | Full Composer instead of the fast variant (slower) |
-| `PINNABLES_SEND_IMAGES=1` | Always attach pin screenshots (vision; slower). On by default for cloud, and whenever the pen tool was used |
-| `PINNABLES_CURSOR_AGENT_ID` | Force follow-ups onto a specific agent |
-| `PINNABLES_CURSOR_RUNTIME=cloud` | Use Cloud Agents instead (remote clone; see below) |
-| `PINNABLES_REPO_URL` | GitHub URL for cloud runtime |
-| `PINNABLES_REPO_REF` | Starting branch/SHA for cloud |
-| `PINNABLES_AUTO_CREATE_PR=1` | Cloud only: open a PR when the run finishes |
-| `PINNABLES_AGENT_FALLBACK_LOCAL=1` | If the agent's API fails, fall back to CLI spawn (`claude`) |
-
-Cloud runtime (`PINNABLES_CURSOR_RUNTIME=cloud`) clones the repo on a Cursor VM.
-Watch those agents at [cursor.com/agents](https://cursor.com/agents). Prefer local
-for live UI feedback on a running app.
-
-Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer for you to paste.
-
-### MCP (pull / status write-back)
-
-**Claude Code** — `.mcp.json` at the project root:
+**Claude Code** — `.mcp.json` in your project root:
 
 ```json
 {
@@ -177,154 +180,32 @@ Without `CURSOR_API_KEY`, Send still materializes the board and copies a pointer
 }
 ```
 
-**Cursor** — same shape in `.cursor/mcp.json`. **Codex** — `~/.codex/config.toml` with
-`[mcp_servers.pinnables]`. Add `"env": { "PINNABLES_HOME": ".../fixtures" }` to try it against the
-sample board before capturing anything real.
+**Cursor** uses the same shape in `.cursor/mcp.json`. **Codex** uses `~/.codex/config.toml` under `[mcp_servers.pinnables]`.
 
-Then, in the agent (clipboard fallback path):
+Then ask it: *"Load Pinnables board dashboard-cards and implement it."*
 
-> Load Pinnables board "dashboard-cards" and implement it.
+Four tools: `list_boards`, `get_board`, `get_pin_context`, `set_pin_status`.
 
-## Architecture
+---
 
-```
-Chrome
-  content script (tier 1, 1.8 kB — listener only, always resident)
-     └─ picker bundle (tier 2, lazy) — highlight, capture, floating pins, toolbar
-  side panel (React) — shelf, relationships, handoff
-  service worker — stateless router; all state round-trips through chrome.storage
-        │ HTTP, 127.0.0.1 only
-        ▼
-  local service — board.json · brief.md · pins/*.png
-        │ same board.json
-        ▼
-  MCP server (stdio) ──► Cursor / Codex / Claude Code
-```
-
-Three constraints this encodes, each learned the hard way in [PDR-REVIEW.md](PDR-REVIEW.md):
-
-- **The service worker holds no state.** MV3 terminates it when idle, so every mutation goes through
-  `chrome.storage`. The panel and the worker are views, not owners.
-- **The content script is two-tier.** A listener stub satisfies the 200 ms budget; the picker loads
-  on activation, so "no background capture when inactive" is literally true.
-- **MCP is pull-only for context; Send can push.** The clipboard pointer remains the zero-config
-  fallback. With `CURSOR_API_KEY`, the local service pushes the board through Cursor's Cloud Agents
-  API so pressing Send starts an agent without paste.
-
-## Tools
-
-Four, deliberately. Cursor caps how many tools it forwards to the model across all installed
-servers, and more tools measurably degrades tool selection.
-
-| Tool | Purpose |
-|---|---|
-| `list_boards` | Entry point — ids, titles, pin counts, status |
-| `get_board` | The whole work order: pins with routes, source files, instructions, plus relationships with computed before → after style diffs |
-| `get_pin_context` | Full detail for one pin — complete styles, markup, DOM path, absolute screenshot path |
-| `set_pin_status` | Write-back, so resolution closes the loop |
-
-`get_board` is manifest-first: a 5-pin board renders in ~526 tokens, so a 20-pin board lands near 2k
-and the agent can hold the whole thing while it works. Screenshots are returned as **paths**, never
-base64 — the agent reads them with its own file tools only if it needs to look, which also sidesteps
-MCP image-support gaps in some clients.
-
-## The interesting part
-
-A relationship stores one source pin, N targets, a property list, and a natural-language exception.
-Because the board holds captured styles for both sides, the diff is computed rather than described:
+## How it works
 
 ```
-### rel-01 — match
-source `pin-02` SettingsCard `src/components/SettingsCard.tsx:8`
-target `pin-01` StatCard `src/components/StatCard.tsx:12`
-  padding        32px 24px  →  16px 20px
-  border-radius  4px  →  12px
-  box-shadow     rgba(0,0,0,0.06) 0px 1px 2px  →  rgba(0,0,0,0.08) 0px 4px 12px
-except: Preserve each card's own heading and content hierarchy.
+Chrome extension  ──▶  local service (127.0.0.1:4573)  ──▶  your agent
+   pins, board          writes board.json + screenshots       edits files
+        │                        │
+        └── chrome.storage       └── ~/.pinnables/
 ```
 
-"Make this card match that one" is something an agent has to interpret. Three concrete value changes
-plus one constraint is something it can apply.
+Pins live in `chrome.storage`, so nothing is lost if the service isn't running. When you send, the service writes the board to `~/.pinnables/` and hands your agent the pinned element's selector, source file, captured styles, and a screenshot. Then it watches the run so it can save a version when the edit lands.
 
-## Two kinds of pin
+Everything is local. The only thing that leaves your machine is the prompt going to whichever agent you picked.
 
-**Element pins** answer *which component* — selector, DOM path, source file, computed styles,
-markup. That's what makes a precise edit possible.
+---
 
-**Region pins** answer *which area* — a crowded band, a gap between two things, one frame of an
-animation. The element picker can't express any of those.
+## Contributing
 
-Region pins come from the draw tool, and the mechanic is borrowed from
-[Cursor Design Mode](https://cursor.com/blog/design-mode): **the viewport is frozen first, and you
-draw on that frame.** It's a small decision that removes a whole class of problem — a mark anchored
-to a live page drifts the instant anything reflows, and can't mark a moving element at all. Freeze
-first and there is nothing left to re-anchor; the frame *is* the record.
-
-Circle, box, arrow, or freehand; four colours; `⌘Z` to undo, `⌘↵` to commit, `Esc` to discard the
-frame. The marks are cropped to their own bounds plus context, composited into the stored PNG, and
-summarised for the brief:
-
-```
-### pin-06 — toolbar crowding  [todo]
-route `/dashboard` · 1440×900
-region · 1 ellipse, 1 arrow drawn over the captured frame · see screenshot
-> Everything between the filter row and the first card is fighting for the same space.
-```
-
-Note what a region pin deliberately *doesn't* carry: no selector, no source file, no computed
-styles. Filling those with something plausible would be worse than leaving them empty — the
-screenshot is the specification, and the agent is told to open it. For the same reason region pins
-can't take part in relationships: a style diff needs two elements with captured styles, and a region
-has neither.
-
-## Brand
-
-Two traced vector wordmarks, both regenerated from the source render with `npm run trace-wordmark`:
-
-- **`brand/wordmark.svg`** — three tones, no gradient: base `#ED1C24`, a lit shoulder `#F4564B`
-  toward the upper left, and a true-white specular on top. Three hard steps read as a sphere at this
-  scale, survive being rasterised by anything, and keep the mark consistent with a flat interface.
-- **`brand/wordmark-flat.svg`** — two tones, base plus specular. The shoulder is a soft tonal step
-  that needs pixels to read as shading; the hard-edged specular still resolves at a few px across.
-  The extension's side panel uses this one — it draws the wordmark at 17px.
-
-The disc is a true circle; the traced outline was faithful to the render's antialiasing, which meant
-faintly lumpy.
-
-The tittle geometry isn't eyeballed. `scripts/analyse-tittle.mjs` reads the source render's pixels,
-sorts them into tone bands by luminance *and* saturation inside the disc — the specular is the
-desaturated region, not merely the brightest — then fits each band with PCA: centroid for position,
-eigenvalues for the radii, principal axis for the tilt.
-
-That measurement is also what determined the specular's *shape*. Its fitted centre sits 19.9px from
-the disc centre, and the tangent to the circle at that point is −36.6° — within a degree of the
-specular's own measured −37.7° rake. A highlight lying along the tangent at a fixed radius is an
-**arc**, curving with the surface rather than sitting flat on it. It's drawn as a stroked arc with
-round caps, which gives the curve, the rounded ends, and the concave inner dent from one primitive.
-
-Both tones use that same construction — the lit shoulder is the same worm, fatter and set further
-back. Curvature is separated from position (`orbit` places the midpoint, `curveRadius` sets how hard
-it bends), so a worm can be tightly curved without being dragged toward the disc centre.
-
-Two values are tuned rather than raw, both noted in the script: the lit band is a crescent, and an
-ellipse fitted to a crescent comes out far too big, so it's sized to the source's actual lit width;
-and the specular fit runs slightly wide of the hot spot.
-
-Palette: `#F6F5F3` paper · `#FFFFFF` surface · `#292C33` ink · `#1E3FD8` cobalt (interactive) ·
-`#9BD3F9` sky (tints) · `#ED1C24` red. **Red is the identity colour only** — logo and app icon,
-never UI chrome, so it never collides with an error state.
-
-## Layout
-
-```
-packages/shared/       schema, style allowlist + diff, storage, markdown rendering
-packages/mcp-server/   the four tools over stdio
-packages/service/      HTTP companion; writes boards to ~/.pinnables
-packages/extension/    MV3 extension — content overlay, side panel, service worker
-brand/                 wordmark source + traced vector
-fixtures/              a sample board — 5 pins, 4 routes, 1 relationship
-scripts/               MCP smoke test, wordmark tracer
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md). Design and architecture notes are in [docs/internal](docs/internal) if you want the reasoning behind a decision.
 
 ## License
 

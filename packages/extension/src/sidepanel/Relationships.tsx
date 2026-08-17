@@ -144,6 +144,10 @@ function RelationshipCard({
     const next = new Set(incomingProperties);
     selectionRef.current = next;
     setSelected(next);
+  /* Keyed on incomingKey, not the array: a fresh array identity every render
+     would re-run this and clobber an optimistic selection mid-write. The
+     current value is read through incomingRef where freshness matters. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incomingKey]);
 
   /**

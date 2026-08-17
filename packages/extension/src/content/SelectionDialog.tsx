@@ -564,6 +564,10 @@ export function SelectionDialog({
     return () => {
       cancelled = true;
     };
+  /* Keyed on the pin's id, not the pin: this drives one send's outcome, and
+     re-running it whenever any field of the pin changes would record that
+     outcome repeatedly for a single run. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primary?.id]);
 
   // The echo stands in only until the board carries the real entry.

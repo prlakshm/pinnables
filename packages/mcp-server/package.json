@@ -1,6 +1,7 @@
 {
   "name": "@pinnables/mcp-server",
   "version": "0.1.0",
+  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",

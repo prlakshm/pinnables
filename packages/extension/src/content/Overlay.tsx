@@ -825,6 +825,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     return () => {
       cancelled = true;
     };
+  /* positionScope is [board.id, sorted pin ids] — deliberately narrower than
+     board. Depending on board would reload and reset every card position on
+     each keystroke in an annotation. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionScope]);
 
   useEffect(() => {
@@ -849,6 +853,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       !switchingBoards && current && validIds.has(current.fromPinId) ? current : null,
     );
     if (hoverAnchor.current && !validIds.has(hoverAnchor.current.pinId)) hoverAnchor.current = null;
+  /* positionScope is [board.id, sorted pin ids] — this must run when the set
+     of pins changes, not when a pin's contents do. Depending on board would
+     wipe focus on every annotation keystroke. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionScope]);
 
   useEffect(() => {
@@ -1125,7 +1133,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         else element.style.removeProperty(property);
       }
     };
-  }, [board, route, previews, domRevision, capturing]);
+  }, [board, route, previews, domRevision, capturing, onThisPage]);
 
   /* ---------------------------------------------------------- multi-select */
 
@@ -1575,7 +1583,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         setCapturing(false);
       }
     },
-    [persistPosition, guard, createRelationship, board, seatCardAtElement],
+    [persistPosition, guard, createRelationship, board, seatCardAtElement, onThisPage],
   );
 
   /*
@@ -1665,7 +1673,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
     };
-  }, [connecting, createRelationship, board, route, capture]);
+  }, [connecting, createRelationship, board, route, capture, onThisPage]);
 
   /* --------------------------------------------------- live connect gesture */
 
@@ -1763,6 +1771,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
       window.removeEventListener("pointercancel", onCancel);
     };
     // Keyed on the gesture, not the cursor — the handlers read fresh state.
+  /* Keyed on the gesture, not the cursor. Depending on liveConnect itself
+     would tear down and re-bind these pointer listeners on every mousemove;
+     the handlers read fresh state through refs instead. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveConnect?.fromPinId, capture]);
 
   useEffect(() => {
@@ -2132,7 +2144,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         );
       }
     });
-  }, [state.summon, board, route, persistPosition, seatCardAtElement]);
+  }, [state.summon, board, route, persistPosition, seatCardAtElement, onThisPage]);
 
   /**
    * The shelf pin's off half. The capture leaves the screen; if the pin was
@@ -2191,7 +2203,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     // The source capture takes its component's own place when it is in view.
     const source = board.pins.find((pin) => pin.id === relationship.sourcePinId);
     if (source) seatCardAtElement(source);
-  }, [board, route, state.focusRelationship, seatCardAtElement]);
+  }, [board, route, state.focusRelationship, seatCardAtElement, onThisPage]);
 
   /**
    * The shelf's group row, landing. Reopening a messaged multi-selection is a
@@ -2220,7 +2232,7 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     const first = board.pins.find((pin) => pin.id === live[0]);
     const found = first ? refindElement(first) : null;
     found?.element.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [state.summonGroup, board, route]);
+  }, [state.summonGroup, board, route, onThisPage]);
 
   /*
    * The dismissal side of "the shelf records what you said": a provisional
