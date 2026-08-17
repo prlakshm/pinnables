@@ -123,9 +123,9 @@ export function Toolbar({
   const placement = position ? { left: position.x, top: position.y, transform: "none" } : undefined;
 
   const tools: Array<{ id: ToolMode; label: string; icon: React.ReactNode }> = [
-    { id: "browse", label: "Browse the page", icon: <CursorIcon /> },
-    { id: "pin", label: "Pin an element", icon: <PinIcon /> },
-    { id: "draw", label: "Draw on a pin", icon: <PencilIcon /> },
+    { id: "browse", label: "Browse the page · V", icon: <CursorIcon /> },
+    { id: "pin", label: "Pin an element · P", icon: <PinIcon /> },
+    { id: "draw", label: "Draw on a pin · D", icon: <PencilIcon /> },
   ];
 
   return (

@@ -4,6 +4,8 @@ import { anchorForBox, buildDomPath, buildSelector, documentRect } from "../lib/
 import { InkLayer, usePlacedShapes } from "./InkLayer";
 import type { DrawTool } from "./Toolbar";
 
+export { isEditableKeyboardTarget } from "../lib/keyboard";
+
 export interface DrawingBuffer {
   read(): DrawShape[];
   /** Accept an authoritative refresh until this local session makes an edit. */
@@ -32,18 +34,6 @@ export function createDrawingBuffer(initial: DrawShape[]): DrawingBuffer {
       return current;
     },
   };
-}
-
-/** Page typing wins over single-letter drawing shortcuts. */
-export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  const closest = (target as { closest?: (selector: string) => unknown } | null)?.closest;
-  if (typeof closest !== "function") return false;
-  return Boolean(
-    closest.call(
-      target,
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
-    ),
-  );
 }
 
 /**
@@ -185,20 +175,11 @@ export function DrawLayer({
         event.preventDefault();
         event.stopPropagation();
         onDone();
-        return;
       }
-      const key = event.key.toLowerCase();
-      if (key !== "e" && key !== "b") return;
-      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
-      if (isEditableKeyboardTarget(event.target)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (key === "e") onTool(tool === "erase" ? "draw" : "erase");
-      if (key === "b") onTool("draw");
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [onDone, onTool, tool]);
+  }, [onDone]);
 
   /** The stroke in progress, still in document pixels and not yet anchored. */
   const draftPath = draft

@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { versionInChapter, type Board, type Capture, type Pin, type PinVersion } from "@pinnables/shared";
+import {
+  arrowsShouldStepVersions,
+  stepVersionNo,
+  versionJumpDigit,
+} from "../lib/keyboard";
 import { send } from "../lib/messages";
 import { GripIcon } from "../ui/icons";
 import type { Box } from "./chrome-placement";
+
+export { versionShortcutDigit, versionJumpDigit, stepVersionNo } from "../lib/keyboard";
 
 /**
  * Version keys — the rail, the captures, and every gesture between them.
@@ -249,17 +256,6 @@ export function flyKeyToRail(fromKey: HTMLElement, no: number): void {
     requestAnimationFrame(tryFly);
   };
   tryFly();
-}
-
-/**
- * ⌥+digit: the physical key (`e.code`) is the numeral. On a Mac Option+1
- * types "¡", so `e.key === "1"` would never restore.
- */
-export function versionShortcutDigit(e: { code: string; key: string }): number | null {
-  const fromCode = /^Digit([1-9])$/.exec(e.code)?.[1];
-  if (fromCode) return Number(fromCode);
-  if (e.code === "" && /^[1-9]$/.test(e.key)) return Number(e.key);
-  return null;
 }
 
 function launchMintFlight(fromKey: HTMLElement, railKey: HTMLElement, done: () => void): void {
@@ -1014,36 +1010,51 @@ export function VersionLayer({
 
   /* ------------------------------------------------------------ keyboard */
 
+  const applyVersion = useCallback(
+    (no: number) => {
+      const hit = versions.find((v) => v.no === no);
+      if (!hit || busy) return false;
+      const home = homeOf(hit.no);
+      if (home === "main") restore(hit.no);
+      else {
+        saveCaptures(
+          captures.map((cap) => (cap.id === home ? { ...cap, current: hit.no } : cap)),
+        );
+      }
+      return true;
+    },
+    [versions, busy, homeOf, restore, captures, saveCaptures],
+  );
+
   useEffect(() => {
-    if (!showMain) {
+    if (versions.length === 0) {
       setArmed(false);
       return;
     }
     const down = (e: KeyboardEvent) => {
       if (e.key === "Alt") setArmed(true);
-      /*
-       * By code, not key: on a Mac ⌥2 types "™", and only the physical code
-       * still says which numeral was pressed. Synthetic drivers (tests,
-       * automation) send no code at all, so a bare digit key stands in then.
-       */
-      const want = versionShortcutDigit(e);
-      if (e.altKey && want !== null) {
-        const hit = versions.find((v) => v.no === want);
-        if (!hit || busy) return;
+      const want = versionJumpDigit(e);
+      if (want !== null) {
         e.preventDefault();
         e.stopPropagation();
-        /*
-         * No focus to track. Each numeral lives in exactly one rail, so the
-         * number already says which rail answers. The partition is the
-         * disambiguation, which is why every rail can stay live at once.
-         */
-        const home = homeOf(hit.no);
-        if (home === "main") restore(hit.no);
-        else {
-          saveCaptures(
-            captures.map((cap) => (cap.id === home ? { ...cap, current: hit.no } : cap)),
-          );
-        }
+        applyVersion(want);
+        return;
+      }
+      if (
+        (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        !e.altKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.isComposing &&
+        !busy &&
+        arrowsShouldStepVersions(e)
+      ) {
+        const nos = mainKeys.map((v) => v.no);
+        const next = stepVersionNo(pin.currentVersionNo, nos, e.key === "ArrowRight" ? 1 : -1);
+        if (next === null) return;
+        e.preventDefault();
+        e.stopPropagation();
+        applyVersion(next);
       }
     };
     const up = (e: KeyboardEvent) => {
@@ -1058,7 +1069,7 @@ export function VersionLayer({
       window.removeEventListener("keyup", up, true);
       window.removeEventListener("blur", blur);
     };
-  }, [showMain, versions, busy, homeOf, restore, captures, saveCaptures]);
+  }, [versions.length, busy, applyVersion, mainKeys, pin.currentVersionNo]);
 
   /* ------------------------------------------------- arrival choreography */
 
