@@ -609,7 +609,9 @@ test("annotation-box alerts use the shelf's three weights and tokens", () => {
 
   /* Same tokens as the shelf banners, or the two surfaces drift apart. */
   assert.match(css, /\.pin-note__alert\[data-weight="warn"\][\s\S]{0,120}--pin-amber-soft[\s\S]{0,60}--pin-amber\)/);
-  assert.match(css, /\.pin-note__alert\[data-weight="note"\][\s\S]{0,120}--pin-paper-sunk[\s\S]{0,60}--pin-ink-muted/);
+  /* A bare save gets no field at all — it stays the plain quiet line. */
+  assert.match(dialog, /alertIsQuiet \? "pin-note__rel" : "pin-note__alert"/);
+  assert.doesNotMatch(css, /data-weight="note"/);
   assert.match(css, /\.pin-note__alert\[data-weight="error"\][\s\S]{0,180}--pin-red-tint[\s\S]{0,120}--pin-red\)/);
 
   /* The base class must not hardcode a colour any more. */

@@ -1518,9 +1518,10 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 }
 
 /*
- * The status row only speaks up when something needs attention, so when it
- * does it wears the board banner's alarm dress: the same pale amber field,
- * with red text for the error itself. Quiet rows stay .pin-note__rel plain.
+ * The status row only speaks up when something needs attention, and then it
+ * wears the shelf's dress at the matching weight: amber for a step not taken,
+ * red for something that actually broke. A bare save needs neither, so quiet
+ * rows stay .pin-note__rel plain — no field at all.
  */
 .pin-note__alert {
   display: flex;
@@ -1534,10 +1535,6 @@ button.pin-chip:not(:disabled):not([data-on="true"]):not([data-partial="true"]):
 .pin-note__alert[data-weight="warn"] {
   background: var(--pin-amber-soft);
   color: var(--pin-amber);
-}
-.pin-note__alert[data-weight="note"] {
-  background: var(--pin-paper-sunk);
-  color: var(--pin-ink-muted);
 }
 .pin-note__alert[data-weight="error"] {
   background: var(--pin-red-tint);

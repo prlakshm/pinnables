@@ -932,8 +932,11 @@ export function SelectionDialog({
       )}
       {alertText && (
         <div
-          className="pin-note__alert"
-          data-weight={alertWeight}
+          /* A bare save is not an alert. It stays the plain quiet line it has
+             always been: no field, no border, just muted ink that confirms
+             and leaves. Only the two that need attention get a banner. */
+          className={alertIsQuiet ? "pin-note__rel" : "pin-note__alert"}
+          data-weight={alertIsQuiet ? undefined : alertWeight}
           data-state={restoreError ? "failed" : phase.kind}
           role={alertIsQuiet ? "status" : "alert"}
           aria-live={alertIsQuiet ? "polite" : "assertive"}
