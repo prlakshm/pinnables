@@ -43,7 +43,7 @@ test("erase is the only pressed drawing tool while erase mode is active", () => 
   const markup = renderToolbar("erase");
 
   assert.match(buttonTag(markup, "Erase"), /aria-pressed="true"/);
-  assert.match(buttonTag(markup, "Draw on a pin"), /aria-pressed="false"/);
+  assert.match(buttonTag(markup, "Draw on a pin · D"), /aria-pressed="false"/);
 });
 
 test("pen colours expose one pressed selection", () => {

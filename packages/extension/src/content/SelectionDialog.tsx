@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { pinLabel, type Board, type LiveSend, type Pin } from "@pinnables/shared";
+import { pinLabel, versionInChapter, type Board, type LiveSend, type Pin } from "@pinnables/shared";
+import { arrowsShouldStepVersions, stepVersionNo, versionJumpDigit } from "../lib/keyboard";
 import { isLostLiveSendError, recordableLiveSendState } from "../lib/live-send";
 import { send } from "../lib/messages";
 import { hasModifier, submitHintLabel } from "../lib/platform";
@@ -748,6 +749,35 @@ export function SelectionDialog({
               event.stopPropagation();
               onDismiss();
               return;
+            }
+            const jump = versionJumpDigit(event.nativeEvent);
+            if (jump !== null) {
+              event.preventDefault();
+              event.stopPropagation();
+              const known = (primary.versions ?? []).some(
+                (v) => v.no === jump && versionInChapter(v, projectHead ?? null),
+              );
+              if (known) pressVersion(jump);
+              return;
+            }
+            if (
+              (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+              arrowsShouldStepVersions(event.nativeEvent)
+            ) {
+              const nos = (primary.versions ?? [])
+                .filter((v) => versionInChapter(v, projectHead ?? null))
+                .map((v) => v.no);
+              const next = stepVersionNo(
+                primary.currentVersionNo,
+                nos,
+                event.key === "ArrowRight" ? 1 : -1,
+              );
+              if (next !== null) {
+                event.preventDefault();
+                event.stopPropagation();
+                pressVersion(next);
+                return;
+              }
             }
             if (event.key !== "Enter") return;
             event.preventDefault();

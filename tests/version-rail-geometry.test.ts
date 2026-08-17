@@ -137,7 +137,7 @@ test("Option+DigitN restores even when e.key is the Mac Option glyph", () => {
   assert.equal(versionShortcutDigit({ code: "Digit2", key: "™" }), 2);
   assert.equal(versionShortcutDigit({ code: "Digit1", key: "1" }), 1);
   assert.equal(versionShortcutDigit({ code: "", key: "3" }), 3);
-  assert.equal(versionShortcutDigit({ code: "", key: "¡" }), null);
+  assert.equal(versionShortcutDigit({ code: "Numpad4", key: "4" }), 4);
 });
 
 test("flyKeyToRail always translates and waits for the rail key", () => {
