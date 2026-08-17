@@ -10,15 +10,15 @@ What makes it different: you can pin components **across different pages** and d
 
 Pin something, describe the change, watch it land:
 
-https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4
+<video src="https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4" controls muted playsinline></video>
 
 Relating components that live on different pages:
 
-https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4
+<video src="https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4" controls muted playsinline></video>
 
 Version keys, for flipping between what the agent tried:
 
-https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4
+<video src="https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4" controls muted playsinline></video>
 
 ## Install
 
