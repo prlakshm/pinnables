@@ -1,24 +1,24 @@
 # Pinnables
 
-**Point at things in your running app and tell your coding agent what to change.**
+**Annotate UI on your local web app and tell your coding agent what to change. All in your browser. No switching tabs.**
 
-Click a component on your own site, describe the change in plain words, and Cursor, Claude Code, or Codex makes it. Edits land in your real source files, so your dev server hot-reloads and you watch it happen.
+Click a component on your own site, describe the change, and Cursor, Claude Code, or Codex changes it. Edits land in your local source files, and your dev server hot-reloads so you watch it happen.
 
-What makes it different: you can pin components **across different pages** and describe how they relate. "These three cards should match" is one instruction, not three tickets.
+What makes it different: you can pin components **across different pages** and describe how they relate. "These three cards should match" is one instruction. "Make this match that" is another.
 
-## See it work
+## Demos
 
 Pin something, describe the change, watch it land:
 
-[![Pinning a component, describing a change, and watching it land](demos/public/01-overview.gif)](https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4)
+[Pinning a component, describing a change, and watching it land](https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4)
 
 Relating components that live on different pages:
 
-[![Relating components across different pages](demos/public/02-cross-page-relationships.gif)](https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4)
+[Relating components across different pages](https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4)
 
 Version keys, for flipping between what the agent tried:
 
-[![Flipping between versions the agent produced](demos/public/03-version-rail.gif)](https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4)
+[Flipping between versions the agent produced](https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4)
 
 ## Install
 
@@ -65,27 +65,29 @@ curl http://127.0.0.1:4573/health
 
 Everything stays on your machine. The only thing that leaves is the prompt going to whichever agent you picked.
 
-## Use it
+## How to use
 
 Open your app, click the **Pinnables** toolbar icon, and press **Capture**. Hovering now highlights components instead of clicking through.
 
 **1. Pin something.** Click a component. A box opens with a text field.
 
-| Type | Press | Result |
-|---|---|---|
-| A change | **Enter** | Sent to your agent now |
-| A change | **⌘↵** | Saved to the board for later |
-| Nothing | **⌘↵** | Keeps the pin, so you can come back to it |
+
+| Type             | Press     | Result                                |
+| ---------------- | --------- | ------------------------------------- |
+| A live change    | **Enter** | Sent to your agent now                |
+| A stashed change | **⌘↵**    | Saved to the board to send later      |
+| Stash on nothing | **⌘↵**    | Saves pin, so you can come back to it |
+
 
 So `Enter` means "do this" and `⌘↵` means "remember this".
 
 **2. Pin across pages.** Switch to **Browse the page** in the toolbar, navigate anywhere, and pin again. Earlier pins stay on the board. **Shift-click** several to write one message for all of them.
 
-**3. Draw, if words aren't enough.** The pencil mode sketches directly on the page, and the drawing goes to the agent with the pin.
+**3. Draw arrows and boxes for quick relationships.** The pencil mode sketches directly on the page, and the drawing goes to the agent as a snapshot.
 
-**4. Send.** Press **Send to agent**. The panel holds on *Sending…* until the agent actually starts. If a send is already running, the next one queues automatically.
+**4. Send Board.** Press **Send to agent**. The panel holds on *Sending…* until the agent actually starts. If a send is already running, the next one queues automatically.
 
-**5. Undo or compare.** Every finished send is saved. Press **⌥1**, **⌥2** and so on to flip between what the agent tried, or back to how it was. Versions reset when you commit.
+**5. Undo or compare with version keys.** Every finished send is saved. Press **⌥1**, **⌥2** and so on to flip between what the agent tried, or back to how it was. Versions reset when you commit.
 
 ## Connect an agent
 
@@ -121,18 +123,20 @@ Pick a model on the same line, for any of the three. Optional; leave it off and 
 PINNABLES_MODEL=claude-sonnet-5 PINNABLES_PROJECT_DIR=/absolute/path/to/your-app npm run dev:service:claude
 ```
 
-| Variable | What it does |
-|---|---|
-| `PINNABLES_PROJECT_DIR` | The repo to edit. Required unless you start the service from inside it |
-| `PINNABLES_MODEL` | Model for whichever agent is running |
-| `PINNABLES_SEND_IMAGES=1` | Always attach screenshots. Automatic when you use the draw tool |
-| `PINNABLES_CLAUDE_PATH` · `PINNABLES_CODEX_PATH` | Full path to the CLI, if it isn't on the service's PATH |
+
+| Variable                                         | What it does                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------------- |
+| `PINNABLES_PROJECT_DIR`                          | The repo to edit. Required unless you start the service from inside it |
+| `PINNABLES_MODEL`                                | Model for whichever agent is running                                   |
+| `PINNABLES_SEND_IMAGES=1`                        | Always attach screenshots. Automatic when you use the draw tool        |
+| `PINNABLES_CLAUDE_PATH` · `PINNABLES_CODEX_PATH` | Full path to the CLI, if it isn't on the service's PATH                |
+
 
 If a send fails saying the agent isn't installed, that last pair is usually why. Find the path with `which claude` or `which codex` and pass it in.
 
-## Help pins find the right file
+## Help agents know what componets go with what file
 
-Add the Vite plugin to the app you're editing. Without it a pin knows which component you clicked but not which file it lives in, so the agent has to guess.
+Add the Vite plugin to the app you're editing. Without it an agent knows which component you clicked but not which file it lives in. The agent has to guess, which might be unreliable.
 
 ```js
 // vite.config.js
@@ -143,7 +147,7 @@ export default { plugins: [pinnables(), react()] };
 
 Dev only by default, since it publishes your file layout to anyone with an inspector.
 
-## Let the agent read boards itself (optional)
+## Allow the agent to retreive boards
 
 Adds an MCP server with four tools, so your agent can pull a board and mark pins done instead of only receiving them. In `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor, or `~/.codex/config.toml` for Codex:
 
