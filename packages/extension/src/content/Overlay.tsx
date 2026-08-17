@@ -2840,7 +2840,15 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
           connecting={connecting !== null}
           connectionRole={connecting?.fromPinId === pin.id ? "source" : undefined}
           awayRoute={
-            !onThisPage(pin)
+            /*
+             * Route bookkeeping is not enough on its own. A hash-routed app
+             * serves its default view at both `/` and `#/thing`, so a pin
+             * captured at one and viewed at the other reads as "away" while
+             * sitting right there on screen. If the element answers to its
+             * selector in this document, you are on its page whatever the
+             * route says, and offering to travel to it is nonsense.
+             */
+            !onThisPage(pin) && !refindElement(pin)
               ? {
                   where: sourceLabel(pin),
                   /*

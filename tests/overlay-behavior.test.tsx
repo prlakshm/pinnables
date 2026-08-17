@@ -827,3 +827,18 @@ test("floating pin selection and connector anchors expose keyboard semantics", (
   assert.match(css, /\.pin-object__inner:focus-visible\s*\{/);
   assert.match(css, /\.pin-anchor:is\(:hover, :focus-visible\)/);
 });
+
+/*
+ * A hash-routed app serves its default view at both `/` and `#/thing`, so a
+ * pin captured at one and viewed at the other used to read as "away" and offer
+ * to travel to a component sitting right there on screen.
+ */
+test("the go-to chip needs the element genuinely absent, not just a route mismatch", () => {
+  const overlay = source("packages/extension/src/content/Overlay.tsx");
+  const chip = overlay.slice(overlay.indexOf("awayRoute={"), overlay.indexOf("onOpen: () => {"));
+  assert.match(
+    chip,
+    /!onThisPage\(pin\) && !refindElement\(pin\)/,
+    "a route mismatch alone must not offer to travel to a component that is on screen",
+  );
+});
