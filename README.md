@@ -1,6 +1,6 @@
 # Pinnables
 
-**Annotate UI on your local web app and tell your coding agent what to change. All in your browser. No switching tabs.**
+**Annotate local web apps and tell your coding agent what to change. All in your browser. No switching tabs.**
 
 Click a component on your own site, describe the change, and Cursor, Claude Code, or Codex changes it. Edits land in your local source files, and your dev server hot-reloads so you watch it happen.
 
