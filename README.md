@@ -81,11 +81,7 @@ Open your app, click the **Pinnables** toolbar icon, and press **Capture**. Hove
 
 So `Enter` means "do this" and `⌘↵` means "remember this".
 
-**2. Pin across pages.** Switch to **Browse the page** (`V`) in the toolbar, navigate anywhere, and pin again. Earlier pins stay on the board. **Shift-click** several to write one message for all of them.
-
-**3. Draw arrows and boxes for quick relationships.** The pencil mode (`D`) sketches directly on the page, and the drawing goes to the agent as a snapshot.
-
-Toolbar tools are also keys. They do not fire while you are typing in the annotation box or a page field.
+Toolbar tools are keys. They do not fire while you are typing in the annotation box or a page field.
 
 | Key | Tool |
 |---|---|
@@ -93,6 +89,11 @@ Toolbar tools are also keys. They do not fire while you are typing in the annota
 | `P` | Pin an element |
 | `D` | Draw on a pin |
 | `E` | Erase a whole stroke |
+
+
+**2. Pin across pages.** Switch to **Browse the page** (`V`) in the toolbar, navigate anywhere, and pin again. Earlier pins stay on the board. **Shift-click** several to write one message for all of them.
+
+**3. Draw arrows and boxes for quick relationships.** The pencil mode (`D`) sketches directly on the page, and the drawing goes to the agent as a snapshot.
 
 **4. Send Board.** Press **Send to agent**. The panel holds on *Sending…* until the agent actually starts. If a send is already running, the next one queues automatically.
 
