@@ -2420,29 +2420,6 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     if (sourcePin) seatCardAtElement(sourcePin);
   }, [liveSelected, createRelationship, board, seatCardAtElement]);
 
-  if (!state.enabled && !highlight) return null;
-
-  if (!state.enabled)
-    return (
-      <div className="pin-overlay">
-        <HighlightOutline highlight={highlight!} />
-      </div>
-    );
-
-  if (stale) {
-    return (
-      <div className="pin-overlay">
-        <div className="pin-stale" role="alert">
-          <span className="pin-stale__dot" />
-          <span>Pinnables was reloaded. Refresh this page to keep pinning. Your board is safe.</span>
-          <button className="pin-btn pin-btn--primary" onClick={() => location.reload()}>
-            Refresh
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const pins: Pin[] = board?.pins ?? [];
   const drawing = mode === "draw";
 
@@ -2636,6 +2613,37 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
     },
     [chromePlacement, liveSelectedPins, liveRects],
   );
+
+  /*
+   * Every early return lives BELOW the component's last hook. These used to
+   * sit higher, and the placement work later grew hooks beneath them — so
+   * the first disabled or stale render consumed fewer hooks than the armed
+   * one before it, React threw its hook-order error, and the entire overlay
+   * unmounted. That is what made "click Capture" look dead until a page
+   * reload: the toggle itself was crashing the app.
+   */
+  if (!state.enabled && !highlight) return null;
+
+  if (!state.enabled)
+    return (
+      <div className="pin-overlay">
+        <HighlightOutline highlight={highlight!} />
+      </div>
+    );
+
+  if (stale) {
+    return (
+      <div className="pin-overlay">
+        <div className="pin-stale" role="alert">
+          <span className="pin-stale__dot" />
+          <span>Pinnables was reloaded. Refresh this page to keep pinning. Your board is safe.</span>
+          <button className="pin-btn pin-btn--primary" onClick={() => location.reload()}>
+            Refresh
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -138,7 +138,21 @@ export async function mountOverlay(): Promise<OverlayApi> {
   shadow.append(mountPoint);
   document.documentElement.append(host);
 
-  const root = createRoot(mountPoint);
+  /*
+   * A render crash unmounts the whole overlay and leaves the page looking
+   * like capture simply did nothing — no trace, no error surface of ours.
+   * React names the component only through this hook, so log it: the next
+   * silent death should be a console read, not an afternoon's hunt.
+   */
+  const root = createRoot(mountPoint, {
+    onUncaughtError: (error, errorInfo) => {
+      console.error(
+        "[pinnables] overlay render crashed",
+        error,
+        errorInfo.componentStack ?? "",
+      );
+    },
+  });
   const api = createApi(() => {
     root.unmount();
     host.remove();
