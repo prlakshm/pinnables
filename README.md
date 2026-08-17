@@ -50,6 +50,21 @@ npm run smoke
 
 Drives the MCP server over a real stdio session against the fixture board.
 
+## How to use
+
+With capture armed, the floating bar’s tools are also keys. They do not fire while you are typing in the annotation box or a page field.
+
+| Key | Tool |
+|---|---|
+| `V` | Browse the page |
+| `P` | Pin an element |
+| `D` | Draw on a pin |
+| `E` | Erase a whole stroke |
+
+`Esc` dismisses a selection, then exits capture from Browse. `Alt+Shift+P` toggles capture from anywhere (Chrome → Extensions → Keyboard shortcuts).
+
+On a pin that has takes: `⌥1`–`⌥5` jumps to that version; `←` / `→` steps when the annotation draft is empty.
+
 ## Source mapping
 
 Add the Vite plugin to the app you're reviewing. This is the primary path, not a nicety: the
