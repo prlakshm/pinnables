@@ -40,12 +40,16 @@ const TYPES = {
 };
 
 /*
- * Live reload, so an agent edit shows up without anyone pressing ⌘R. The
- * mechanism is deliberately the crudest one that works: watch the fixture
- * directory, and when anything changes tell every open page over SSE to
- * reload itself. No HMR, no diffing — these are static files, and a full
- * reload is honest about what changed. Pins survive it; they live in the
- * extension, not the page.
+ * Live update, so an agent edit shows up without anyone pressing ⌘R — and,
+ * since version flips rewrite this same file, so a restore shows up too.
+ *
+ * Two speeds, chosen per change. A style-only change swaps the <style> text
+ * in place: no navigation, no flash, the extension's overlay never remounts —
+ * which is what makes flipping between versions look like flipping, not like
+ * reloading. Anything that touches markup falls back to a full reload,
+ * because morphing a live DOM under an extension that holds references into
+ * it is how you get haunted pages. The fallback is the old behaviour exactly,
+ * so smoothness never costs correctness.
  */
 const reloadClients = new Set();
 let reloadTimer = null;
@@ -60,7 +64,34 @@ watch(ROOT, { recursive: true }, () => {
 const RELOAD_PATH = "/__pinnables_reload";
 // EventSource reconnects on its own after a server restart, so the page keeps
 // listening across `npm run film` sessions without any client-side ceremony.
-const RELOAD_SNIPPET = `<script>new EventSource("${RELOAD_PATH}").onmessage = () => location.reload();</script>`;
+// The baseline body is fetched once at load rather than read from the live
+// DOM: the fixture's own router has already mutated the DOM by the time this
+// runs, and the comparison must be raw-file against raw-file.
+const RELOAD_SNIPPET = `<script>
+(() => {
+  let baseline = null;
+  const raw = async () => {
+    const res = await fetch(location.href, { cache: "no-store" });
+    return new DOMParser().parseFromString(await res.text(), "text/html");
+  };
+  raw().then((doc) => { baseline = doc.body.innerHTML; }).catch(() => {});
+  new EventSource("${RELOAD_PATH}").onmessage = async () => {
+    try {
+      const doc = await raw();
+      const mine = document.head.querySelectorAll("style");
+      const theirs = doc.head.querySelectorAll("style");
+      const styleOnly =
+        baseline !== null &&
+        doc.body.innerHTML === baseline &&
+        mine.length === theirs.length;
+      if (!styleOnly) { location.reload(); return; }
+      mine.forEach((s, i) => {
+        if (s.textContent !== theirs[i].textContent) s.textContent = theirs[i].textContent;
+      });
+    } catch { location.reload(); }
+  };
+})();
+</script>`;
 
 const withReload = (html) => {
   const text = html.toString();
