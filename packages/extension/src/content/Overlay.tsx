@@ -592,6 +592,10 @@ export function OverlayRoot({ api }: { api: OverlayApi }) {
         if (pin.kind !== "element") return false;
         return (refindElement(pin)?.confidence ?? 0) >= 0.8;
       }),
+    /* domRevision is not read in the body and eslint calls it unnecessary, but
+       refindElement queries the live document — without it the alias would be
+       decided once and never revisited as the page changes under it. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [here, board, domRevision],
   );
   const effectiveRoute = rootAlias ?? route;
