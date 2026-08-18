@@ -120,123 +120,6 @@ export interface PagePlace {
 }
 
 /**
- * A hash-router fragment (`#/catalogue`, `#!/vault`), not an in-page anchor.
- *
- * `#section-2` is a place on the same screen. `#/` and `#!/` are the whole
- * route, and are what split a hash-routed default view from its bare `/`.
- */
-export function isHashRouterHash(hash: string): boolean {
-  return hash.startsWith("#!/") || hash.startsWith("#/");
-}
-
-export function isHashRouterUrl(url: string): boolean {
-  try {
-    return isHashRouterHash(new URL(url).hash);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Strict route identity, plus the one pair a hash-routed default view needs.
- *
- * `/` is never a wildcard. It matches `rootAlias` and nothing else — so
- * `/catalogue` still does not match `/vault`, and a path-routed homepage
- * still does not match `/dashboard`.
- */
-export function routesMatch(
-  a: string,
-  b: string,
-  rootAlias: string | null | undefined,
-): boolean {
-  if (a === b) return true;
-  if (!rootAlias) return false;
-  return (a === "/" && b === rootAlias) || (b === "/" && a === rootAlias);
-}
-
-export interface RootAliasPin {
-  url: string;
-  route: string;
-  kind?: string;
-}
-
-function uniqueRouteWinner(votes: Map<string, number>): string | null {
-  let winner: string | null = null;
-  let max = 0;
-  let tied = false;
-  for (const [route, count] of votes) {
-    if (count > max) {
-      winner = route;
-      max = count;
-      tied = false;
-    } else if (count === max && count > 0) {
-      tied = true;
-    }
-  }
-  if (!winner || max === 0 || tied || winner === "/") return null;
-  return winner;
-}
-
-function isLocalOrigin(origin: string): boolean {
-  try {
-    return isLocalHostname(new URL(origin).hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * When a local hash-routed app serves its default view at both `/` and
- * `#/thing`, name the concrete route `/` stands for — or stay strict.
- *
- * A real path (`/dashboard`) is a different page. This never guesses from
- * an empty URL alone: the origin must be local, and a stored pin URL (or
- * the current hash) must already carry `#/` or `#!/`. `/` is never the
- * alias, and never matches every route.
- */
-export function inferRootAlias<T extends RootAliasPin>(
-  here: PagePlace,
-  locationHash: string,
-  pins: readonly T[],
-  present: (pin: T) => boolean,
-): string | null {
-  if (!isLocalOrigin(here.origin)) return null;
-
-  const sameOrigin = pins.filter((pin) => {
-    const origin = originOf(pin.url);
-    return origin === "" || origin === here.origin;
-  });
-  const hashRoutedOrigin =
-    isHashRouterHash(locationHash) || sameOrigin.some((pin) => isHashRouterUrl(pin.url));
-  if (!hashRoutedOrigin) return null;
-
-  const elementPins = sameOrigin.filter((pin) => pin.kind == null || pin.kind === "element");
-
-  if (here.route === "/" && !isHashRouterHash(locationHash)) {
-    const votes = new Map<string, number>();
-    for (const pin of elementPins) {
-      if (!isHashRouterUrl(pin.url) || !present(pin) || pin.route === "/") continue;
-      votes.set(pin.route, (votes.get(pin.route) ?? 0) + 1);
-    }
-    return uniqueRouteWinner(votes);
-  }
-
-  if (isHashRouterHash(locationHash) && here.route !== "/") {
-    const rootPresent = elementPins.some(
-      (pin) => pin.route === "/" && !isHashRouterUrl(pin.url) && present(pin),
-    );
-    if (!rootPresent) return null;
-    const otherHashPresent = elementPins.some(
-      (pin) => isHashRouterUrl(pin.url) && pin.route !== here.route && present(pin),
-    );
-    if (otherHashPresent) return null;
-    return here.route;
-  }
-
-  return null;
-}
-
-/**
  * Whether a pin belongs to the page in front of you.
  *
  * Route alone used to answer this, which held only while every page was your
@@ -248,17 +131,12 @@ export function inferRootAlias<T extends RootAliasPin>(
  * Pins written before origins were recorded have a url to derive one from; the
  * empty origin left by an unparseable url falls back to the old behaviour
  * rather than making an old pin unreachable.
- *
- * `rootAlias` is the one extra pair a hash-routed default view needs: `/`
- * and `#/catalogue` are the same page when the overlay has proven it. Omit
- * it and the check stays exact.
  */
 export function isPinOnPage(
   pin: { url: string; route: string },
   here: PagePlace,
-  rootAlias?: string | null,
 ): boolean {
-  if (!routesMatch(pin.route, here.route, rootAlias)) return false;
+  if (pin.route !== here.route) return false;
   const origin = originOf(pin.url);
   return origin === "" || origin === here.origin;
 }
