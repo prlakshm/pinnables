@@ -618,3 +618,20 @@ test("annotation-box alerts use the shelf's three weights and tokens", () => {
   const base = css.slice(css.indexOf(".pin-note__alert {"), css.indexOf('.pin-note__alert[data-weight="warn"]'));
   assert.doesNotMatch(base, /--pin-amber/, "the base class must be weight-agnostic");
 });
+
+/*
+ * The README's demos are GIF embeds wrapped in a link to the mp4. An edit once
+ * collapsed them to plain links, which renders as three bits of link text where
+ * the demos should be — and nothing about the page looks broken, so it went
+ * unnoticed. GitHub will not embed a repo-hosted mp4 by URL or <video> tag.
+ */
+test("README demos stay embedded, not collapsed to links", () => {
+  const readme = source("README.md");
+  for (const clip of ["01-overview", "02-cross-page-relationships", "03-version-rail"]) {
+    assert.match(
+      readme,
+      new RegExp(`\\[!\\[[^\\]]+\\]\\(demos/public/${clip}\\.gif\\)\\]\\([^)]*${clip}\\.mp4\\)`),
+      `${clip} must be a GIF embed linking to the mp4`,
+    );
+  }
+});

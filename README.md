@@ -10,15 +10,15 @@ What makes it different: you can pin components **across different pages** and d
 
 Pin something, describe the change, watch it land:
 
-[Pinning a component, describing a change, and watching it land](https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4)
+[![Pinning a component, describing a change, and watching it land](demos/public/01-overview.gif)](https://github.com/prlakshm/pinnables/raw/main/demos/public/01-overview.mp4)
 
 Relating components that live on different pages:
 
-[Relating components across different pages](https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4)
+[![Relating components across different pages](demos/public/02-cross-page-relationships.gif)](https://github.com/prlakshm/pinnables/raw/main/demos/public/02-cross-page-relationships.mp4)
 
 Version keys, for flipping between what the agent tried:
 
-[Flipping between versions the agent produced](https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4)
+[![Flipping between versions the agent produced](demos/public/03-version-rail.gif)](https://github.com/prlakshm/pinnables/raw/main/demos/public/03-version-rail.mp4)
 
 ## Install
 
@@ -76,7 +76,7 @@ Open your app, click the **Pinnables** toolbar icon, and press **Capture**. Hove
 | ---------------- | --------- | ------------------------------------- |
 | A live change    | **Enter** | Sent to your agent now                |
 | A stashed change | **⌘↵**    | Saved to the board to send later      |
-| Stash on nothing | **⌘↵**    | Saves pin, so you can come back to it |
+| Stash empty| **⌘↵**    | Saves pin, so you can come back to it |
 
 
 So `Enter` means "do this" and `⌘↵` means "remember this".
