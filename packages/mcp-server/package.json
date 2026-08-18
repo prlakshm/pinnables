@@ -1,6 +1,6 @@
 {
   "name": "@pinnables/mcp-server",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@pinnables/shared": "0.1.0",
+    "@pinnables/shared": "1.0.0",
     "zod": "^3.24.1"
   }
 }

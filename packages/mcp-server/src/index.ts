@@ -11,7 +11,7 @@ import {
   writeBoard,
 } from "@pinnables/shared/storage";
 
-const server = new McpServer({ name: "pinnables", version: "0.1.0" });
+const server = new McpServer({ name: "pinnables", version: "1.0.0" });
 
 function text(body: string) {
   return { content: [{ type: "text" as const, text: body }] };

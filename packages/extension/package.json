@@ -1,6 +1,6 @@
 {
   "name": "@pinnables/extension",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pinnables/shared": "0.1.0",
+    "@pinnables/shared": "1.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
