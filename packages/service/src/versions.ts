@@ -105,12 +105,39 @@ function baselineId(head: string | null): string {
   return `baseline-${(head ?? "detached").slice(0, 12)}`;
 }
 
+/**
+ * The service snapshots the same repo the user works in, so its git calls
+ * race the user's own: a commit, a build script, an editor's background
+ * fetch. Git serialises writers with `.git/index.lock`, held for
+ * milliseconds — but a snapshot that hits that window used to fail outright,
+ * and the cost was a version key with no way back behind it. Waiting out the
+ * lock a few times is the difference between "lost a version" and a stutter
+ * nobody sees.
+ */
+const GIT_LOCK_RETRIES = 4;
+const GIT_LOCK_WAIT_MS = 150;
+
+function isIndexLockError(err: unknown): boolean {
+  const text =
+    err instanceof Error
+      ? `${err.message} ${(err as { stderr?: string }).stderr ?? ""}`
+      : String(err);
+  return /index\.lock|Another git process|Unable to create .*\.lock/i.test(text);
+}
+
 async function git(args: string[]): Promise<string> {
-  const { stdout } = await run("git", args, {
-    cwd: projectRoot(),
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  return stdout;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const { stdout } = await run("git", args, {
+        cwd: projectRoot(),
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      return stdout;
+    } catch (err) {
+      if (!isIndexLockError(err) || attempt >= GIT_LOCK_RETRIES) throw err;
+      await new Promise((resolve) => setTimeout(resolve, GIT_LOCK_WAIT_MS));
+    }
+  }
 }
 
 /**
